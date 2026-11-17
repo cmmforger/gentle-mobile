@@ -1,3 +1,7 @@
 target/
 /design/**/.screenshots/
 .codegraph/
+ui-android/.gradle/
+ui-android/**/build/
+ui-android/local.properties
+*.apk
