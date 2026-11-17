@@ -18,6 +18,12 @@ export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/27.0.12077973}"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 
+# This machine has XDG_CONFIG_HOME, so avdmanager writes AVDs to ~/.config/.android/avd
+# while the emulator only searches ANDROID_AVD_HOME / ANDROID_SDK_HOME / ~/.android.
+if [ -d "$HOME/.config/.android/avd" ]; then
+  export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.config/.android/avd}"
+fi
+
 export JAVA_HOME="${JAVA_HOME:-$HOME/.local/jdk21}"
 export PATH="$JAVA_HOME/bin:$PATH"
 
