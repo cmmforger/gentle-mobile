@@ -19,6 +19,13 @@ herdr-client.workspace = true
 russh                  = { default-features = false, features = ["flate2", "ring", "rsa"], version = "=0.64.1" }
 thiserror.workspace    = true
 tokio                  = { features = ["io-util", "net", "rt", "sync"], version = "1" }
+# The UniFFI surface: proc-macro scaffolding in the lib, plus the `cli`
+# feature that `src/bin/uniffi-bindgen.rs` needs — the bindgen binary lives in
+# this crate, so the generator version always matches the scaffolding version.
+uniffi                 = { version = "0.32", features = ["cli"] }
+
+[lib]
+crate-type = ["cdylib", "lib"]
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -41,4 +41,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    // Required by the generated UniFFI Kotlin bindings (com.sun.jna.*).
+    // The AAR carries the Android libjnidispatch.so natives; the plain jar
+    // does not, and JNA fails with UnsatisfiedLinkError on device.
+    implementation("net.java.dev.jna:jna:5.14.0@aar")
 }

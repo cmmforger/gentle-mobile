@@ -26,6 +26,11 @@ pub mod error;
 pub mod pin;
 pub mod profile;
 pub mod supervise;
+pub mod uniffi_api;
+
+// One scaffolding setup for the crate: the FFI entry points the generated
+// Kotlin bindings call.
+uniffi::setup_scaffolding!();
 
 pub use backoff::{BASE_DELAY, JITTER_FRACTION, Jitter, MAX_DELAY, ReconnectPolicy};
 pub use connection::{

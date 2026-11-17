@@ -96,6 +96,72 @@ pub fn wait_for_sshd(host: &str, port: u16) -> Result<()> {
     Err(Error::Timeout("the ssh endpoint never accepted a TCP connection"))
 }
 
+/// A key probe: the host's presented key and the pin verdict for it, learned
+/// from the SSH handshake alone — no authentication, no channel, no data.
+/// This is the challenge step of the UniFFI surface: the UI renders
+/// [`PinDecision::Unknown`]/[`PinDecision::Mismatch`] as a question, and only
+/// an explicit user consent followed by [`crate::pin::accept_host_key`] lets
+/// a later connect proceed.
+pub struct HostKeyProbe {
+    pub key: PublicKey,
+    pub decision: PinDecision,
+}
+
+/// The verifier used by [`probe_host_key`]: it records the presented key and
+/// refuses to proceed — a probe never exchanges channel data.
+struct ProbeVerifier {
+    presented: Arc<Mutex<Option<PublicKey>>>,
+}
+
+impl client::Handler for ProbeVerifier {
+    type Error = russh::Error;
+
+    async fn check_server_key(
+        &mut self,
+        key: &PublicKeyOrCertificate,
+    ) -> std::result::Result<bool, Self::Error> {
+        let key: PublicKey = match key {
+            PublicKeyOrCertificate::PublicKey { key, .. } => key.clone(),
+            PublicKeyOrCertificate::Certificate(certificate) => {
+                PublicKey::from(certificate.public_key().clone())
+            }
+        };
+        if let Ok(mut guarded) = self.presented.lock() {
+            *guarded = Some(key);
+        }
+        Ok(false)
+    }
+}
+
+/// Probe the host key without authenticating. Fails only when no key was
+/// presented (unreachable host, transport failure); the pin verdict is
+/// computed from the pins on file, exactly as a real connection would.
+pub fn probe_host_key(profile: &HostProfile) -> Result<HostKeyProbe> {
+    let pins = crate::pin::load_entries(&profile.known_hosts_path)?;
+    wait_for_sshd(&profile.host, profile.port)?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(Error::Io)?;
+    let presented = Arc::new(Mutex::new(None::<PublicKey>));
+    let config = Arc::new(client::Config {
+        nodelay: true,
+        ..client::Config::default()
+    });
+    let _ = runtime.block_on(client::connect(
+        config,
+        (profile.host.as_str(), profile.port),
+        ProbeVerifier { presented: presented.clone() },
+    ));
+    let key = presented
+        .lock()
+        .ok()
+        .and_then(|guarded| guarded.clone())
+        .ok_or(Error::Timeout("the ssh handshake presented no host key"))?;
+    let decision = crate::pin::decide(&pins, &profile.host, profile.port, &key);
+    Ok(HostKeyProbe { key, decision })
+}
+
 impl Connection {
     /// Connect synchronously (call it off the UI thread): pin-check the host
     /// key, authenticate, exec the bridge, answer the discovery handshake, and
