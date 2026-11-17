@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members  = ["crates/herdr-client", "crates/herdr-protocol", "spikes/gentle-rpc", "spikes/herdr-local", "spikes/herdr-ssh", "spikes/herdr-frames"]
+members  = ["core", "crates/herdr-client", "crates/herdr-protocol", "spikes/gentle-rpc", "spikes/herdr-local", "spikes/herdr-ssh", "spikes/herdr-frames"]
 
 [workspace.package]
 edition      = "2024"

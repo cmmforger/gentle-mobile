@@ -1,0 +1,27 @@
+[package]
+edition.workspace      = true
+license.workspace      = true
+name                   = "gentlecompanion-core"
+publish.workspace      = true
+rust-version.workspace = true
+version.workspace      = true
+description            = "Gentle Companion transport core: SSH transport, host-key pinning, liveness, reconnect."
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace       = true
+base64.workspace       = true
+crossbeam-channel.workspace = true
+herdr-client.workspace = true
+# Same pinned russh and tokio feature set as the SSH spike and Bellterm's native crate.
+russh                  = { default-features = false, features = ["flate2", "ring", "rsa"], version = "=0.64.1" }
+thiserror.workspace    = true
+tokio                  = { features = ["io-util", "net", "rt", "sync"], version = "1" }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[example]]
+name = "connect"
