@@ -23,6 +23,18 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   Lane A = Herdr TUI server over SSH. Lane B-i (B-i) = the app opens its own `gentle-shell`
   session over SSH; it does not attach to the desktop window's live session.
 
+- **S15 — Continuity is the second step, not the first.**
+  Decision: the app owns its own Gentle Shell session in v1; **v1.5 adds continuity** — list the host's
+  sessions and resume one that is *closed*. Never two writers on one session file in v1.
+  Rationale: concurrent attach to a session file is a consensus problem, and a lost conversation is
+  unrecoverable trust. "Own session + resume closed" delivers most of the value at a fraction of the risk.
+
+- **S16 — Concurrent mirroring of the live desktop session is deferred, not cancelled.**
+  "v2 todavia no podemos tomar una decision porque todavia estan trabajando en el desarrollo de esta app,
+  por lo que considero que deberia estar al tanto pero no es momento de desarrollarla."
+  It stays visible in the plan as an upstream dependency (T20). No work on it in v1 or v1.5, and no UI in
+  the app promises it until Gentle Desktop exposes an attach surface.
+
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
 
@@ -121,7 +133,8 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T17 | Lane B-i: `gentle-shell --mode rpc` client over SSH — transcript, prompt, dialogs as sheets | S3 D4 | worker | — |
 | T18 | Settings/security screen: keys, known hosts, biometrics, theme choice, about | S9 P4 | worker | — |
 | T19 | v1 packaging: signed APK release, what's-new page, sideload instructions, iOS target kept building | S10 | inline | — |
-| T20 | Optional upstream ask for B-ii: minimal `--attach-stdio` bridge contract for `gentle-shell-gpui`, after a `LICENSE` file exists | S3 S13 | inline | — |
+| T20 | **Deferred (S16):** optional upstream ask for B-ii, a minimal `--attach-stdio` bridge for `gentle-shell-gpui`, after a `LICENSE` file exists. Not scheduled. | S3 S13 S16 | inline | — |
+| T21 | Continuity (v1.5): list the host's Gentle Shell sessions and resume a closed one, with a guard that refuses a session another process holds | S15 | worker | — |
 
 ## Phases and gates
 
@@ -283,3 +296,12 @@ already right. Sexy was reverted to its captured palette in all six switcher boa
 `rgb(6,4,7)`), and Cute was left undecided: `08-cute-theme-options.html` now shows three candidates (A plum
 page with sunk black panels, B plum page with lifted panels — the rejected one, C black page with a plum
 field) for the user to pick before any further sweep. `08` is a decision board, not a screen.
+
+**L10 (lane B-i scope, user decision):** "vamos como dices, con el orden de prioridad. v2 todavia no podemos
+tomar una decision porque todavia estan trabajando en el desarrollo de esta app, por lo que considero que
+deberia estar al tanto pero no es momento de desarrollarla."
+Order fixed: **v1** own session → **v1.5** list + resume a closed session → **v2** mirror the live desktop
+session, which stays in the plan as an upstream dependency and gets no work now. Recorded as S15 and S16,
+with T21 added for continuity and T20 marked deferred. The gate for T21 is the T5 spike: resume support and a
+lock that is released after a crash.
+
