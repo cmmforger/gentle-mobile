@@ -319,3 +319,19 @@ session, which stays in the plan as an upstream dependency and gets no work now.
 with T21 added for continuity and T20 marked deferred. The gate for T21 is the T5 spike: resume support and a
 lock that is released after a crash.
 
+**L11 (phase 2 closed, phase 3 started — code):** Spikes closed: T3a (`7f43918`) endpoint handshake from Rust;
+T3b (`1ed3330`) bridge over SSH with russh; T4 (`2b79711`) cell surfaces render and are measured — a full
+frame is 28,998 B against a 130 B median delta, so the phone streams deltas and takes a full frame only as a
+baseline; T5 (`7d5096c`) proves `gentle-shell --mode rpc --session <file>` resumes with the same `sessionId`,
+that there is **no lock**, that two writers diverge silently while the file stays valid, and that `kill -9`
+leaves a possibly torn last line. S17 and S18 record the resulting client contract and the decision that the
+lease is ours to write. T6 (iOS) is blocked: it needs macOS and Xcode.
+Environment: rootless JDK/SDK/NDK/rustup (`10c1305`), fixed in `9b5472f`, `701dc61` and `113653c` after the
+env script bit us with `"$VAR:-default"` under `set -u`, a missing PATH for adb, and AVDs written to
+`~/.config/.android` while the emulator only looks at `ANDROID_AVD_HOME`.
+T7 (`e6f7be5`) builds the Compose scaffold and produces a 22 MB debug APK themed from `design/system.md`.
+**Verified on a Pixel 6 / Android 14 emulator**, not just built: installed, launched, screenshot taken, and the
+pixels measured — background `#1A1218`, accent `#FF76C3`. The screenshot exposed a real defect the build could
+never show: the mono meta wrapped and left a stray bullet, fixed in `b4dd41a` (`maxLines = 1` + ellipsis).
+Next: T8a, the transport core (pinning, keepalive, reconnect) as a tested crate.
+
