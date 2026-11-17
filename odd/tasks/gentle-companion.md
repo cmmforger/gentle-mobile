@@ -35,6 +35,20 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   It stays visible in the plan as an upstream dependency (T20). No work on it in v1 or v1.5, and no UI in
   the app promises it until Gentle Desktop exposes an attach surface.
 
+- **S17 — Client contract for the RPC lane (measured in T5).**
+  `gentle-shell --mode rpc [--no-session | --session <path>]` speaks JSONL over plain stdio, no TTY needed.
+  The client must: (a) keep reading stdout until the process exits — closing the read end early makes Pi
+  crash on EPIPE; (b) close stdin for an orderly shutdown and treat stdout EOF as a normal end, not an error;
+  (c) tolerate a torn trailing JSONL line, because `kill -9` mid-append can leave one; (d) answer every
+  `extension_ui_request` or it blocks and eventually auto-resolves.
+
+- **S18 — Pi provides no session lock, so the guard is ours.**
+  Measured: two `--mode rpc` processes on the same session file do not error and do not corrupt the file;
+  both append, both exit 0, and their in-memory views diverge silently. No lock files, no flock, and a
+  `kill -9` leaves valid JSONL. Therefore the "never two writers" rule cannot be delegated to Pi: the app
+  writes its own advisory lease (pid + heartbeat + device id) next to the session and refuses to open a
+  session a live lease claims.
+
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
 
