@@ -1,0 +1,19 @@
+NOTICE — Gentle Companion
+
+This repository vendors two crates from Bellterm (https://github.com/nimrc/bellterm,
+Apache-2.0), which in turn vendors them from the Herdr project:
+
+  - crates/herdr-protocol  (Apache-2.0)
+  - crates/herdr-client    (Apache-2.0)
+
+Both crates are Apache-2.0 licensed; their LICENSE-APACHE files are vendored
+alongside the source, together with their READMEs and the upstream NOTICE.md.
+
+WIRE CONTRACT WARNING: the bincode field order of the structs in
+herdr-protocol/src/wire.rs (and related wire files) and the order of the enum
+variants across the protocol crates are a wire contract. They are serialized
+positionally by bincode and MUST NOT be reordered, renamed by serde attribute
+tricks, added to, or removed from, or the client will silently desync from the
+Herdr endpoint protocol (generation 1, protocol: 22).
+
+Do not modify the vendored protocol logic to make things compile or connect.
