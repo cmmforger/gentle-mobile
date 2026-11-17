@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gentlemanprogramming.gentlecompanion.ui.theme.GentleCompanionTheme
@@ -145,6 +146,7 @@ private fun HostRowItem(host: HostRow) {
                     color = if (host.unreachable) Tokens.error else Tokens.muted,
                     fontSize = 11.sp,
                     letterSpacing = 0.5.sp,
+                    maxLines = 1,
                 )
             }
             Text(
@@ -152,6 +154,8 @@ private fun HostRowItem(host: HostRow) {
                 color = Tokens.muted,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Text(text = "›", color = Tokens.muted, fontSize = 15.sp)
