@@ -95,6 +95,9 @@ pub struct AgentDto {
     pub status: AgentStatusDto,
     pub cwd: Option<String>,
     pub focused: bool,
+    /// The pane the agent lives in: the address both `read_pane` and
+    /// `prompt_agent` take (the daemon's `agent.prompt` targets accept panes).
+    pub pane_id: String,
 }
 
 /// One full snapshot in plain DTOs.
@@ -120,6 +123,12 @@ pub enum CompanionError {
     Timeout { detail: String },
     #[error("{detail}")]
     Transport { detail: String },
+    /// The daemon answered a request with an error object.
+    #[error("the host refused the request ({code}): {detail}")]
+    RequestRefused { code: String, detail: String },
+    /// The daemon's advertised method list has no such method.
+    #[error("the host does not offer {method}")]
+    UnsupportedMethod { method: String, detail: String },
 }
 
 impl From<Error> for CompanionError {
@@ -135,6 +144,44 @@ impl From<Error> for CompanionError {
             other => CompanionError::Transport { detail: other.to_string() },
         }
     }
+}
+
+impl From<crate::requests::RequestError> for CompanionError {
+    fn from(error: crate::requests::RequestError) -> Self {
+        CompanionError::from(crate::requests::HubError::Request(error))
+    }
+}
+
+impl From<crate::requests::HubError> for CompanionError {
+    fn from(error: crate::requests::HubError) -> Self {
+        match error {
+            crate::requests::HubError::Core(error) => CompanionError::from(error),
+            crate::requests::HubError::Request(
+                crate::requests::RequestError::Refused { code, detail },
+            ) => CompanionError::RequestRefused { code, detail },
+            crate::requests::HubError::Request(
+                crate::requests::RequestError::UnsupportedMethod { method },
+            ) => CompanionError::UnsupportedMethod {
+                method,
+                detail: "checked against the host's advertised method list".to_owned(),
+            },
+            crate::requests::HubError::Request(
+                crate::requests::RequestError::Timeout { detail },
+            ) => CompanionError::Timeout { detail },
+            crate::requests::HubError::Request(other) => {
+                CompanionError::Transport { detail: other.to_string() }
+            }
+        }
+    }
+}
+
+/// One agent pane read: exactly the visible text the host would show for
+/// that pane, plus whether the daemon had to leave anything out.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct PaneReadDto {
+    pub pane_id: String,
+    pub text: String,
+    pub truncated: bool,
 }
 
 /// Either the host-key question or a live connection — the two things a
@@ -222,6 +269,41 @@ impl CompanionConnection {
                 connection.disconnect();
             }
         }
+    }
+
+    /// Read the visible text of one pane over the request channel. Fails
+    /// typed — a refusal names the daemon's own code, so the UI can show why
+    /// instead of an empty pane.
+    pub fn read_pane(&self, pane_id: String) -> Result<PaneReadDto, CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        let read = connection
+            .pane_read(pane_id.as_str())
+            .map_err(CompanionError::from)?;
+        Ok(PaneReadDto {
+            pane_id: read.pane_id,
+            text: read.text,
+            truncated: read.truncated,
+        })
+    }
+
+    /// Submit one prompt to an agent, addressed by its pane id. `Ok(())`
+    /// means the daemon confirmed the submission (`agent_prompted`); a
+    /// failure names why, so the UI never claims "sent" without a reply.
+    pub fn prompt_agent(&self, target: String, prompt: String) -> Result<(), CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        connection
+            .agent_prompt(target.as_str(), prompt.as_str())
+            .map_err(CompanionError::from)
     }
 }
 
@@ -317,6 +399,7 @@ pub(crate) fn agent_dto(agent: &ClientShellAgent, cwd: Option<&str>) -> AgentDto
         status: status_dto(agent.agent_status),
         cwd: cwd.map(str::to_owned),
         focused: agent.focused,
+        pane_id: agent.pane_id.clone(),
     }
 }
 
@@ -374,6 +457,7 @@ pub(crate) fn snapshot_to_dto(snapshot: &ClientShellSnapshot) -> SnapshotDto {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::requests::RequestError;
 
     // A hand-built pane and agent: enough to test the DTO join, without a
     // running host.
@@ -458,12 +542,43 @@ mod tests {
         assert_eq!(dto.status, AgentStatusDto::Working);
         assert_eq!(dto.cwd.as_deref(), Some("/srv/a/build"));
         assert!(!dto.focused);
+        assert_eq!(dto.pane_id, "p1", "the agent's pane is the request address");
 
         let blank = agent("a2", "p2", Some(""), AgentStatus::Idle);
         let dto = agent_dto(&blank, None);
         assert_eq!(dto.name, "pi", "a blank name falls back to the kind");
         assert_eq!(dto.cwd, None);
     }
+
+#[test]
+fn request_errors_map_to_typed_companion_variants_with_detail() {
+    use crate::uniffi_api::CompanionError;
+    let refused = CompanionError::from(RequestError::Refused {
+        code: "agent_blocked".to_owned(),
+        detail: "agent is blocked".to_owned(),
+    });
+    assert!(matches!(refused, CompanionError::RequestRefused { ref code, ref detail }
+        if code == "agent_blocked" && detail == "agent is blocked"), "{refused:?}");
+
+    let unsupported = CompanionError::from(RequestError::UnsupportedMethod {
+        method: "agent.prompt".to_owned(),
+    });
+    assert!(matches!(unsupported, CompanionError::UnsupportedMethod { ref method, .. }
+        if method == "agent.prompt"), "{unsupported:?}");
+
+    let bad = CompanionError::from(RequestError::BadResponse { detail: "shape drifted".to_owned() });
+    assert!(matches!(bad, CompanionError::Transport { ref detail }
+        if detail.contains("shape drifted")), "{bad:?}");
+
+    let gone = CompanionError::from(RequestError::Disconnected);
+    assert!(matches!(gone, CompanionError::Transport { .. }), "{gone:?}");
+
+    let late = CompanionError::from(RequestError::Timeout { detail: "no reply in 10s".to_owned() });
+    assert!(
+        matches!(late, CompanionError::Timeout { ref detail } if detail.contains("no reply")),
+        "{late:?}"
+    );
+}
 
     #[test]
     fn snapshot_to_dto_preserves_counts_and_names() {

@@ -49,6 +49,15 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   writes its own advisory lease (pid + heartbeat + device id) next to the session and refuses to open a
   session a live lease claims.
 
+- **S19 — Two lanes on the host, not one (measured in T11).**
+  The client-shell bridge (`herdr remote-client-bridge`) does **not** serve `pane.read` or `agent.prompt`;
+  asking for them is refused, and that refusal is now unit-tested. Read and prompt are operations of the
+  daemon's **API socket** (protocol 22, one JSON line per request, **one request per connection**), which the
+  phone reaches with SSH `direct-streamlocal` channels under the same pins, keys and keepalive.
+  Consequences: the transport keeps **both** channels — bridge for surfaces/events, streamlocal for discrete
+  requests — and every request opens a fresh channel. Envelope shapes (`agent_prompted`, `result.read`
+  nesting, `pane_not_found`/`agent_not_found`) were measured live, never assumed.
+
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
 
@@ -335,3 +344,12 @@ pixels measured — background `#1A1218`, accent `#FF76C3`. The screenshot expos
 never show: the mono meta wrapped and left a stray bullet, fixed in `b4dd41a` (`maxLines = 1` + ellipsis).
 Next: T8a, the transport core (pinning, keepalive, reconnect) as a tested crate.
 
+**L12 (T11 — read and prompt verified end to end):** The app opens a real agent, shows its visible pane text
+and sends a prompt. Line match against `herdr pane read w1F:p1 --source visible`: **42/43 lines identical**,
+the single difference being a running timer that advanced between captures. A throwaway `pi` agent
+(`t11-verify`, scratch cwd) received `echo t11-ok` from the emulator; `diff` between what the app sent and what
+the host read was clean. The agent then failed on **host credentials** (`OAuth refresh failed for
+openai-codex … invalid_refresh_token (401)`), which is a machine issue, not an app one; the throwaway agent and
+pane were closed and herdr is back to 21 panes / 2 agents. The `agent_not_found` refusal for non-agent panes is
+surfaced inline, verbatim. Recorded as S19: read and prompt live on the daemon API socket via SSH
+`direct-streamlocal`, not on the client-shell bridge.

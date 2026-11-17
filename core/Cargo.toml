@@ -15,8 +15,12 @@ anyhow.workspace       = true
 base64.workspace       = true
 crossbeam-channel.workspace = true
 herdr-client.workspace = true
+# The request lane speaks the vendored protocol directly (the vendored client
+# only offers its closed `Method` enum).
+herdr-protocol.workspace = true
 # Same pinned russh and tokio feature set as the SSH spike and Bellterm's native crate.
 russh                  = { default-features = false, features = ["flate2", "ring", "rsa"], version = "=0.64.1" }
+serde_json.workspace   = true
 thiserror.workspace    = true
 tokio                  = { features = ["io-util", "net", "rt", "sync"], version = "1" }
 # The UniFFI surface: proc-macro scaffolding in the lib, plus the `cli`

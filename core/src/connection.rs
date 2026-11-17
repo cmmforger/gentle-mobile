@@ -14,7 +14,7 @@ use std::{
     io,
     net::TcpStream,
     os::unix::net::UnixStream,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, mpsc},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -28,7 +28,7 @@ use herdr_client::{
 use russh::{
     Disconnect,
     client::{self, Handle},
-    keys::{PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate, decode_secret_key},
+    keys::{PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate},
 };
 use tokio::io::AsyncWriteExt;
 
@@ -80,6 +80,9 @@ pub struct Connection {
     latest: Arc<Mutex<Option<Arc<ClientShellSnapshot>>>>,
     stop: Arc<AtomicBool>,
     threads: Vec<JoinHandle<()>>,
+    /// The request-only channel for `pane.read` / `agent.prompt`; connects
+    /// lazily on the first request, dies with the connection.
+    requests: Option<crate::requests::RequestsHub>,
 }
 
 /// Block until the SSH endpoint accepts TCP connections, so a slow sshd start
@@ -288,12 +291,14 @@ impl Connection {
             stop.clone(),
         )?;
         let watchdog = spawn_watchdog(client.handle.clone(), last_event, stop.clone())?;
+        let requests = crate::requests::RequestsHub::spawn(profile.clone(), session.to_owned())?;
         Ok(Self {
             client: Some(client),
             events: Some(events_rx),
             latest,
             stop,
             threads: vec![ssh_thread, forwarder, watchdog],
+            requests: Some(requests),
         })
     }
 
@@ -321,6 +326,50 @@ impl Connection {
         self.stop.load(Ordering::Acquire)
     }
 
+    /// Read one pane's visible text over the request channel. `source: visible`
+    /// and ANSI stripped, so what comes back is exactly what the host's own
+    /// `herdr pane read <id> --source visible` shows.
+    pub fn pane_read(
+        &self,
+        pane_id: &str,
+    ) -> std::result::Result<crate::requests::PaneRead, crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_PANE_READ,
+            crate::requests::pane_read_params(pane_id),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_pane_read(&value).map_err(crate::requests::HubError::Request)
+        })
+    }
+
+    /// Submit one prompt to an agent, addressed by its pane id. The daemon
+    /// itself focuses the pane, writes the text, and presses Enter — a
+    /// prompt, not raw keystrokes. Success means the daemon replied
+    /// `agent_prompted`; anything else is the honest typed failure.
+    pub fn agent_prompt(
+        &self,
+        target: &str,
+        prompt: &str,
+    ) -> std::result::Result<(), crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_AGENT_PROMPT,
+            crate::requests::prompt_params(target, prompt),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_agent_prompt(&value).map_err(crate::requests::HubError::Request)
+        })
+    }
+
     /// Disconnect cleanly: stop the vendored client, close the SSH connection,
     /// and join every thread. The event stream ends with an
     /// [`Event::Disconnected`].
@@ -334,6 +383,9 @@ impl Connection {
         // full queue must observe the dropped receiver and exit, not deadlock
         // the join.
         drop(self.events.take());
+        if let Some(requests) = self.requests.as_mut() {
+            requests.shutdown();
+        }
         if let Some(client) = self.client.take() {
             client.handle.disconnect();
         }
@@ -347,6 +399,9 @@ impl Drop for Connection {
     fn drop(&mut self) {
         // Never join in drop; threads observe `stop` and exit on their own.
         self.stop.store(true, Ordering::Release);
+        if let Some(requests) = self.requests.as_mut() {
+            requests.shutdown();
+        }
         if let Some(client) = self.client.take() {
             client.handle.disconnect();
         }
@@ -456,6 +511,58 @@ fn spawn_watchdog(
 /// Connect, authenticate, exec the discovery bridge, and pump the channel
 /// through `theirs` until either side closes. Reports setup success (or the
 /// typed failure) on `setup_tx` before pumping.
+/// The SSH client config both product lanes share: the main pump and the
+/// request-only channel. Keepalive is load-bearing on both (see module docs).
+pub(crate) fn ssh_client_config() -> Arc<client::Config> {
+    Arc::new(client::Config {
+        keepalive_interval: Some(KEEPALIVE_INTERVAL),
+        keepalive_max: KEEPALIVE_MAX,
+        inactivity_timeout: None,
+        nodelay: true,
+        ..client::Config::default()
+    })
+}
+
+/// Read and decode the device identity key.
+pub(crate) fn load_identity_key(path: &Path) -> Result<Arc<russh::keys::PrivateKey>> {
+    std::fs::read_to_string(path)
+        .map_err(Error::Io)
+        .and_then(|secret| {
+            russh::keys::decode_secret_key(&secret, None)
+                .map(Arc::new)
+                .map_err(russh::Error::from)
+                .map_err(Error::Ssh)
+        })
+}
+
+/// Authenticate `ssh` as `user` with `key`, negotiating the best RSA hash.
+pub(crate) async fn authenticate_publickey(
+    ssh: &mut Handle<KeyVerifier>,
+    user: &str,
+    key: Arc<russh::keys::PrivateKey>,
+) -> Result<()> {
+    let hash = ssh.best_supported_rsa_hash().await.ok().flatten().flatten();
+    let state = ssh
+        .authenticate_publickey(user, PrivateKeyWithHashAlg::new(key, hash))
+        .await;
+    match state {
+        Ok(state) if state.success() => Ok(()),
+        Ok(_) => Err(Error::Ssh(russh::Error::NotAuthenticated)),
+        Err(error) => Err(Error::Ssh(error)),
+    }
+}
+
+/// Open a session channel and exec the remote bridge for `session`.
+pub(crate) async fn exec_remote_bridge(
+    ssh: &mut Handle<KeyVerifier>,
+    session: &str,
+) -> Result<russh::Channel<client::Msg>> {
+    let command = remote_bridge_command(session).map_err(Error::Client)?;
+    let channel = ssh.channel_open_session().await.map_err(Error::Ssh)?;
+    channel.exec(true, command).await.map_err(Error::Ssh)?;
+    Ok(channel)
+}
+
 async fn run_bridge(
     theirs: UnixStream,
     profile: &HostProfile,
@@ -467,26 +574,16 @@ async fn run_bridge(
         let _ = setup_tx.send(outcome);
         Ok(())
     };
-    let key = match std::fs::read_to_string(&profile.identity_path)
-        .map_err(Error::Io)
-        .and_then(|secret| decode_secret_key(&secret, None).map(Arc::new).map_err(russh::Error::from).map_err(Error::Ssh))
-    {
+    let key = match load_identity_key(&profile.identity_path) {
         Ok(key) => key,
         Err(error) => {
             report(Err(error))?;
             return Ok(());
         }
     };
-    let config = Arc::new(client::Config {
-        keepalive_interval: Some(KEEPALIVE_INTERVAL),
-        keepalive_max: KEEPALIVE_MAX,
-        inactivity_timeout: None,
-        nodelay: true,
-        ..client::Config::default()
-    });
     let refusal = Arc::new(Mutex::new(None::<PinDecision>));
     let connect = client::connect(
-        config,
+        ssh_client_config(),
         (profile.host.as_str(), profile.port),
         KeyVerifier {
             host: profile.host.clone(),
@@ -507,39 +604,17 @@ async fn run_bridge(
             return Ok(());
         }
     };
-    let hash = ssh.best_supported_rsa_hash().await.ok().flatten().flatten();
-    let auth = ssh
-        .authenticate_publickey(profile.user.as_str(), PrivateKeyWithHashAlg::new(key, hash))
-        .await;
-    match auth {
-        Ok(state) if state.success() => {}
-        Ok(_) => {
-            report(Err(Error::Ssh(russh::Error::NotAuthenticated)))?;
-            return Ok(());
-        }
-        Err(error) => {
-            report(Err(Error::Ssh(error)))?;
-            return Ok(());
-        }
-    }
-    let command = match remote_bridge_command(session) {
-        Ok(command) => command,
-        Err(error) => {
-            report(Err(error.into()))?;
-            return Ok(());
-        }
-    };
-    let channel = match ssh.channel_open_session().await {
-        Ok(channel) => channel,
-        Err(error) => {
-            report(Err(Error::Ssh(error)))?;
-            return Ok(());
-        }
-    };
-    if let Err(error) = channel.exec(true, command).await {
-        report(Err(Error::Ssh(error)))?;
+    if let Err(error) = authenticate_publickey(&mut ssh, profile.user.as_str(), key.clone()).await {
+        report(Err(error))?;
         return Ok(());
     }
+    let channel = match exec_remote_bridge(&mut ssh, session).await {
+        Ok(channel) => channel,
+        Err(error) => {
+            report(Err(error))?;
+            return Ok(());
+        }
+    };
     report(Ok(()))?;
 
     let mut theirs = match theirs
@@ -560,12 +635,28 @@ async fn run_bridge(
 
 /// The SSH host key verifier. It never auto-accepts: an unknown or mismatched
 /// key is refused and recorded so [`refusal_error`] can produce the typed
-/// product error.
-struct KeyVerifier {
+/// product error. Shared by the main pump and the request-only channel.
+pub(crate) struct KeyVerifier {
     host: String,
     port: u16,
     pins: Vec<HostPin>,
     refusal: Arc<Mutex<Option<PinDecision>>>,
+}
+
+impl KeyVerifier {
+    /// A fresh verifier with its refusal slot: the slot is read after a
+    /// failed connect to produce the typed pin error.
+    pub(crate) fn new(
+        host: String,
+        port: u16,
+        pins: Vec<HostPin>,
+    ) -> (Self, Arc<Mutex<Option<PinDecision>>>) {
+        let refusal = Arc::new(Mutex::new(None::<PinDecision>));
+        (
+            Self { host, port, pins, refusal: Arc::clone(&refusal) },
+            refusal,
+        )
+    }
 }
 
 impl client::Handler for KeyVerifier {

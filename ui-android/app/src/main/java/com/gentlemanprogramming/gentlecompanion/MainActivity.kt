@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -48,6 +49,7 @@ import com.gentlemanprogramming.gentlecompanion.core.CompanionConnection
 import com.gentlemanprogramming.gentlecompanion.core.CompanionException
 import com.gentlemanprogramming.gentlecompanion.core.ConnectOutcome
 import com.gentlemanprogramming.gentlecompanion.core.HostProfileDto
+import com.gentlemanprogramming.gentlecompanion.core.PaneReadDto
 import com.gentlemanprogramming.gentlecompanion.core.SnapshotDto
 import com.gentlemanprogramming.gentlecompanion.core.connect as coreConnect
 import com.gentlemanprogramming.gentlecompanion.ui.theme.GentleCompanionTheme
@@ -59,7 +61,9 @@ import java.util.concurrent.Executors
  * The real lane-A read path: one screen, plus the host-key challenge state.
  * No fake rows — everything shown comes from a snapshot of a live host over
  * SSH, through the Rust core. An empty snapshot says so instead of inventing
- * hosts.
+ * hosts. Tapping an agent opens its session screen: the pane's visible text
+ * over `pane.read`, and a composer that submits the daemon's own
+ * `agent.prompt` — never raw keystrokes.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,9 +78,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// One background worker thread: connect, accept, and snapshot polling all run
-// off the UI thread; results come back through the main handler.
-private val executor = Executors.newSingleThreadExecutor()
+// Background workers: read polling and user actions run off the UI thread
+// on separate threads, so a stalled read never blocks a send.
+private val executor = Executors.newFixedThreadPool(2)
 private val mainHandler = Handler(Looper.getMainLooper())
 
 private sealed interface UiState {
@@ -84,6 +88,7 @@ private sealed interface UiState {
     data object Connecting : UiState
     data class Challenge(val fingerprint: String, val pinned: String?, val keyBlob: String) : UiState
     data class Connected(val connection: CompanionConnection, val snapshot: SnapshotDto?) : UiState
+    data class Session(val connection: CompanionConnection, val agent: AgentDto) : UiState
     data class Failed(val message: String) : UiState
 }
 
@@ -91,6 +96,19 @@ private sealed interface UiState {
 private class ScreenState {
     var ui by mutableStateOf<UiState>(UiState.Form)
     var generation: Int = 0
+    /** One session state per agent pane, so drafts survive going back. */
+    val sessions = mutableMapOf<String, SessionUi>()
+}
+
+/** The mutable state of one open agent session. */
+private class SessionUi {
+    var pane by mutableStateOf<PaneReadDto?>(null)
+    var readError by mutableStateOf<String?>(null)
+    var draft by mutableStateOf("")
+    var sending by mutableStateOf(false)
+    var sendError by mutableStateOf<String?>(null)
+    var sent by mutableStateOf(false)
+    var refreshNonce by mutableStateOf(0)
 }
 
 @Composable
@@ -155,20 +173,37 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
     }
 
     Column(
-        modifier = Modifier
+        modifier = (if (screen.ui is UiState.Session) {
+            // The session screen must be sized by the window itself: inside
+            // the scrollable connect column its weighted pane block gets
+            // unbounded constraints and collapses to zero height.
+            Modifier
+        } else {
+            Modifier
+        })
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
+            .then(
+                if (screen.ui is UiState.Session) {
+                    Modifier
+                } else {
+                    Modifier.verticalScroll(rememberScrollState())
+                }
+            )
             .padding(16.dp),
     ) {
-        Text(
-            text = "Gentle Companion",
-            color = MaterialTheme.colorScheme.onBackground,
-            fontSize = 22.sp,
-            lineHeight = 26.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(Modifier.height(16.dp))
+        if (screen.ui !is UiState.Session) {
+            // The session screen has its own compact header; the big app
+            // title would push the composer off the bottom of the screen.
+            Text(
+                text = "Gentle Companion",
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 22.sp,
+                lineHeight = 26.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(16.dp))
+        }
 
         when (val current = screen.ui) {
             UiState.Form, UiState.Connecting, is UiState.Failed -> {
@@ -355,7 +390,14 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                         )
                     } else {
                         snapshot.agents.forEachIndexed { index, agent ->
-                            AgentRow(agent)
+                            AgentRow(agent, onOpen = {
+                                val connection = current.connection
+                                screen.generation += 1
+                                val generation = screen.generation
+                                val sessionUi = screen.sessions.getOrPut(agent.paneId) { SessionUi() }
+                                screen.ui = UiState.Session(connection, agent)
+                                pollPane(screen, sessionUi, connection, agent.paneId, generation)
+                            })
                             if (index != snapshot.agents.lastIndex) {
                                 Spacer(
                                     Modifier
@@ -367,6 +409,59 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                         }
                     }
                 }
+            }
+
+            is UiState.Session -> {
+                val sessionUi = screen.sessions.getOrPut(current.agent.paneId) { SessionUi() }
+                SessionScreen(
+                    connection = current.connection,
+                    agent = current.agent,
+                    sessionUi = sessionUi,
+                    onBack = {
+                        screen.generation += 1
+                        screen.ui = UiState.Connected(current.connection, snapshot = null)
+                        // Going back restarts snapshot polling: a session open
+                        // had stopped it, and an empty snapshot must refresh,
+                        // not freeze on "Waiting for the first snapshot…".
+                        // The pane poller stops itself: its generation check
+                        // no longer matches a Connected screen.
+                        poll(screen, current.connection, screen.generation)
+                    },
+                    onRefresh = {
+                        val generation = screen.generation
+                        requestPaneRead(screen, sessionUi, current.connection, current.agent.paneId, generation)
+                    },
+                    onSend = { prompt ->
+                        val connection = current.connection
+                        val paneId = current.agent.paneId
+                        val generation = screen.generation
+                        sessionUi.sending = true
+                        sessionUi.sendError = null
+                        sessionUi.sent = false
+                        executor.execute {
+                            try {
+                                connection.promptAgent(paneId, prompt)
+                                // "Sent" only on the daemon's agent_prompted reply.
+                                mainHandler.post {
+                                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                                        sessionUi.sending = false
+                                        sessionUi.sent = true
+                                        sessionUi.draft = ""
+                                    }
+                                }
+                            } catch (error: Exception) {
+                                // The draft stays: the prompt was not sent.
+                                mainHandler.post {
+                                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                                        sessionUi.sending = false
+                                        sessionUi.sent = false
+                                        sessionUi.sendError = describe(error)
+                                    }
+                                }
+                            }
+                        }
+                    },
+                )
             }
         }
     }
@@ -422,7 +517,268 @@ private fun describe(error: Exception): String = when (error) {
         "Host key mismatch: pinned ${error.pinned}, presented ${error.presented}."
     is CompanionException.HostKeyUnknown ->
         "Unknown host key: ${error.fingerprint}."
+    is CompanionException.RequestRefused ->
+        "The host refused it (${error.code}): ${error.detail}"
+    is CompanionException.UnsupportedMethod ->
+        "This host does not offer ${error.method}."
     else -> error.message ?: error.javaClass.simpleName
+}
+
+/** True while this pane's session screen is still the one on display. */
+private fun sessionStillCurrent(
+    screen: ScreenState,
+    sessionUi: SessionUi,
+    paneId: String,
+    generation: Int,
+): Boolean {
+    val current = screen.ui
+    return screen.generation == generation &&
+        current is UiState.Session &&
+        current.agent.paneId == paneId &&
+        screen.sessions[paneId] === sessionUi
+}
+
+/** One immediate read, off the poll cadence — the manual refresh button. */
+private fun requestPaneRead(
+    screen: ScreenState,
+    sessionUi: SessionUi,
+    connection: CompanionConnection,
+    paneId: String,
+    generation: Int,
+) {
+    executor.execute {
+        try {
+            val read = connection.readPane(paneId)
+            mainHandler.post {
+                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                    sessionUi.pane = read
+                    sessionUi.readError = null
+                }
+            }
+        } catch (error: Exception) {
+            mainHandler.post {
+                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                    sessionUi.readError = describe(error)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Pane polling: about twice per second, read the pane's visible text over
+ * the request channel. Stops when the screen changes or the connection
+ * ended. A failed read is shown inline, never as an empty pane.
+ */
+private fun pollPane(
+    screen: ScreenState,
+    sessionUi: SessionUi,
+    connection: CompanionConnection,
+    paneId: String,
+    generation: Int,
+) {
+    executor.execute {
+        try {
+            val read = connection.readPane(paneId)
+            mainHandler.post {
+                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                    sessionUi.pane = read
+                    sessionUi.readError = null
+                }
+            }
+        } catch (error: Exception) {
+            mainHandler.post {
+                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                    sessionUi.readError = describe(error)
+                }
+            }
+        }
+        val ended = try {
+            connection.isDisconnected()
+        } catch (_: Exception) {
+            true
+        }
+        if (!ended) {
+            mainHandler.postDelayed({
+                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                    pollPane(screen, sessionUi, connection, paneId, generation)
+                }
+            }, 500)
+        }
+    }
+}
+
+/** The agent session screen: header, pane text, composer. */
+@Composable
+private fun SessionScreen(
+    connection: CompanionConnection,
+    agent: AgentDto,
+    sessionUi: SessionUi,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onSend: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp),
+    ) {
+        // Header: back to the agents list, agent name and its cwd.
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(
+                text = "‹ Agents",
+                color = Tokens.accent,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .clickable(onClick = onBack)
+                    .padding(vertical = 12.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = agent.name,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = listOfNotNull(agent.cwd, statusWord(agent.status)).joinToString(" · "),
+                    color = Tokens.muted,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "Refresh",
+                color = Tokens.accent,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .clickable(onClick = onRefresh)
+                    .padding(vertical = 12.dp),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "The pane's visible text, refreshed about twice a second",
+            color = Tokens.muted,
+            fontSize = 11.sp,
+            letterSpacing = 0.8.sp,
+        )
+
+        // Pane text: a monospace block. A failed read shows the error here,
+        // never an empty pane pretending all is well.
+        Spacer(Modifier.height(8.dp))
+        val readError = sessionUi.readError
+        val pane = sessionUi.pane
+        when {
+            readError != null -> Text(
+                text = readError,
+                color = Tokens.error,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+            pane == null -> Text(
+                text = "Reading the pane…",
+                color = Tokens.muted,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+            else -> {
+                Text(
+                    text = pane.text.ifEmpty { "(the pane shows no text right now)" },
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .background(Tokens.surface, RoundedCornerShape(8.dp))
+                        .padding(12.dp),
+                )
+                if (pane.truncated) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "The host left out older rows.",
+                        color = Tokens.muted,
+                        fontSize = 11.sp,
+                    )
+                }
+            }
+        }
+
+        // Composer: a prompt, sent through the daemon's own agent.prompt.
+        // One row — the field with the send action beside it — so the
+        // composer stays inside the one-thumb zone on a phone: a full-width
+        // button row pushes it off the bottom.
+        Spacer(Modifier.height(8.dp))
+        sessionUi.sendError?.let { error ->
+            Text(
+                text = error,
+                color = Tokens.error,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+        if (sessionUi.sent) {
+            Text(
+                text = "Sent — the host confirmed the submission.",
+                color = Tokens.accent,
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = sessionUi.draft,
+                onValueChange = { sessionUi.draft = it },
+                modifier = Modifier.weight(1f),
+                singleLine = false,
+                maxLines = 3,
+                placeholder = {
+                    Text("Prompt ${agent.name}…", color = Tokens.muted, fontSize = 13.sp)
+                },
+                textStyle = TextStyle(
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                ),
+                shape = RoundedCornerShape(8.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Tokens.accent,
+                    unfocusedBorderColor = Tokens.line,
+                    focusedContainerColor = Tokens.surface,
+                    unfocusedContainerColor = Tokens.surface,
+                    cursorColor = Tokens.accent,
+                ),
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = { onSend(sessionUi.draft) },
+                enabled = !sessionUi.sending && sessionUi.draft.isNotBlank(),
+                modifier = Modifier
+                    .height(44.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Tokens.accent,
+                    contentColor = Tokens.bg,
+                    disabledContainerColor = Tokens.accentPressed,
+                    disabledContentColor = Tokens.bg,
+                ),
+            ) {
+                Text(
+                    text = if (sessionUi.sending) "…" else "Send",
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -461,12 +817,12 @@ private fun FormField(
 }
 
 @Composable
-private fun AgentRow(agent: AgentDto) {
+private fun AgentRow(agent: AgentDto, onOpen: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .heightIn(min = 56.dp)
+            .clickable(onClick = onOpen),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {

@@ -683,6 +683,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_prompt_agent(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot(
     ): Int
     external fun ffi_gentlecompanion_core_uniffi_contract_version(
@@ -713,6 +717,10 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_is_disconnected(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_prompt_agent(`ptr`: Long,`target`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_read_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_snapshot(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_accept_host_key(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -848,6 +856,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected() and 0xFFFF) != 51113) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_prompt_agent() and 0xFFFF) != 55635) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane() and 0xFFFF) != 52004) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot() and 0xFFFF) != 47863) {
@@ -1252,6 +1266,20 @@ public interface CompanionConnectionInterface {
     fun `isDisconnected`(): kotlin.Boolean
     
     /**
+     * Submit one prompt to an agent, addressed by its pane id. `Ok(())`
+     * means the daemon confirmed the submission (`agent_prompted`); a
+     * failure names why, so the UI never claims "sent" without a reply.
+     */
+    fun `promptAgent`(`target`: kotlin.String, `prompt`: kotlin.String)
+    
+    /**
+     * Read the visible text of one pane over the request channel. Fails
+     * typed — a refusal names the daemon's own code, so the UI can show why
+     * instead of an empty pane.
+     */
+    fun `readPane`(`paneId`: kotlin.String): PaneReadDto
+    
+    /**
      * The most recent full snapshot in plain DTOs, or `None` until the host
      * has sent one. The UI polls this; every reconnect starts a fresh
      * baseline so a snapshot is never a stale delta.
@@ -1398,6 +1426,46 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
 
     
     /**
+     * Submit one prompt to an agent, addressed by its pane id. `Ok(())`
+     * means the daemon confirmed the submission (`agent_prompted`); a
+     * failure names why, so the UI never claims "sent" without a reply.
+     */
+    @Throws(CompanionException::class)override fun `promptAgent`(`target`: kotlin.String, `prompt`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_prompt_agent(
+        it,
+        
+        FfiConverterString.lower(`target`),
+        FfiConverterString.lower(`prompt`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Read the visible text of one pane over the request channel. Fails
+     * typed — a refusal names the daemon's own code, so the UI can show why
+     * instead of an empty pane.
+     */
+    @Throws(CompanionException::class)override fun `readPane`(`paneId`: kotlin.String): PaneReadDto {
+            return FfiConverterTypePaneReadDto.lift(
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_read_pane(
+        it,
+        
+        FfiConverterString.lower(`paneId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * The most recent full snapshot in plain DTOs, or `None` until the host
      * has sent one. The UI polls this; every reconnect starts a fresh
      * baseline so a snapshot is never a stale delta.
@@ -1464,6 +1532,12 @@ data class AgentDto (
     val `cwd`: kotlin.String?
     , 
     val `focused`: kotlin.Boolean
+    , 
+    /**
+     * The pane the agent lives in: the address both `read_pane` and
+     * `prompt_agent` take (the daemon's `agent.prompt` targets accept panes).
+     */
+    val `paneId`: kotlin.String
     
 ){
     
@@ -1485,6 +1559,7 @@ public object FfiConverterTypeAgentDto: FfiConverterRustBuffer<AgentDto> {
             FfiConverterTypeAgentStatusDto.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -1493,7 +1568,8 @@ public object FfiConverterTypeAgentDto: FfiConverterRustBuffer<AgentDto> {
             FfiConverterOptionalString.allocationSize(value.`kind`) +
             FfiConverterTypeAgentStatusDto.allocationSize(value.`status`) +
             FfiConverterOptionalString.allocationSize(value.`cwd`) +
-            FfiConverterBoolean.allocationSize(value.`focused`)
+            FfiConverterBoolean.allocationSize(value.`focused`) +
+            FfiConverterString.allocationSize(value.`paneId`)
     )
 
     override fun write(value: AgentDto, buf: ByteBuffer) {
@@ -1502,6 +1578,7 @@ public object FfiConverterTypeAgentDto: FfiConverterRustBuffer<AgentDto> {
             FfiConverterTypeAgentStatusDto.write(value.`status`, buf)
             FfiConverterOptionalString.write(value.`cwd`, buf)
             FfiConverterBoolean.write(value.`focused`, buf)
+            FfiConverterString.write(value.`paneId`, buf)
     }
 }
 
@@ -1668,6 +1745,53 @@ public object FfiConverterTypePaneDto: FfiConverterRustBuffer<PaneDto> {
             FfiConverterOptionalString.write(value.`label`, buf)
             FfiConverterOptionalString.write(value.`cwd`, buf)
             FfiConverterBoolean.write(value.`focused`, buf)
+    }
+}
+
+
+
+/**
+ * One agent pane read: exactly the visible text the host would show for
+ * that pane, plus whether the daemon had to leave anything out.
+ */
+data class PaneReadDto (
+    val `paneId`: kotlin.String
+    , 
+    val `text`: kotlin.String
+    , 
+    val `truncated`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePaneReadDto: FfiConverterRustBuffer<PaneReadDto> {
+    override fun read(buf: ByteBuffer): PaneReadDto {
+        return PaneReadDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PaneReadDto) = (
+            FfiConverterString.allocationSize(value.`paneId`) +
+            FfiConverterString.allocationSize(value.`text`) +
+            FfiConverterBoolean.allocationSize(value.`truncated`)
+    )
+
+    override fun write(value: PaneReadDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`paneId`, buf)
+            FfiConverterString.write(value.`text`, buf)
+            FfiConverterBoolean.write(value.`truncated`, buf)
     }
 }
 
@@ -1921,6 +2045,32 @@ sealed class CompanionException: kotlin.Exception() {
             get() = "detail=${ `detail` }"
     }
     
+    /**
+     * The daemon answered a request with an error object.
+     */
+    class RequestRefused(
+        
+        val `code`: kotlin.String, 
+        
+        val `detail`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "code=${ `code` }, detail=${ `detail` }"
+    }
+    
+    /**
+     * The daemon's advertised method list has no such method.
+     */
+    class UnsupportedMethod(
+        
+        val `method`: kotlin.String, 
+        
+        val `detail`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "method=${ `method` }, detail=${ `detail` }"
+    }
+    
 
     
 
@@ -1958,6 +2108,14 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
             5 -> CompanionException.Transport(
                 FfiConverterString.read(buf),
                 )
+            6 -> CompanionException.RequestRefused(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                )
+            7 -> CompanionException.UnsupportedMethod(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                )
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -1993,6 +2151,18 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
                 4UL
                 + FfiConverterString.allocationSize(value.`detail`)
             )
+            is CompanionException.RequestRefused -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`code`)
+                + FfiConverterString.allocationSize(value.`detail`)
+            )
+            is CompanionException.UnsupportedMethod -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`method`)
+                + FfiConverterString.allocationSize(value.`detail`)
+            )
         }
     }
 
@@ -2024,6 +2194,18 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
             }
             is CompanionException.Transport -> {
                 buf.putInt(5)
+                FfiConverterString.write(value.`detail`, buf)
+                Unit
+            }
+            is CompanionException.RequestRefused -> {
+                buf.putInt(6)
+                FfiConverterString.write(value.`code`, buf)
+                FfiConverterString.write(value.`detail`, buf)
+                Unit
+            }
+            is CompanionException.UnsupportedMethod -> {
+                buf.putInt(7)
+                FfiConverterString.write(value.`method`, buf)
                 FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
