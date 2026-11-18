@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# gentle-companion-pair — set up a phone to reach this machine.
+#
+#   gentle-companion-pair                 print the connection details and a QR
+#   gentle-companion-pair --add-key KEY   trust one phone key (paste what the app shows)
+#   gentle-companion-pair --list          list the keys this tool added
+#   gentle-companion-pair --revoke        remove every key this tool added
+#
+# It never touches keys it did not add: everything carries the marker comment
+# below, so --revoke is exact and leaves other authorized keys alone.
+set -euo pipefail
+
+MARKER="gentle-companion"
+AUTHORIZED="${AUTHORIZED_KEYS:-$HOME/.ssh/authorized_keys}"
+PORT="${GENTLE_COMPANION_PORT:-22}"
+
+die() { printf '%s\n' "$*" >&2; exit 1; }
+
+# Prefer Tailscale (works off-LAN) and fall back to the LAN address.
+host_address() {
+    if command -v tailscale >/dev/null 2>&1; then
+        local ip
+        ip=$(tailscale ip -4 2>/dev/null | head -n1 || true)
+        if [ -n "${ip:-}" ]; then printf '%s' "$ip"; return; fi
+    fi
+    ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}'
+}
+
+print_qr() {
+    local payload="$1"
+    if command -v qrencode >/dev/null 2>&1; then
+        qrencode -t ANSIUTF8 "$payload"
+    else
+        printf 'qrencode is not installed (pacman -S qrencode); use the line above.\n'
+    fi
+}
+
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
+
+case "${1:-}" in
+--add-key)
+    key="${2:-}"
+    [ -n "$key" ] || die "usage: gentle-companion-pair --add-key 'ssh-ed25519 AAAA... comment'"
+    case "$key" in
+        ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*\ *) ;;
+        *) die "that does not look like an SSH public key" ;;
+    esac
+    mkdir -p "$(dirname "$AUTHORIZED")"
+    touch "$AUTHORIZED"
+    chmod 600 "$AUTHORIZED"
+    if grep -qF "$key" "$AUTHORIZED"; then
+        printf 'already trusted\n'
+        exit 0
+    fi
+    # Keep the phone's own trailing comment, append ours so --revoke can find it.
+    printf '%s %s-%s\n' "$(printf '%s' "$key" | awk '{$NF=""; print}' | sed 's/[[:space:]]*$//')" \
+        "$MARKER" "$(date +%Y%m%d-%H%M%S)" >> "$AUTHORIZED"
+    printf 'key added to %s\n' "$AUTHORIZED"
+    ;;
+--list)
+    grep -F "$MARKER-" "$AUTHORIZED" 2>/dev/null | awk '{print $1, $2, $NF}' || printf 'no phone keys yet\n'
+    ;;
+--revoke)
+    [ -f "$AUTHORIZED" ] || die "no $AUTHORIZED"
+    tmp=$(mktemp)
+    grep -vF "$MARKER-" "$AUTHORIZED" > "$tmp" || true
+    cat "$tmp" > "$AUTHORIZED"
+    rm -f "$tmp"
+    printf 'removed every key this tool added; other keys untouched\n'
+    ;;
+-h|--help|help)
+    usage
+    ;;
+"")
+    user="${GENTLE_COMPANION_USER:-$(id -un)}"
+    host=$(host_address)
+    [ -n "${host:-}" ] || die "could not determine this machine's address"
+    printf 'Host    %s\nPort    %s\nUser    %s\n\n' "$host" "$PORT" "$user"
+    printf 'Open the app, show its public key, and run:\n'
+    printf '  %s --add-key '"'"'<paste the key>'"'"'\n\n' "$0"
+    printf 'Connection link (paste into the app):\n  gc://%s:%s?user=%s\n\n' "$host" "$PORT" "$user"
+    print_qr "gc://$host:$PORT?user=$user"
+    ;;
+*)
+    die "unknown option: $1 (try --help)"
+    ;;
+esac

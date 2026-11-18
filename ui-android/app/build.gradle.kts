@@ -1,7 +1,31 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+
+// Release signing reads a properties file kept OUTSIDE the repository
+// (~/.config/gentle-companion/signing.properties, mode 600). When the file is
+// absent the release build is unsigned, so the project still builds anywhere.
+val signingPropsFile = file("${System.getProperty("user.home")}/.config/gentle-companion/signing.properties")
+val signingProps = Properties().apply {
+    if (signingPropsFile.exists()) signingPropsFile.inputStream().use { load(it) }
+}
+
+android {
+    signingConfigs {
+        if (signingPropsFile.exists()) {
+            create("release") {
+                storeFile = file(signingProps.getProperty("storeFile"))
+                storePassword = signingProps.getProperty("storePassword")
+                keyAlias = signingProps.getProperty("keyAlias")
+                keyPassword = signingProps.getProperty("keyPassword")
+            }
+        }
+    }
 }
 
 android {
@@ -19,6 +43,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (signingPropsFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
