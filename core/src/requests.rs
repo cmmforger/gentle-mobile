@@ -470,33 +470,7 @@ impl ApiLink {
         session: &str,
         stop: &AtomicBool,
     ) -> std::result::Result<Self, HubError> {
-        if stop.load(Ordering::Acquire) {
-            return Err(HubError::Request(RequestError::Disconnected));
-        }
-        crate::connection::wait_for_sshd(&profile.host, profile.port)?;
-        let pins = crate::pin::load_entries(&profile.known_hosts_path)?;
-        let key = crate::connection::load_identity_key(&profile.identity_path)?;
-        let (verifier, refusal) =
-            crate::connection::KeyVerifier::new(profile.host.clone(), profile.port, pins);
-        let connect = russh::client::connect(
-            crate::connection::ssh_client_config(),
-            (profile.host.as_str(), profile.port),
-            verifier,
-        )
-        .await;
-        let mut ssh: russh::client::Handle<crate::connection::KeyVerifier> = match connect {
-            Ok(ssh) => ssh,
-            Err(error) => {
-                let decision = refusal.lock().ok().and_then(|guarded| guarded.clone());
-                return Err(decision
-                    .and_then(|decision| {
-                        crate::pin::refusal_error(&profile.host, profile.port, &decision)
-                    })
-                    .unwrap_or(Error::Ssh(error))
-                    .into());
-            }
-        };
-        crate::connection::authenticate_publickey(&mut ssh, profile.user.as_str(), key).await?;
+        let ssh = connect_pinned_ssh(profile, stop).await?;
         Ok(Self { ssh, user: profile.user.clone(), session: session.to_owned(), request_counter: 0 })
     }
 
@@ -504,6 +478,44 @@ impl ApiLink {
         self.request_counter += 1;
         format!("companion-{}", self.request_counter)
     }
+}
+
+/// One pinned, authenticated SSH session — the handshake every lane shares
+/// (requests and the SFTP upload lane alike): TCP wait, loaded pins, the
+/// device key, and the same [`KeyVerifier`]. Unknown or mismatched host keys
+/// are typed pin errors, never auto-accepted.
+pub(crate) async fn connect_pinned_ssh(
+    profile: &HostProfile,
+    stop: &AtomicBool,
+) -> std::result::Result<russh::client::Handle<crate::connection::KeyVerifier>, HubError> {
+    if stop.load(Ordering::Acquire) {
+        return Err(HubError::Request(RequestError::Disconnected));
+    }
+    crate::connection::wait_for_sshd(&profile.host, profile.port)?;
+    let pins = crate::pin::load_entries(&profile.known_hosts_path)?;
+    let key = crate::connection::load_identity_key(&profile.identity_path)?;
+    let (verifier, refusal) =
+        crate::connection::KeyVerifier::new(profile.host.clone(), profile.port, pins);
+    let connect = russh::client::connect(
+        crate::connection::ssh_client_config(),
+        (profile.host.as_str(), profile.port),
+        verifier,
+    )
+    .await;
+    let mut ssh: russh::client::Handle<crate::connection::KeyVerifier> = match connect {
+        Ok(ssh) => ssh,
+        Err(error) => {
+            let decision = refusal.lock().ok().and_then(|guarded| guarded.clone());
+            return Err(decision
+                .and_then(|decision| {
+                    crate::pin::refusal_error(&profile.host, profile.port, &decision)
+                })
+                .unwrap_or(Error::Ssh(error))
+                .into());
+        }
+    };
+    crate::connection::authenticate_publickey(&mut ssh, profile.user.as_str(), key).await?;
+    Ok(ssh)
 }
 
 async fn write_line(

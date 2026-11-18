@@ -7,6 +7,14 @@
          paste field, so the app must still install on camera-less devices. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- T13: the composer's camera intent targets whatever camera app the
+         device has; without this query the lookup is filtered on Android 11+. -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
     <!-- The one-scan pairing POST (S22) is plain HTTP on purpose: it
          carries only the device's public key and the one-time token —
          never a secret. Everything else (the transport) is SSH. -->
@@ -26,6 +34,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- T13: camera photos are written to a provider-owned cache file —
+             the camera intent needs a content URI, and this way the app
+             needs no storage permission at all. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.attachments"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

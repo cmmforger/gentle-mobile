@@ -1,5 +1,7 @@
 package com.gentlemanprogramming.gentlemobile
 
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -55,6 +57,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
@@ -69,9 +73,12 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
+import android.provider.OpenableColumns
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
@@ -98,6 +105,9 @@ import com.gentlemanprogramming.gentlemobile.core.KnownHostDto
 import com.gentlemanprogramming.gentlemobile.core.HostProfileDto
 import com.gentlemanprogramming.gentlemobile.core.PaneReadDto
 import com.gentlemanprogramming.gentlemobile.core.SnapshotDto
+import com.gentlemanprogramming.gentlemobile.core.UploadProgressListener
+import com.gentlemanprogramming.gentlemobile.core.composePrompt as coreComposePrompt
+import com.gentlemanprogramming.gentlemobile.core.planUpload as corePlanUpload
 import com.gentlemanprogramming.gentlemobile.core.connect as coreConnect
 import com.gentlemanprogramming.gentlemobile.core.forgetHost
 import com.gentlemanprogramming.gentlemobile.core.listKnownHosts
@@ -114,6 +124,10 @@ import com.gentlemanprogramming.gentlemobile.security.biometricDecision
 import com.gentlemanprogramming.gentlemobile.security.parseHostSpec
 import com.gentlemanprogramming.gentlemobile.security.requireBiometricUnlock
 import com.gentlemanprogramming.gentlemobile.ui.settings.SettingsScreen
+import com.gentlemanprogramming.gentlemobile.ui.session.AddResult
+import com.gentlemanprogramming.gentlemobile.ui.session.Attachment
+import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentQueue
+import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentState
 import com.gentlemanprogramming.gentlemobile.ui.session.SessionComposer
 import com.gentlemanprogramming.gentlemobile.ui.settings.ThemePickerScreen
 import com.gentlemanprogramming.gentlemobile.ui.splash.SplashScreen
@@ -260,6 +274,33 @@ private class SessionUi {
     var sent by mutableStateOf(false)
     var refreshNonce by mutableStateOf(0)
 
+    /** Attachments (T13): the queue owns the honest state machine; the
+     * snapshot list is Compose state so the rows redraw on every transition.
+     * Thumbnails are decoded once per attachment, keyed by id; the source
+     * URIs are kept so a Retry can re-read the bytes (the upload transfer
+     * is one-shot). */
+    val attachmentQueue = AttachmentQueue()
+    var attachments by mutableStateOf<List<Attachment>>(emptyList())
+    val thumbnails = mutableMapOf<Long, ImageBitmap>()
+    val attachmentUris = mutableMapOf<Long, Uri>()
+    /** A pick-time refusal (oversize, unusable name) shown once, near the
+     * composer — the queue refuses before anything is half-added. */
+    var attachmentError by mutableStateOf<String?>(null)
+
+    /** Re-publish the queue snapshot; call after every queue mutation. */
+    fun syncAttachments() {
+        attachments = attachmentQueue.snapshot()
+        if (attachmentQueue.snapshot().none {
+                it.state is AttachmentState.Ready ||
+                    it.state is AttachmentState.Uploading ||
+                    it.state is AttachmentState.Failed
+            }
+        ) {
+            // Nothing in flight: a stale refusal would only confuse.
+            attachmentError = null
+        }
+    }
+
     /** Extra-key row state (board 04). Ctrl and Alt are sticky one-shot
      * modifiers: tapping toggles, the next key chip composes `ctrl+<key>`
      * / `alt+<key>` and consumes the sticky state. `keySending` debounces
@@ -271,12 +312,29 @@ private class SessionUi {
     var keyError by mutableStateOf<String?>(null)
 
     /** Full re-baseline: a new connection owns a fresh core store, so the
-     * drawn grid and the fallback read start empty again. Drafts survive. */
+     * drawn grid and the fallback read start empty again. Drafts survive.
+     * Attachments do not: their upload session died with the connection. */
     fun resetBaseline() {
         pane = null
         readError = null
         surface = null
         surfaceStats = null
+        attachmentQueue.snapshot().filter {
+            it.state !is AttachmentState.Uploaded
+        }.forEach { attachmentQueue.remove(it.id) }
+        thumbnails.clear()
+        syncAttachments()
+    }
+
+    /** A sent prompt has handed every uploaded file to the agent: the rows
+     * leave the composer with the draft, so the next message starts clean. */
+    fun clearSentAttachments() {
+        attachmentQueue.snapshot()
+            .filter { it.state is AttachmentState.Uploaded }
+            .forEach { attachmentQueue.remove(it.id) }
+        thumbnails.clear()
+        attachmentUris.clear()
+        syncAttachments()
     }
 }
 
@@ -1277,6 +1335,9 @@ fun ConnectScreen(
                                         sessionUi.sending = false
                                         sessionUi.sent = true
                                         sessionUi.draft = ""
+                                        // The uploads the prompt referenced have been
+                                        // handed over: the rows leave with the draft.
+                                        sessionUi.clearSentAttachments()
                                     }
                                 }
                             } catch (error: Exception) {
@@ -1611,6 +1672,43 @@ private fun SessionScreen(
     onSendKeys: (List<String>) -> Unit,
 ) {
     val interrupted = supervision as? SupervisionState.Interrupted
+    // T13: the two pickers behind the composer's camera and clip icons.
+    // The photo picker needs no permission; the camera intent writes into a
+    // provider-owned cache file, so no storage permission either.
+    val context = LocalContext.current
+    val cameraUri = remember { mutableStateOf<Uri?>(null) }
+    val pickLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            startAttachmentUpload(context, connection, sessionUi, uri)
+        }
+    }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+        val uri = cameraUri.value
+        cameraUri.value = null
+        if (taken && uri != null) {
+            startAttachmentUpload(context, connection, sessionUi, uri)
+        }
+    }
+    fun openCamera() {
+        val dir = java.io.File(context.cacheDir, "attachments").apply { mkdirs() }
+        val file = java.io.File(dir, "camera-${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.attachments", file)
+        cameraUri.value = uri
+        try {
+            cameraLauncher.launch(uri)
+        } catch (error: Exception) {
+            sessionUi.attachmentError = "no camera app is available on this device"
+        }
+    }
+    fun openPicker() {
+        try {
+            pickLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        } catch (error: Exception) {
+            sessionUi.attachmentError = "no gallery app is available on this device"
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1852,15 +1950,159 @@ private fun SessionScreen(
         Spacer(Modifier.height(8.dp))
         // Composer: a prompt, sent through the daemon's own agent.prompt.
         // One designed row per 04-session.html — see ui/session/SessionComposer.
+        // The send prompt is the draft plus the confirmed uploads' suffix
+        // lines, composed by the core so the contract lives in one place.
         SessionComposer(
             draft = sessionUi.draft,
             onDraftChange = { sessionUi.draft = it },
+            attachments = sessionUi.attachments,
+            thumbnails = sessionUi.thumbnails,
             sending = sessionUi.sending,
             sendError = sessionUi.sendError,
             sent = sessionUi.sent,
-            onSend = { onSend(sessionUi.draft) },
+            onSend = {
+                val prompt = coreComposePrompt(
+                    sessionUi.draft,
+                    sessionUi.attachmentQueue.promptSuffixes(),
+                )
+                onSend(prompt)
+            },
+            onCamera = { openCamera() },
+            onPickImage = { openPicker() },
+            onRetryUpload = { id ->
+                val uri = sessionUi.attachmentUris[id]
+                if (uri != null) {
+                    sessionUi.attachmentQueue.retry(id)
+                    sessionUi.syncAttachments()
+                    uploadAttachment(context, connection, sessionUi, id, uri)
+                }
+            },
+            onRemoveAttachment = { id ->
+                sessionUi.attachmentQueue.remove(id)
+                sessionUi.thumbnails.remove(id)
+                sessionUi.attachmentUris.remove(id)
+                sessionUi.syncAttachments()
+            },
         )
     }
+}
+
+/**
+ * T13 pick → plan → add → upload. Runs on the main thread until the
+ * transfer, which goes to the executor. Every refusal is honest and
+ * pick-time: an oversize or unreadable image never becomes a half-added
+ * attachment row.
+ */
+private fun startAttachmentUpload(
+    context: android.content.Context,
+    connection: CompanionConnection,
+    sessionUi: SessionUi,
+    uri: Uri,
+) {
+    try {
+        val resolver = context.contentResolver
+        var displayName: String? = null
+        var size = -1L
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    displayName = cursor.getString(0)
+                    if (!cursor.isNull(1)) size = cursor.getLong(1)
+                }
+            }
+        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+        if (bytes == null) {
+            sessionUi.attachmentError = "the image could not be read"
+            return
+        }
+        if (size < 0) size = bytes.size.toLong()
+        val name = displayName?.takeIf { it.isNotBlank() } ?: "image.png"
+        val plan = try {
+            corePlanUpload(name, size.toULong())
+        } catch (error: CompanionException) {
+            sessionUi.attachmentError = describe(error)
+            return
+        }
+        val thumbnail = decodeThumbnail(context, uri)
+        val added = sessionUi.attachmentQueue.add(name, plan.storedName, size)
+        val id = when (added) {
+            is AddResult.Refused -> {
+                sessionUi.attachmentError = added.reason
+                return
+            }
+            is AddResult.Accepted -> added.id
+        }
+        if (thumbnail != null) sessionUi.thumbnails[id] = thumbnail
+        sessionUi.attachmentUris[id] = uri
+        sessionUi.syncAttachments()
+        uploadAttachment(context, connection, sessionUi, id, uri)
+    } catch (error: Exception) {
+        sessionUi.attachmentError = describe(error)
+    }
+}
+
+/**
+ * The transfer itself: the bytes are re-read from the stored URI (so a
+ * retry is always possible), handed to the core's SFTP lane, and every
+ * outcome lands back on the queue on the main thread.
+ */
+private fun uploadAttachment(
+    context: android.content.Context,
+    connection: CompanionConnection,
+    sessionUi: SessionUi,
+    id: Long,
+    uri: Uri,
+) {
+    val storedName = sessionUi.attachmentQueue.snapshot()
+        .firstOrNull { it.id == id }?.storedName ?: return
+    executor.execute {
+        val outcome = try {
+            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: throw java.io.IOException("the image could not be read anymore")
+            connection.uploadFile(
+                storedName,
+                bytes,
+                object : UploadProgressListener {
+                    override fun onProgress(sentBytes: ULong, totalBytes: ULong) {
+                        mainHandler.post {
+                            sessionUi.attachmentQueue.onProgress(id, sentBytes.toLong())
+                            sessionUi.syncAttachments()
+                        }
+                    }
+                },
+            )
+        } catch (error: Exception) {
+            mainHandler.post {
+                sessionUi.attachmentQueue.onFailed(id, describe(error))
+                sessionUi.syncAttachments()
+            }
+            return@execute
+        }
+        mainHandler.post {
+            sessionUi.attachmentQueue.onUploaded(id, outcome.remotePath, outcome.promptSuffix)
+            sessionUi.syncAttachments()
+        }
+    }
+}
+
+/** A downsampled preview bitmap for the attachment row; `null` means the
+ * plate stands in, never a broken image. */
+private fun decodeThumbnail(context: android.content.Context, uri: Uri): ImageBitmap? = try {
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (
+        (bounds.outWidth / sample > 256 || bounds.outHeight / sample > 256) &&
+        sample < 64
+    ) {
+        sample *= 2
+    }
+    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+        ?.asImageBitmap()
+} catch (_: Exception) {
+    null
 }
 
 @Composable

@@ -141,10 +141,16 @@ fun FixtureTerminal(modifier: Modifier = Modifier) {
             SessionComposer(
                 draft = fixtureDraft,
                 onDraftChange = { fixtureDraft = it },
+                attachments = emptyList(),
+                thumbnails = emptyMap(),
                 sending = false,
                 sendError = null,
                 sent = false,
                 onSend = { fixtureDraft = "" },
+                onCamera = {},
+                onPickImage = {},
+                onRetryUpload = {},
+                onRemoveAttachment = {},
             )
         }
     }

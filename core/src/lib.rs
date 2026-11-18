@@ -29,6 +29,7 @@ pub mod requests;
 pub mod supervise;
 pub mod surface;
 pub mod uniffi_api;
+pub mod uploads;
 
 // One scaffolding setup for the crate: the FFI entry points the generated
 // Kotlin bindings call.

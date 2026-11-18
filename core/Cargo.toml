@@ -30,6 +30,7 @@ uniffi                 = { version = "0.32", features = ["cli"] }
 # Renderer-only width classification for surface cells (same crate the T4
 # spike used); the version is pinned by the existing Cargo.lock entry.
 unicode-width          = "0.2"
+russh-sftp = "3.0.1"
 
 [lib]
 crate-type = ["cdylib", "lib"]

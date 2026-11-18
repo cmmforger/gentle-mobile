@@ -129,6 +129,12 @@ pub enum CompanionError {
     /// The daemon's advertised method list has no such method.
     #[error("the host does not offer {method}")]
     UnsupportedMethod { method: String, detail: String },
+    /// The file is over the upload size limit; refused before any byte moved.
+    #[error("the file is too large: {size_bytes} bytes, the host accepts up to {max_bytes}")]
+    UploadTooLarge { size_bytes: u64, max_bytes: u64 },
+    /// The file name has no usable form once sanitised.
+    #[error("the file has no usable name")]
+    UploadEmptyName,
 }
 
 impl From<Error> for CompanionError {
@@ -192,6 +198,64 @@ pub enum ConnectOutcome {
     Connected(Arc<CompanionConnection>),
 }
 
+/// The upload plan for one attachment: the stored name (timestamp-prefixed,
+/// sanitised) and the size ceiling it was checked against. Advisory for the
+/// UI — the transfer itself re-checks everything.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct UploadPlanDto {
+    pub stored_name: String,
+    pub max_bytes: u64,
+}
+
+/// One confirmed upload: the absolute remote path (resolved by the server)
+/// and the exact prompt suffix that hands the file to the agent.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct UploadOutcomeDto {
+    pub remote_path: String,
+    pub prompt_suffix: String,
+}
+
+/// Progress callbacks for an in-flight upload: one call per written chunk.
+#[uniffi::export(callback_interface)]
+pub trait UploadProgressListener: Send + Sync {
+    fn on_progress(&self, sent_bytes: u64, total_bytes: u64);
+}
+
+/// Plan one attachment before any byte moves: sanitise the name, prefix the
+/// compact UTC timestamp, and refuse oversize files instantly.
+#[uniffi::export]
+pub fn plan_upload(file_name: String, size_bytes: u64) -> Result<UploadPlanDto, CompanionError> {
+    crate::uploads::check_size(size_bytes)?;
+    let stored_name = crate::uploads::stored_name(
+        &file_name,
+        std::time::SystemTime::now(),
+    )?;
+    Ok(UploadPlanDto {
+        stored_name,
+        max_bytes: crate::uploads::MAX_UPLOAD_BYTES,
+    })
+}
+
+impl From<crate::uploads::UploadError> for CompanionError {
+    fn from(error: crate::uploads::UploadError) -> Self {
+        match error {
+            crate::uploads::UploadError::TooLarge { size_bytes, max_bytes } => {
+                CompanionError::UploadTooLarge { size_bytes, max_bytes }
+            }
+            crate::uploads::UploadError::EmptyName => CompanionError::UploadEmptyName,
+        }
+    }
+}
+
+/// The final prompt text for a send with uploads: the draft plus one
+/// `[attached image: <path>]` line per uploaded file. The UI passes only
+/// suffixes handed back by confirmed uploads, so a failed upload can never
+/// reach the agent as a path.
+#[uniffi::export]
+pub fn compose_prompt(text: String, image_suffixes: Vec<String>) -> String {
+    crate::uploads::compose_prompt(&text, &image_suffixes)
+}
+
 impl std::fmt::Debug for CompanionConnection {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -205,6 +269,9 @@ impl std::fmt::Debug for CompanionConnection {
 #[derive(uniffi::Object)]
 pub struct CompanionConnection {
     inner: Mutex<Option<Connection>>,
+    /// Kept for the lanes that open their own session — today, the SFTP
+    /// upload lane. The same pins and device key, always.
+    profile: HostProfile,
 }
 
 /// Connect off the UI thread. Before any data flows, the host key is probed
@@ -223,6 +290,7 @@ pub fn connect(profile: HostProfileDto, session: String) -> Result<ConnectOutcom
                 Connection::connect(&profile, &session, ConnectOptions::default())?;
             Ok(ConnectOutcome::Connected(Arc::new(CompanionConnection {
                 inner: Mutex::new(Some(connection)),
+                profile,
             })))
         }
         PinDecisionRef::Unknown { presented } => {
@@ -343,6 +411,42 @@ impl CompanionConnection {
         connection
             .pane_send_keys(pane_id.as_str(), &keys)
             .map_err(CompanionError::from)
+    }
+
+    /// Upload one attachment to the host over the SFTP subsystem — a fresh
+    /// pinned SSH session per upload, into the host's
+    /// `~/.local/state/gentle-mobile/uploads/`. Progress is reported per
+    /// chunk. `Ok` carries the absolute remote path (resolved by the server)
+    /// and the exact prompt suffix for it; a failure means no path exists,
+    /// and the caller must not send a prompt that references one.
+    pub fn upload_file(
+        &self,
+        stored_name: String,
+        data: Vec<u8>,
+        listener: Box<dyn UploadProgressListener>,
+    ) -> Result<UploadOutcomeDto, CompanionError> {
+        // Re-check the limit against the bytes actually handed over — the
+        // plan is advisory, the transfer is the authority.
+        crate::uploads::check_size(data.len() as u64)?;
+        let profile = self.profile.clone();
+        let listener: Box<dyn UploadProgressListener> = listener;
+        let progress = |sent: u64, total: u64| listener.on_progress(sent, total);
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| CompanionError::Transport {
+                detail: format!("the upload runtime could not start: {error}"),
+            })?
+            .block_on(crate::uploads::upload_over_sftp(
+                &profile,
+                &stored_name,
+                &data,
+                &progress,
+            ))?;
+        Ok(UploadOutcomeDto {
+            remote_path: outcome.remote_path,
+            prompt_suffix: outcome.prompt_suffix,
+        })
     }
 }
 

@@ -650,6 +650,28 @@ internal open class UniffiForeignFutureResultVoid(
 internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureResultVoid.UniffiByValue,)
 }
+internal interface UniffiCallbackInterfaceUploadProgressListenerMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`sentBytes`: Long,`totalBytes`: Long,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+@Structure.FieldOrder("uniffiFree", "uniffiClone", "onProgress")
+internal open class UniffiVTableCallbackInterfaceUploadProgressListener(
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    @JvmField internal var `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+    @JvmField internal var `onProgress`: UniffiCallbackInterfaceUploadProgressListenerMethod0? = null,
+) : Structure() {
+    class UniffiByValue(
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+        `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+        `onProgress`: UniffiCallbackInterfaceUploadProgressListenerMethod0? = null,
+    ): UniffiVTableCallbackInterfaceUploadProgressListener(`uniffiFree`,`uniffiClone`,`onProgress`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceUploadProgressListener) {
+        `uniffiFree` = other.`uniffiFree`
+        `uniffiClone` = other.`uniffiClone`
+        `onProgress` = other.`onProgress`
+    }
+
+}
 
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
@@ -677,11 +699,15 @@ internal object IntegrityCheckingUniffiLib {
     internal fun ensureInitialized() = Unit
     external fun uniffi_gentlecompanion_core_checksum_func_accept_host_key(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_compose_prompt(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_connect(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_forget_host(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_list_known_hosts(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_plan_upload(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect(
     ): Int
@@ -699,6 +725,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_upload_file(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_uploadprogresslistener_on_progress(
+    ): Int
     external fun ffi_gentlecompanion_core_uniffi_contract_version(
     ): Int
 
@@ -715,6 +745,7 @@ internal object UniffiLib {
 
     init {
         Native.register(UniffiLib::class.java, findLibraryName(componentName = "gentlecompanion_core"))
+        uniffiCallbackInterfaceUploadProgressListener.register(this)
         
     }
 
@@ -739,13 +770,21 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_snapshot(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_upload_file(`ptr`: Long,`storedName`: RustBuffer.ByValue,`data`: RustBuffer.ByValue,`listener`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_init_callback_vtable_uploadprogresslistener(`vtable`: UniffiVTableCallbackInterfaceUploadProgressListener,
+    ): Unit
     external fun uniffi_gentlecompanion_core_fn_func_accept_host_key(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_gentlecompanion_core_fn_func_compose_prompt(`text`: RustBuffer.ByValue,`imageSuffixes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_connect(`profile`: RustBuffer.ByValue,`session`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_forget_host(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_gentlecompanion_core_fn_func_list_known_hosts(`knownHostsPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_func_plan_upload(`fileName`: RustBuffer.ByValue,`sizeBytes`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_gentlecompanion_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -869,6 +908,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_func_accept_host_key() and 0xFFFF) != 19847) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_compose_prompt() and 0xFFFF) != 26788) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_connect() and 0xFFFF) != 42500) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -876,6 +918,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_list_known_hosts() and 0xFFFF) != 22676) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_plan_upload() and 0xFFFF) != 37723) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect() and 0xFFFF) != 59131) {
@@ -900,6 +945,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot() and 0xFFFF) != 47863) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_upload_file() and 0xFFFF) != 32479) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_uploadprogresslistener_on_progress() and 0xFFFF) != 43093) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -993,7 +1044,38 @@ object UniffiWithHandle
  *
  * @suppress
  * */
-object NoHandle
+object NoHandle// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+internal const val IDX_CALLBACK_FREE = 0
+// Callback return codes
+internal const val UNIFFI_CALLBACK_SUCCESS = 0
+internal const val UNIFFI_CALLBACK_ERROR = 1
+internal const val UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
+
+/**
+ * @suppress
+ */
+public abstract class FfiConverterCallbackInterface<CallbackInterface: Any>: FfiConverter<CallbackInterface, Long> {
+    internal val handleMap = UniffiHandleMap<CallbackInterface>()
+
+    internal fun drop(handle: Long) {
+        handleMap.remove(handle)
+    }
+
+    override fun lift(value: Long): CallbackInterface {
+        return handleMap.get(value)
+    }
+
+    override fun read(buf: ByteBuffer) = lift(buf.getLong())
+
+    override fun lower(value: CallbackInterface) = handleMap.insert(value)
+
+    override fun allocationSize(value: CallbackInterface) = 8UL
+
+    override fun write(value: CallbackInterface, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
 /**
  * The cleaner interface for Object finalization code to run.
  * This is the entry point to any implementation that we're using.
@@ -1239,6 +1321,25 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
+/**
+ * @suppress
+ */
+public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
+    override fun read(buf: ByteBuffer): ByteArray {
+        val len = buf.getInt()
+        val byteArr = ByteArray(len)
+        buf.get(byteArr)
+        return byteArr
+    }
+    override fun allocationSize(value: ByteArray): ULong {
+        return 4UL + value.size.toULong()
+    }
+    override fun write(value: ByteArray, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        buf.put(value)
+    }
+}
+
 
 // This template implements a class for working with a Rust struct via a handle
 // to the live Rust struct on the other side of the FFI.
@@ -1396,6 +1497,16 @@ public interface CompanionConnectionInterface {
      * baseline so a snapshot is never a stale delta.
      */
     fun `snapshot`(): SnapshotDto?
+    
+    /**
+     * Upload one attachment to the host over the SFTP subsystem — a fresh
+     * pinned SSH session per upload, into the host's
+     * `~/.local/state/gentle-mobile/uploads/`. Progress is reported per
+     * chunk. `Ok` carries the absolute remote path (resolved by the server)
+     * and the exact prompt suffix for it; a failure means no path exists,
+     * and the caller must not send a prompt that references one.
+     */
+    fun `uploadFile`(`storedName`: kotlin.String, `data`: kotlin.ByteArray, `listener`: UploadProgressListener): UploadOutcomeDto
     
     companion object
 }
@@ -1647,6 +1758,31 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
     UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_snapshot(
         it,
         _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Upload one attachment to the host over the SFTP subsystem — a fresh
+     * pinned SSH session per upload, into the host's
+     * `~/.local/state/gentle-mobile/uploads/`. Progress is reported per
+     * chunk. `Ok` carries the absolute remote path (resolved by the server)
+     * and the exact prompt suffix for it; a failure means no path exists,
+     * and the caller must not send a prompt that references one.
+     */
+    @Throws(CompanionException::class)override fun `uploadFile`(`storedName`: kotlin.String, `data`: kotlin.ByteArray, `listener`: UploadProgressListener): UploadOutcomeDto {
+            return FfiConverterTypeUploadOutcomeDto.lift(
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_upload_file(
+        it,
+        
+        FfiConverterString.lower(`storedName`),
+        FfiConverterByteArray.lower(`data`),
+        FfiConverterTypeUploadProgressListener.lower(`listener`),_status)
 }
     }
     )
@@ -2301,6 +2437,91 @@ public object FfiConverterTypeTabDto: FfiConverterRustBuffer<TabDto> {
 
 
 
+/**
+ * One confirmed upload: the absolute remote path (resolved by the server)
+ * and the exact prompt suffix that hands the file to the agent.
+ */
+data class UploadOutcomeDto (
+    val `remotePath`: kotlin.String
+    , 
+    val `promptSuffix`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeUploadOutcomeDto: FfiConverterRustBuffer<UploadOutcomeDto> {
+    override fun read(buf: ByteBuffer): UploadOutcomeDto {
+        return UploadOutcomeDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: UploadOutcomeDto) = (
+            FfiConverterString.allocationSize(value.`remotePath`) +
+            FfiConverterString.allocationSize(value.`promptSuffix`)
+    )
+
+    override fun write(value: UploadOutcomeDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`remotePath`, buf)
+            FfiConverterString.write(value.`promptSuffix`, buf)
+    }
+}
+
+
+
+/**
+ * The upload plan for one attachment: the stored name (timestamp-prefixed,
+ * sanitised) and the size ceiling it was checked against. Advisory for the
+ * UI — the transfer itself re-checks everything.
+ */
+data class UploadPlanDto (
+    val `storedName`: kotlin.String
+    , 
+    val `maxBytes`: kotlin.ULong
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeUploadPlanDto: FfiConverterRustBuffer<UploadPlanDto> {
+    override fun read(buf: ByteBuffer): UploadPlanDto {
+        return UploadPlanDto(
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: UploadPlanDto) = (
+            FfiConverterString.allocationSize(value.`storedName`) +
+            FfiConverterULong.allocationSize(value.`maxBytes`)
+    )
+
+    override fun write(value: UploadPlanDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`storedName`, buf)
+            FfiConverterULong.write(value.`maxBytes`, buf)
+    }
+}
+
+
+
 data class WorkspaceDto (
     val `id`: kotlin.String
     , 
@@ -2471,6 +2692,28 @@ sealed class CompanionException: kotlin.Exception() {
             get() = "method=${ `method` }, detail=${ `detail` }"
     }
     
+    /**
+     * The file is over the upload size limit; refused before any byte moved.
+     */
+    class UploadTooLarge(
+        
+        val `sizeBytes`: kotlin.ULong, 
+        
+        val `maxBytes`: kotlin.ULong
+        ) : CompanionException() {
+        override val message
+            get() = "sizeBytes=${ `sizeBytes` }, maxBytes=${ `maxBytes` }"
+    }
+    
+    /**
+     * The file name has no usable form once sanitised.
+     */
+    class UploadEmptyName(
+        ) : CompanionException() {
+        override val message
+            get() = ""
+    }
+    
 
     
 
@@ -2516,6 +2759,11 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
                 FfiConverterString.read(buf),
                 FfiConverterString.read(buf),
                 )
+            8 -> CompanionException.UploadTooLarge(
+                FfiConverterULong.read(buf),
+                FfiConverterULong.read(buf),
+                )
+            9 -> CompanionException.UploadEmptyName()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -2563,6 +2811,16 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
                 + FfiConverterString.allocationSize(value.`method`)
                 + FfiConverterString.allocationSize(value.`detail`)
             )
+            is CompanionException.UploadTooLarge -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterULong.allocationSize(value.`sizeBytes`)
+                + FfiConverterULong.allocationSize(value.`maxBytes`)
+            )
+            is CompanionException.UploadEmptyName -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
         }
     }
 
@@ -2607,6 +2865,16 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
                 buf.putInt(7)
                 FfiConverterString.write(value.`method`, buf)
                 FfiConverterString.write(value.`detail`, buf)
+                Unit
+            }
+            is CompanionException.UploadTooLarge -> {
+                buf.putInt(8)
+                FfiConverterULong.write(value.`sizeBytes`, buf)
+                FfiConverterULong.write(value.`maxBytes`, buf)
+                Unit
+            }
+            is CompanionException.UploadEmptyName -> {
+                buf.putInt(9)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -2720,6 +2988,70 @@ public object FfiConverterTypeConnectOutcome : FfiConverterRustBuffer<ConnectOut
 }
 
 
+
+
+
+
+
+/**
+ * Progress callbacks for an in-flight upload: one call per written chunk.
+ */
+public interface UploadProgressListener {
+    
+    fun `onProgress`(`sentBytes`: kotlin.ULong, `totalBytes`: kotlin.ULong)
+    
+    companion object
+}
+
+
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceUploadProgressListener {
+    internal object `onProgress`: UniffiCallbackInterfaceUploadProgressListenerMethod0 {
+        override fun callback(`uniffiHandle`: Long,`sentBytes`: Long,`totalBytes`: Long,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeUploadProgressListener.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`onProgress`(
+                    FfiConverterULong.lift(`sentBytes`),
+                    FfiConverterULong.lift(`totalBytes`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeUploadProgressListener.handleMap.remove(handle)
+        }
+    }
+
+    internal object uniffiClone: UniffiCallbackInterfaceClone {
+        override fun callback(handle: Long): Long {
+            return FfiConverterTypeUploadProgressListener.handleMap.clone(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceUploadProgressListener.UniffiByValue(
+        uniffiFree,
+        uniffiClone,
+        `onProgress`,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_gentlecompanion_core_fn_init_callback_vtable_uploadprogresslistener(vtable)
+    }
+}
+
+/**
+ * The ffiConverter which transforms the Callbacks in to handles to pass to Rust.
+ *
+ * @suppress
+ */
+public object FfiConverterTypeUploadProgressListener: FfiConverterCallbackInterface<UploadProgressListener>()
 
 
 
@@ -3064,6 +3396,24 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
     
 
         /**
+         * The final prompt text for a send with uploads: the draft plus one
+         * `[attached image: <path>]` line per uploaded file. The UI passes only
+         * suffixes handed back by confirmed uploads, so a failed upload can never
+         * reach the agent as a path.
+         */ fun `composePrompt`(`text`: kotlin.String, `imageSuffixes`: List<kotlin.String>): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_compose_prompt(
+    
+        
+        FfiConverterString.lower(`text`),
+        FfiConverterSequenceString.lower(`imageSuffixes`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Connect off the UI thread. Before any data flows, the host key is probed
          * and checked against the pins: unknown or mismatched keys come back as a
          * [`ConnectOutcome::Challenge`] with the real fingerprint and the presented
@@ -3113,6 +3463,23 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
     
         
         FfiConverterString.lower(`knownHostsPath`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Plan one attachment before any byte moves: sanitise the name, prefix the
+         * compact UTC timestamp, and refuse oversize files instantly.
+         */
+    @Throws(CompanionException::class) fun `planUpload`(`fileName`: kotlin.String, `sizeBytes`: kotlin.ULong): UploadPlanDto {
+            return FfiConverterTypeUploadPlanDto.lift(
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_plan_upload(
+    
+        
+        FfiConverterString.lower(`fileName`),
+        FfiConverterULong.lower(`sizeBytes`),_status)
 }
     )
     }
