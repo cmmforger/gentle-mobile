@@ -194,6 +194,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T19 | v1 packaging: signed APK release, what's-new page, sideload instructions, iOS target kept building | S10 | inline | — |
 | T20 | **Deferred (S16):** optional upstream ask for B-ii, a minimal `--attach-stdio` bridge for `gentle-shell-gpui`, after a `LICENSE` file exists. Not scheduled. | S3 S13 S16 | inline | — |
 | T21 | Continuity (v1.5): list the host's Gentle Shell sessions and resume a closed one, with a guard that refuses a session another process holds | S15 | worker | — |
+| T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
 
@@ -409,3 +410,5 @@ exposes `sendKeys`; the row sends real events with one-shot sticky Ctrl/Alt, ver
 package instead of being rewritten by hand, and the stale pre-rename source tree is gone. 56 core tests.
 Release APK 57,953,496 bytes signed and copied to `~/Downloads/gentle-mobile-0.1.0.apk`; the emulator's test key
 was revoked from `authorized_keys` with `gentle-companion-pair --revoke`, leaving other keys untouched.
+
+**L15 (auto-update noted, stack unchanged):** A reader proposed Expo + Rust core + EAS Update with a host daemon and an on-device local mode. Checked against what exists: their security model (phone-generated ed25519, one-time token, host fingerprint against MITM) is already implemented and verified here, so it validates S22 rather than replacing it. Recorded decision: **stack unchanged** — React Native would still need the Rust module for SSH, adds a JS hop to the most latency-sensitive screen, and does not unblock iOS, which needs macOS and Xcode regardless. Two ideas taken: the single-use token (already S22) and **auto-update of the APK**, logged as T19b, the cheap part of OTA without re-platforming. The host daemon and the on-device agent are product changes, not implementation choices, and stay out of scope.
