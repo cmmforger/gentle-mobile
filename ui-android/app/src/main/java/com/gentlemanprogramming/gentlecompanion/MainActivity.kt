@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -299,6 +300,8 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Tokens.accent,
                         contentColor = Tokens.bg,
+                        // A disabled action must read as disabled, not as a
+                        // broken dark button: keep it legible and obviously off.
                         disabledContainerColor = Tokens.accentPressed,
                         disabledContentColor = Tokens.bg,
                     ),
@@ -371,6 +374,10 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Tokens.accent,
                         contentColor = Tokens.bg,
+                        // A disabled action must read as disabled, not as a
+                        // broken dark button: keep it legible and obviously off.
+                        disabledContainerColor = Tokens.line,
+                        disabledContentColor = Tokens.muted,
                     ),
                 ) {
                     Text(text = "Accept & connect", fontWeight = FontWeight.SemiBold)
@@ -738,6 +745,11 @@ private fun SessionScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            // Edge-to-edge: without the insets the header sits under the status
+            // bar and the composer under the navigation bar, and the keyboard
+            // would cover the field the user is typing into.
+            .safeDrawingPadding()
+            .imePadding()
             .padding(16.dp),
     ) {
         // Header: back to the agents list, agent name and its cwd.

@@ -69,7 +69,7 @@ const val TERMINAL_FONT_RATIO = 0.6f
  * grid's columns would shrink the font below this, the font stops
  * shrinking and the grid scrolls horizontally instead — the right edge is
  * never silently clipped. */
-val TerminalFontMinSp = 7.sp
+val TerminalFontMinSp = 10.sp
 
 /** Pinch zoom ceiling, in sp. */
 val TerminalFontMaxSp = 28.sp
