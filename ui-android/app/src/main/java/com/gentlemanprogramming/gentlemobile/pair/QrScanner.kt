@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.LifecycleOwner
-import com.gentlemanprogramming.gentlemobile.ui.theme.Tokens
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
@@ -95,7 +95,7 @@ fun QrScannerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Tokens.bg)
+            .background(LocalPalette.current.bg)
             .safeDrawingPadding(),
     ) {
         AndroidView(
@@ -150,7 +150,7 @@ fun QrScannerScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(44.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Tokens.accent),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = LocalPalette.current.accent),
             ) {
                 Text("Cancel")
             }

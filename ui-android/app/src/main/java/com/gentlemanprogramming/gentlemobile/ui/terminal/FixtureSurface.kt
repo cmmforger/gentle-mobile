@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.sp
 import com.gentlemanprogramming.gentlemobile.core.CellDto
 import com.gentlemanprogramming.gentlemobile.core.CursorDto
 import com.gentlemanprogramming.gentlemobile.core.SurfaceDto
-import com.gentlemanprogramming.gentlemobile.ui.theme.Tokens
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 
 /**
  * A deterministic 80x24 surface for layout work.
@@ -96,7 +96,7 @@ fun FixtureTerminal(modifier: Modifier = Modifier) {
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(Tokens.bg)
+            .background(LocalPalette.current.bg)
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         // Fit first, but never below a readable size: past that the grid scrolls
@@ -107,7 +107,7 @@ fun FixtureTerminal(modifier: Modifier = Modifier) {
         Column(Modifier.fillMaxSize()) {
             Text(
                 text = "fixture · $COLS×$ROWS · font ${"%.1f".format(fontSizePx)}px" + if (needsScroll) " · scroll" else "",
-                color = Tokens.muted,
+                color = LocalPalette.current.muted,
                 fontSize = 11.sp,
                 modifier = Modifier.fillMaxWidth(),
             )

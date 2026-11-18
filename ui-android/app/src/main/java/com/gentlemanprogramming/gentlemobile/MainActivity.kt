@@ -89,8 +89,14 @@ import com.gentlemanprogramming.gentlemobile.pair.PairCommand
 import com.gentlemanprogramming.gentlemobile.pair.PairLink
 import com.gentlemanprogramming.gentlemobile.pair.PairLinkResult
 import com.gentlemanprogramming.gentlemobile.pair.QrScannerScreen
+import com.gentlemanprogramming.gentlemobile.ui.settings.SettingsScreen
+import com.gentlemanprogramming.gentlemobile.ui.settings.ThemePickerScreen
+import com.gentlemanprogramming.gentlemobile.ui.splash.SplashScreen
+import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.GentleMobileTheme
-import com.gentlemanprogramming.gentlemobile.ui.theme.Tokens
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
+import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
+import com.gentlemanprogramming.gentlemobile.ui.theme.ThemeStore
 import com.gentlemanprogramming.gentlemobile.ui.terminal.SurfaceStats
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMaxSp
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMinSp
@@ -135,7 +141,11 @@ class MainActivity : ComponentActivity() {
         // host-key challenge or a live agent.
         val showFixture = intent?.getBooleanExtra("fixture", false) == true
         setContent {
-            GentleMobileTheme {
+            val themeStore = remember {
+                ThemeStore(SharedPreferencesStore(this@MainActivity))
+            }
+            var appTheme by remember { mutableStateOf(themeStore.selected()) }
+            GentleMobileTheme(appTheme) {
                 if (showFixture) {
                     com.gentlemanprogramming.gentlemobile.ui.terminal.FixtureTerminal()
                 } else {
@@ -145,7 +155,16 @@ class MainActivity : ComponentActivity() {
                     // keypair on first launch — no files are pushed any more.
                     val keyPath = File(filesDir, DeviceIdentity.KEY_FILE).absolutePath
                     val knownHostsPath = File(filesDir, "known_hosts").absolutePath
-                    ConnectScreen(keyPath = keyPath, knownHostsPath = knownHostsPath)
+                    ConnectScreen(
+                        keyPath = keyPath,
+                        knownHostsPath = knownHostsPath,
+                        appTheme = appTheme,
+                        onSelectTheme = { theme ->
+                            // Applied immediately, persisted for the next launch.
+                            appTheme = theme
+                            themeStore.select(theme)
+                        },
+                    )
                 }
             }
         }
@@ -198,11 +217,21 @@ private class SessionUi {
     }
 }
 
+/** The screens reachable from the Pair flow; the design shows back buttons. */
+private enum class Route { Main, Settings, Themes }
+
 @Composable
-fun ConnectScreen(keyPath: String, knownHostsPath: String) {
+fun ConnectScreen(
+    keyPath: String,
+    knownHostsPath: String,
+    appTheme: AppTheme,
+    onSelectTheme: (AppTheme) -> Unit,
+) {
     val screen = remember { ScreenState() }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+
+    var route by remember { mutableStateOf(Route.Main) }
 
     var host by remember { mutableStateOf("10.0.2.2") }
     var port by remember { mutableStateOf("2222") }
@@ -221,6 +250,56 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
         } catch (error: Exception) {
             identityError = describe(error)
         }
+    }
+
+    // Splash (S21, board 01): the mark, the wordmark and a thin progress line
+    // for exactly as long as the cold-start key work runs — never a fake
+    // delay. It hides as soon as the first screen is ready, including when
+    // the key work failed (the error is shown instead of a spinner).
+    if (identity == null && identityError == null) {
+        SplashScreen()
+        return
+    }
+
+    fun disconnectLive() {
+        val current = screen.ui
+        if (current is UiState.Connected) {
+            screen.generation += 1
+            val connection = current.connection
+            executor.execute {
+                try {
+                    connection.disconnect()
+                } catch (_: Exception) {
+                }
+            }
+            screen.ui = UiState.Form
+        }
+    }
+
+    if (route == Route.Settings) {
+        SettingsScreen(
+            identity = identity,
+            identityError = identityError,
+            knownHostsPath = knownHostsPath,
+            theme = appTheme,
+            connected = screen.ui is UiState.Connected,
+            onOpenThemes = { route = Route.Themes },
+            onDisconnect = {
+                disconnectLive()
+                route = Route.Main
+            },
+            onBack = { route = Route.Main },
+        )
+        return
+    }
+    if (route == Route.Themes) {
+        ThemePickerScreen(
+            current = appTheme,
+            onSelect = onSelectTheme,
+            // Board 06: the topbar's back returns to settings.
+            onBack = { route = Route.Settings },
+        )
+        return
     }
 
     // Pairing link paste + QR scan.
@@ -340,12 +419,27 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
     ) {
         if (screen.ui !is UiState.Session) {
             // The session screen has its own compact header; the topbar stays
-            // quiet so the Pair screen's own headline leads the surface.
-            Text(
-                text = "Gentle Mobile",
-                color = Tokens.muted,
-                fontSize = 13.sp,
-            )
+            // quiet so the Pair screen's own headline leads the surface. The
+            // Settings affordance lives here: the one screen the boards route
+            // everything else from.
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(
+                    text = "Gentle Mobile",
+                    color = LocalPalette.current.muted,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "Settings",
+                    color = LocalPalette.current.accentEdge,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .heightIn(min = 44.dp)
+                        .clickable { route = Route.Settings }
+                        .padding(horizontal = 8.dp, vertical = 12.dp),
+                )
+            }
             Spacer(Modifier.height(16.dp))
         }
 
@@ -374,7 +468,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "Run gentle-companion-pair on the host, then paste its link — or scan the QR. Works over Tailscale or plain SSH.",
-                    color = Tokens.muted,
+                    color = LocalPalette.current.muted,
                     fontSize = 13.sp,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -389,13 +483,13 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                 when {
                     identityFailure != null -> Text(
                         text = identityFailure,
-                        color = Tokens.error,
+                        color = LocalPalette.current.error,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace,
                     )
                     identity == null -> Text(
                         text = "Creating the key…",
-                        color = Tokens.muted,
+                        color = LocalPalette.current.muted,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace,
                     )
@@ -408,7 +502,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                                 fontFamily = FontFamily.Monospace,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Tokens.surfaceRaised, RoundedCornerShape(8.dp))
+                                    .background(LocalPalette.current.surfaceRaised, RoundedCornerShape(8.dp))
                                     .padding(12.dp),
                             )
                         }
@@ -426,7 +520,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                             Text(
                                 text = if (copiedKey) "Copied" else
                                     "The host must trust this key before it can connect.",
-                                color = if (copiedKey) Tokens.accent else Tokens.muted,
+                                color = if (copiedKey) LocalPalette.current.accent else LocalPalette.current.muted,
                                 fontSize = 11.sp,
                                 maxLines = 2,
                             )
@@ -442,14 +536,14 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                 if (identityForCommand == null) {
                     Text(
                         text = "Ready when this phone's key exists.",
-                        color = Tokens.muted,
+                        color = LocalPalette.current.muted,
                         fontSize = 12.sp,
                     )
                 } else {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         Text(
                             text = buildAnnotatedString {
-                                withStyle(SpanStyle(color = Tokens.accent)) { append("\u27AF ") }
+                                withStyle(SpanStyle(color = LocalPalette.current.accent)) { append("\u27AF ") }
                                 append(PairCommand.addKey(identityForCommand.publicKeyLine))
                             },
                             color = MaterialTheme.colorScheme.onBackground,
@@ -476,7 +570,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                         Spacer(Modifier.height(4.dp))
                         Text(
                             text = "Copied — run it on the host.",
-                            color = Tokens.accent,
+                            color = LocalPalette.current.accent,
                             fontSize = 11.sp,
                         )
                     }
@@ -497,7 +591,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                     placeholder = {
                         Text(
                             "gc://host:port?user=\u2026",
-                            color = Tokens.muted,
+                            color = LocalPalette.current.muted,
                             fontSize = 13.sp,
                             fontFamily = FontFamily.Monospace,
                         )
@@ -509,11 +603,11 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                     ),
                     shape = RoundedCornerShape(8.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Tokens.accent,
-                        unfocusedBorderColor = Tokens.line,
-                        focusedContainerColor = Tokens.surface,
-                        unfocusedContainerColor = Tokens.surface,
-                        cursorColor = Tokens.accent,
+                        focusedBorderColor = LocalPalette.current.accent,
+                        unfocusedBorderColor = LocalPalette.current.line,
+                        focusedContainerColor = LocalPalette.current.surface,
+                        unfocusedContainerColor = LocalPalette.current.surface,
+                        cursorColor = LocalPalette.current.accent,
                     ),
                 )
                 Spacer(Modifier.height(8.dp))
@@ -533,13 +627,13 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                     )
                 }
                 pairError?.let { error ->
-                    Notice(error, Tokens.error)
+                    Notice(error, LocalPalette.current.error)
                 }
                 if (pasted) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = "Will connect to $host \u00B7 $port \u00B7 $user",
-                        color = Tokens.muted,
+                        color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 1,
@@ -559,12 +653,12 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                         .height(44.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Tokens.accent,
-                        contentColor = Tokens.bg,
+                        containerColor = LocalPalette.current.accent,
+                        contentColor = LocalPalette.current.bg,
                         // A disabled action must read as disabled, not as a
                         // broken dark button: keep it legible and obviously off.
-                        disabledContainerColor = Tokens.accentPressed,
-                        disabledContentColor = Tokens.bg,
+                        disabledContainerColor = LocalPalette.current.accentPressed,
+                        disabledContentColor = LocalPalette.current.bg,
                     ),
                 ) {
                     Text(
@@ -576,13 +670,13 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = "Probing the host key, then opening the bridge\u2026",
-                        color = Tokens.muted,
+                        color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                     )
                 }
                 if (current is UiState.Failed) {
-                    Notice(current.message, Tokens.error)
+                    Notice(current.message, LocalPalette.current.error)
                 }
                 Spacer(Modifier.height(12.dp))
                 Hairline()
@@ -609,14 +703,14 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                 }
                 cameraMessage?.let { message ->
                     Spacer(Modifier.height(6.dp))
-                    Text(text = message, color = Tokens.muted, fontSize = 12.sp)
+                    Text(text = message, color = LocalPalette.current.muted, fontSize = 12.sp)
                 }
             }
 
             is UiState.Challenge -> {
                 Text(
                     text = "Verify this host",
-                    color = Tokens.muted,
+                    color = LocalPalette.current.muted,
                     fontSize = 11.sp,
                     letterSpacing = 0.8.sp,
                 )
@@ -634,7 +728,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Tokens.surfaceRaised, RoundedCornerShape(8.dp))
+                        .background(LocalPalette.current.surfaceRaised, RoundedCornerShape(8.dp))
                         .padding(12.dp),
                 )
                 if (current.pinned != null) {
@@ -642,7 +736,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                     Text(
                         text = "The pinned key is different: ${current.pinned}. " +
                             "Accepting retires the old pin.",
-                        color = Tokens.error,
+                        color = LocalPalette.current.error,
                         fontSize = 12.sp,
                     )
                 }
@@ -654,12 +748,12 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                         .height(44.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Tokens.accent,
-                        contentColor = Tokens.bg,
+                        containerColor = LocalPalette.current.accent,
+                        contentColor = LocalPalette.current.bg,
                         // A disabled action must read as disabled, not as a
                         // broken dark button: keep it legible and obviously off.
-                        disabledContainerColor = Tokens.line,
-                        disabledContentColor = Tokens.muted,
+                        disabledContainerColor = LocalPalette.current.line,
+                        disabledContentColor = LocalPalette.current.muted,
                     ),
                 ) {
                     Text(text = "Accept & connect", fontWeight = FontWeight.SemiBold)
@@ -672,7 +766,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                         .height(44.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = Tokens.muted,
+                        contentColor = LocalPalette.current.muted,
                     ),
                 ) {
                     Text(text = "Cancel")
@@ -687,13 +781,13 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                 ) {
                     Text(
                         text = "Connected · $session",
-                        color = Tokens.accent,
+                        color = LocalPalette.current.accent,
                         fontSize = 11.sp,
                         letterSpacing = 0.8.sp,
                     )
                     Text(
                         text = "Disconnect",
-                        color = Tokens.muted,
+                        color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                         modifier = Modifier.clickable {
                             screen.generation += 1
@@ -712,7 +806,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                 if (snapshot == null) {
                     Text(
                         text = "Waiting for the first snapshot…",
-                        color = Tokens.muted,
+                        color = LocalPalette.current.muted,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace,
                     )
@@ -721,14 +815,14 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                         text = "${snapshot.workspaces.size} workspaces · " +
                             "${snapshot.tabs.size} tabs · ${snapshot.panes.size} panes · " +
                             "${snapshot.agents.size} agents",
-                        color = Tokens.muted,
+                        color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
                         text = "Agents",
-                        color = Tokens.muted,
+                        color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                         letterSpacing = 0.8.sp,
                     )
@@ -736,7 +830,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                         Spacer(Modifier.height(8.dp))
                         Text(
                             text = "No agents in this snapshot.",
-                            color = Tokens.muted,
+                            color = LocalPalette.current.muted,
                             fontSize = 13.sp,
                         )
                     } else {
@@ -755,7 +849,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                                     Modifier
                                         .fillMaxWidth()
                                         .height(1.dp)
-                                        .background(Tokens.line),
+                                        .background(LocalPalette.current.line),
                                 )
                             }
                         }
@@ -1038,7 +1132,7 @@ private fun SessionScreen(
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(
                 text = "‹ Agents",
-                color = Tokens.accent,
+                color = LocalPalette.current.accent,
                 fontSize = 13.sp,
                 modifier = Modifier
                     .clickable(onClick = onBack)
@@ -1056,7 +1150,7 @@ private fun SessionScreen(
                 )
                 Text(
                     text = listOfNotNull(agent.cwd, statusWord(agent.status)).joinToString(" · "),
-                    color = Tokens.muted,
+                    color = LocalPalette.current.muted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -1065,7 +1159,7 @@ private fun SessionScreen(
             }
             Text(
                 text = "Refresh",
-                color = Tokens.accent,
+                color = LocalPalette.current.accent,
                 fontSize = 13.sp,
                 modifier = Modifier
                     .clickable(onClick = onRefresh)
@@ -1075,7 +1169,7 @@ private fun SessionScreen(
         Spacer(Modifier.height(8.dp))
         Text(
             text = "The agent's pane, drawn live from the surface stream",
-            color = Tokens.muted,
+            color = LocalPalette.current.muted,
             fontSize = 11.sp,
             letterSpacing = 0.8.sp,
         )
@@ -1147,7 +1241,7 @@ private fun SessionScreen(
                     if (statsLine.isNotEmpty()) {
                         Text(
                             text = statsLine,
-                            color = Tokens.muted,
+                            color = LocalPalette.current.muted,
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace,
                             maxLines = 1,
@@ -1196,7 +1290,7 @@ private fun SessionScreen(
                                 append(if (atBottom) " · at bottom" else " · scrolled")
                             }
                         },
-                        color = Tokens.muted,
+                        color = LocalPalette.current.muted,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 1,
@@ -1207,7 +1301,7 @@ private fun SessionScreen(
         } else when {
             readError != null -> Text(
                 text = readError,
-                color = Tokens.error,
+                color = LocalPalette.current.error,
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
             )
@@ -1226,14 +1320,14 @@ private fun SessionScreen(
                         .fillMaxWidth()
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
-                        .background(Tokens.surface, RoundedCornerShape(8.dp))
+                        .background(LocalPalette.current.surface, RoundedCornerShape(8.dp))
                         .padding(12.dp),
                 )
                 if (pane?.truncated == true) {
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = "The host left out older rows.",
-                        color = Tokens.muted,
+                        color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                     )
                 }
@@ -1248,7 +1342,7 @@ private fun SessionScreen(
         sessionUi.sendError?.let { error ->
             Text(
                 text = error,
-                color = Tokens.error,
+                color = LocalPalette.current.error,
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
             )
@@ -1257,7 +1351,7 @@ private fun SessionScreen(
         if (sessionUi.sent) {
             Text(
                 text = "Sent — the host confirmed the submission.",
-                color = Tokens.accent,
+                color = LocalPalette.current.accent,
                 fontSize = 12.sp,
             )
             Spacer(Modifier.height(4.dp))
@@ -1273,7 +1367,7 @@ private fun SessionScreen(
                 singleLine = false,
                 maxLines = 3,
                 placeholder = {
-                    Text("Prompt ${agent.name}…", color = Tokens.muted, fontSize = 13.sp)
+                    Text("Prompt ${agent.name}…", color = LocalPalette.current.muted, fontSize = 13.sp)
                 },
                 textStyle = TextStyle(
                     color = MaterialTheme.colorScheme.onBackground,
@@ -1282,11 +1376,11 @@ private fun SessionScreen(
                 ),
                 shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Tokens.accent,
-                    unfocusedBorderColor = Tokens.line,
-                    focusedContainerColor = Tokens.surface,
-                    unfocusedContainerColor = Tokens.surface,
-                    cursorColor = Tokens.accent,
+                    focusedBorderColor = LocalPalette.current.accent,
+                    unfocusedBorderColor = LocalPalette.current.line,
+                    focusedContainerColor = LocalPalette.current.surface,
+                    unfocusedContainerColor = LocalPalette.current.surface,
+                    cursorColor = LocalPalette.current.accent,
                 ),
             )
             Spacer(Modifier.width(8.dp))
@@ -1297,10 +1391,10 @@ private fun SessionScreen(
                     .height(44.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Tokens.accent,
-                    contentColor = Tokens.bg,
-                    disabledContainerColor = Tokens.accentPressed,
-                    disabledContentColor = Tokens.bg,
+                    containerColor = LocalPalette.current.accent,
+                    contentColor = LocalPalette.current.bg,
+                    disabledContainerColor = LocalPalette.current.accentPressed,
+                    disabledContentColor = LocalPalette.current.bg,
                 ),
             ) {
                 Text(
@@ -1317,7 +1411,7 @@ private fun BlockLabel(text: String) {
     // design/system.md: uppercase meta labels, one step smaller and muted.
     Text(
         text = text.uppercase(),
-        color = Tokens.muted,
+        color = LocalPalette.current.muted,
         fontSize = 11.sp,
         letterSpacing = 0.8.sp,
     )
@@ -1332,7 +1426,7 @@ private fun Hairline() {
         Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(Tokens.line),
+            .background(LocalPalette.current.line),
     )
     Spacer(Modifier.height(12.dp))
 }
@@ -1401,9 +1495,9 @@ private fun AgentRow(agent: AgentDto, onOpen: () -> Unit) {
                 Text(
                     text = statusWord(agent.status),
                     color = when (agent.status) {
-                        AgentStatusDto.WORKING -> Tokens.accent
-                        AgentStatusDto.BLOCKED -> Tokens.error
-                        else -> Tokens.muted
+                        AgentStatusDto.WORKING -> LocalPalette.current.accent
+                        AgentStatusDto.BLOCKED -> LocalPalette.current.error
+                        else -> LocalPalette.current.muted
                     },
                     fontSize = 11.sp,
                     letterSpacing = 0.5.sp,
@@ -1412,14 +1506,14 @@ private fun AgentRow(agent: AgentDto, onOpen: () -> Unit) {
             }
             Text(
                 text = listOfNotNull(agent.kind, agent.cwd).joinToString(" · "),
-                color = Tokens.muted,
+                color = LocalPalette.current.muted,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(text = "›", color = Tokens.muted, fontSize = 15.sp)
+        Text(text = "›", color = LocalPalette.current.muted, fontSize = 15.sp)
     }
 }
 
@@ -1441,6 +1535,8 @@ private fun ConnectScreenPreview() {
         ConnectScreen(
             keyPath = "/data/local/tmp/client_ed25519",
             knownHostsPath = "/data/known_hosts",
+            appTheme = AppTheme.CUTE,
+            onSelectTheme = {},
         )
     }
 }
