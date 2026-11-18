@@ -22,6 +22,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,11 +40,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
+import kotlinx.coroutines.delay
 
 /**
  * The session composer, per `design/gentle-companion/04-session.html`: one
@@ -56,12 +63,21 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
  * + name + meta line, with uploading (progress bar), uploaded (`✓ uploaded ·
  * size · path`) and failed (`Retry` / remove) states.
  *
+ * T14 (S8): the microphone is live — speech becomes text in the field, per
+ * `05-compose.html`: while listening, a quiet line above the composer shows
+ * the partial transcript in italics, the elapsed time, and Stop (plus
+ * Cancel); partials fill the field as they arrive and the final result
+ * replaces them. Every honest failure — permission denied, no recognizer,
+ * recognition error — keeps the microphone disabled with that exact reason
+ * on the line below, never a silent no-op. The circle returns to the send
+ * triangle as soon as the field has text.
+ *
  * Honesty rules:
- * * dictation (T14) is still not implemented, so the mic renders disabled
- *   with its reason as a one-line note — never a control that pretends;
- * * the send action exists only while every attachment has landed: a failed
+ * * a send exists only while every attachment has landed: a failed
  *   or in-flight upload blocks the send, so a prompt can never reference a
- *   file that is not on the host.
+ *   file that is not on the host;
+ * * the dictation circle never pretends: unavailable states render disabled
+ *   with the reason, and listening renders the real transcript arriving.
  * The field starts at 44 px and grows to at most 96 px; the row lifts with
  * the IME (the caller applies imePadding) and never scrolls off screen.
  */
@@ -74,9 +90,13 @@ fun SessionComposer(
     sending: Boolean,
     sendError: String?,
     sent: Boolean,
+    dictation: DictationState,
     onSend: () -> Unit,
     onCamera: () -> Unit,
     onPickImage: () -> Unit,
+    onStartDictation: () -> Unit,
+    onStopDictation: () -> Unit,
+    onCancelDictation: () -> Unit,
     onRetryUpload: (Long) -> Unit,
     onRemoveAttachment: (Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -119,6 +139,25 @@ fun SessionComposer(
         if (attachments.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
         }
+        // T14: the dictation lines, per 05-compose.html — while listening a
+        // quiet line with the partial transcript and Stop; any honest
+        // failure (permission denied, no recognizer, error) shows its exact
+        // reason on the line below, never silently.
+        when (val dictationState = dictation) {
+            is DictationState.Listening -> DictationListeningLine(
+                partial = dictationState.partial,
+                startedAtMillis = dictationState.startedAtMillis,
+                onStop = onStopDictation,
+                onCancel = onCancelDictation,
+            )
+            is DictationState.RequestingPermission -> DictationReasonLine(dictationState.explanation)
+            else -> {
+                val reason = dictation.disabledReason()
+                if (reason != null) {
+                    DictationReasonLine(reason)
+                }
+            }
+        }
         // align-items:end on the board: the circle pins to the bottom of the
         // growing field.
         Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth()) {
@@ -135,19 +174,103 @@ fun SessionComposer(
                 sending = sending,
                 hasContent = draft.isNotBlank() ||
                     attachments.any { it.state is AttachmentState.Uploaded },
+                dictation = dictation,
                 onSend = onSend,
+                onStartDictation = onStartDictation,
+                onStopDictation = onStopDictation,
             )
         }
         Spacer(Modifier.height(4.dp))
-        if (draft.isBlank() && attachments.none { it.state is AttachmentState.Uploaded }) {
-            Text(
-                text = "Dictation is not implemented yet (T14) — the microphone stays disabled.",
-                color = palette.muted,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-            )
+    }
+}
+
+/**
+ * The listening line, per 05-compose.html's `.listen`: a 2 px accent bar on
+ * the left, the partial transcript in italics (never a voice-clip UI — S8:
+ * audio becomes text), the elapsed time, and Stop — plus Cancel, so stopping
+ * and discarding are both explicit buttons, never gesture-only (S6).
+ */
+@Composable
+private fun DictationListeningLine(
+    partial: String?,
+    startedAtMillis: Long,
+    onStop: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    // The elapsed clock ticks while the recognizer listens.
+    var now by remember(startedAtMillis) { mutableLongStateOf(startedAtMillis) }
+    LaunchedEffect(startedAtMillis) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(500)
         }
     }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Box(
+            Modifier
+                .width(2.dp)
+                .height(44.dp)
+                .background(palette.accentEdge),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = if (partial != null) {
+                "Listening… \"$partial\""
+            } else {
+                "Listening…"
+            },
+            color = palette.muted,
+            fontSize = 13.sp,
+            fontStyle = FontStyle.Italic,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = formatDictationElapsed(startedAtMillis, now),
+            color = palette.muted,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        DictationAction("Stop", palette.accentEdge, enabled = true, onClick = onStop)
+        DictationAction("Cancel", palette.muted, enabled = true, onClick = onCancel)
+    }
+}
+
+/** One 44 px text action on the listening line. */
+@Composable
+private fun DictationAction(label: String, tint: Color, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(44.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics { contentDescription = label },
+    ) {
+        Text(
+            text = label,
+            color = if (enabled) tint else tint.copy(alpha = 0.5f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/** The exact honest reason (permission, availability, error) on one quiet line. */
+@Composable
+private fun DictationReasonLine(reason: String) {
+    val palette = LocalPalette.current
+    Text(
+        text = reason,
+        color = palette.muted,
+        fontSize = 11.sp,
+        fontFamily = FontFamily.Monospace,
+    )
 }
 
 /** The blocking rule, shared with the queue: nothing may send while any
@@ -366,39 +489,65 @@ private fun ComposerIcon(drawable: Int, description: String, enabled: Boolean, o
 }
 
 /**
- * The far-right 44 px accent circle: a disabled microphone while the field
- * is empty and nothing is uploaded (dictation is T14 — rendered honestly,
- * never a tap target that pretends), the enabled send triangle once there
- * is text or an uploaded image.
+ * The far-right 44 px accent circle, per 04-session.html: the microphone
+ * while the field is empty, the send triangle once there is text.
+ *
+ * T14: the microphone is live — a tap starts dictation (idle, finished,
+ * or after a retryable failure), a tap while listening stops it, and an
+ * unavailable state renders it disabled with the exact reason spoken to
+ * accessibility, never a silent no-op.
  */
 @Composable
 private fun ComposerCircle(
     canSend: Boolean,
     sending: Boolean,
     hasContent: Boolean,
+    dictation: DictationState,
     onSend: () -> Unit,
+    onStartDictation: () -> Unit,
+    onStopDictation: () -> Unit,
 ) {
     val palette = LocalPalette.current
     val sendEnabled = canSend && !sending
-    val circleModifier = if (sendEnabled) {
-        Modifier
+    // A tap on the circle during dictation stops it; the listening line's
+    // Stop and Cancel buttons are the explicit path too.
+    val listening = dictation is DictationState.Listening
+    val micStartable = dictation is DictationState.Idle ||
+        dictation is DictationState.Finished ||
+        dictation is DictationState.Denied ||
+        dictation is DictationState.Error
+    val micEnabled = listening || micStartable
+    val micDescription = when (dictation) {
+        is DictationState.Listening -> "Stop dictation"
+        is DictationState.RequestingPermission -> "Dictate — waiting for the microphone permission"
+        is DictationState.Denied -> "Dictate — speech becomes text. ${dictation.explanation}"
+        is DictationState.Unavailable -> "Dictate — speech becomes text. ${dictation.reason}"
+        is DictationState.Error -> "Dictate — speech becomes text. Try again: ${dictation.message}"
+        else -> "Dictate — speech becomes text"
+    }
+    val circleModifier = when {
+        sendEnabled -> Modifier
             .size(44.dp)
             .clip(CircleShape)
             .background(palette.accent)
             .clickable(onClick = onSend)
             .semantics { contentDescription = "Send" }
-    } else {
-        Modifier
+        hasContent -> Modifier
             .size(44.dp)
             .clip(CircleShape)
             .background(palette.accentPressed)
-            .semantics {
-                contentDescription = if (hasContent) {
-                    "Send — waiting for the attachments to finish"
-                } else {
-                    "Dictate — speech becomes text (not implemented yet, T14)"
-                }
-            }
+            .semantics { contentDescription = "Send — waiting for the attachments to finish" }
+        micEnabled -> Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(palette.accent)
+            .clickable(onClick = if (listening) onStopDictation else onStartDictation)
+            .semantics { contentDescription = micDescription }
+        else -> Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(palette.accentPressed)
+            .semantics { contentDescription = micDescription }
     }
     Box(contentAlignment = Alignment.Center, modifier = circleModifier) {
         Icon(
@@ -406,7 +555,7 @@ private fun ComposerCircle(
                 if (sendEnabled || hasContent) R.drawable.ic_send else R.drawable.ic_mic,
             ),
             contentDescription = null,
-            tint = palette.bg.copy(alpha = if (sendEnabled) 1f else 0.6f),
+            tint = palette.bg.copy(alpha = if (sendEnabled || micEnabled) 1f else 0.6f),
             modifier = Modifier.size(20.dp),
         )
     }

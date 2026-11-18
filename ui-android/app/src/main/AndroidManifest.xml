@@ -7,6 +7,15 @@
          paste field, so the app must still install on camera-less devices. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- T14 (S8): dictation is speech turned into text. The on-device
+         recognizer needs no permission and no audio leaves the phone; the
+         standard fallback reads the microphone, so RECORD_AUDIO is declared
+         here and requested only at the moment the mic is tapped — and the
+         app must still install (and run without dictation) on mic-less
+         devices. No audio is ever recorded or kept beyond the request. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
     <!-- T13: the composer's camera intent targets whatever camera app the
          device has; without this query the lookup is filtered on Android 11+. -->
     <queries>

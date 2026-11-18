@@ -137,7 +137,29 @@ fun FixtureTerminal(modifier: Modifier = Modifier) {
             // so composer/terminal layout can be iterated without an SSH
             // host, so it hosts the same composable the live session uses.
             // Typing enables the send triangle; send itself is a no-op here.
+            // T14: the fixture runs the same shared dictation session as the
+            // live screen — real recognizer, real permission dialog, real
+            // listening line. The emulator has no microphone input, so a
+            // real transcript cannot be produced there; the recognizer times
+            // out into the honest error line, which is itself a path worth
+            // seeing on screen.
+            val context = androidx.compose.ui.platform.LocalContext.current
             var fixtureDraft by remember { mutableStateOf("") }
+            val dictationController =
+                remember { com.gentlemanprogramming.gentlemobile.ui.session.DictationController() }
+            var dictation by remember {
+                mutableStateOf<com.gentlemanprogramming.gentlemobile.ui.session.DictationState>(
+                    com.gentlemanprogramming.gentlemobile.ui.session.DictationState.Idle,
+                )
+            }
+            val dictationSession =
+                com.gentlemanprogramming.gentlemobile.ui.session.rememberDictationSession(
+                    controller = dictationController,
+                    onApply = { update ->
+                        fixtureDraft = update.draft
+                        dictation = update.state
+                    },
+                )
             SessionComposer(
                 draft = fixtureDraft,
                 onDraftChange = { fixtureDraft = it },
@@ -146,9 +168,13 @@ fun FixtureTerminal(modifier: Modifier = Modifier) {
                 sending = false,
                 sendError = null,
                 sent = false,
+                dictation = dictation,
                 onSend = { fixtureDraft = "" },
                 onCamera = {},
                 onPickImage = {},
+                onStartDictation = { dictationSession.start(fixtureDraft) },
+                onStopDictation = { dictationSession.stop() },
+                onCancelDictation = { dictationSession.cancel() },
                 onRetryUpload = {},
                 onRemoveAttachment = {},
             )

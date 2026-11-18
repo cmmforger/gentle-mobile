@@ -125,10 +125,14 @@ import com.gentlemanprogramming.gentlemobile.security.parseHostSpec
 import com.gentlemanprogramming.gentlemobile.security.requireBiometricUnlock
 import com.gentlemanprogramming.gentlemobile.ui.settings.SettingsScreen
 import com.gentlemanprogramming.gentlemobile.ui.session.AddResult
+import com.gentlemanprogramming.gentlemobile.ui.session.AndroidDictationEngine
 import com.gentlemanprogramming.gentlemobile.ui.session.Attachment
 import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentQueue
 import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentState
+import com.gentlemanprogramming.gentlemobile.ui.session.DictationController
+import com.gentlemanprogramming.gentlemobile.ui.session.DictationState
 import com.gentlemanprogramming.gentlemobile.ui.session.SessionComposer
+import com.gentlemanprogramming.gentlemobile.ui.session.rememberDictationSession
 import com.gentlemanprogramming.gentlemobile.ui.settings.ThemePickerScreen
 import com.gentlemanprogramming.gentlemobile.ui.splash.SplashScreen
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
@@ -287,6 +291,14 @@ private class SessionUi {
      * composer — the queue refuses before anything is half-added. */
     var attachmentError by mutableStateOf<String?>(null)
 
+    /** Dictation (T14, S8): the pure state machine owns every transition;
+     * [dictation] is the Compose mirror so the listening line and the mic
+     * circle redraw on every change. The recognizer lives in the session
+     * composable; its callbacks drive the machine, the machine decides
+     * what lands in the field. */
+    val dictationController = DictationController()
+    var dictation by mutableStateOf<DictationState>(DictationState.Idle)
+
     /** Re-publish the queue snapshot; call after every queue mutation. */
     fun syncAttachments() {
         attachments = attachmentQueue.snapshot()
@@ -319,6 +331,15 @@ private class SessionUi {
         readError = null
         surface = null
         surfaceStats = null
+        // A dead connection cannot keep a recognizer: any dictation in
+        // flight is cancelled honestly (its partial is never committed).
+        if (dictationController.state is DictationState.Listening ||
+            dictationController.state is DictationState.RequestingPermission
+        ) {
+            val update = dictationController.cancel()
+            dictation = update.state
+            draft = update.draft
+        }
         attachmentQueue.snapshot().filter {
             it.state !is AttachmentState.Uploaded
         }.forEach { attachmentQueue.remove(it.id) }
@@ -1709,6 +1730,17 @@ private fun SessionScreen(
             sessionUi.attachmentError = "no gallery app is available on this device"
         }
     }
+
+    // T14 (S8): the shared dictation session — the real recognizer behind
+    // the mic, with the permission gate routed through the composer's
+    // explanation line. The machine decides the state; this only mirrors it.
+    val dictationSession = rememberDictationSession(
+        controller = sessionUi.dictationController,
+        onApply = { update ->
+            sessionUi.draft = update.draft
+            sessionUi.dictation = update.state
+        },
+    )
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1960,6 +1992,7 @@ private fun SessionScreen(
             sending = sessionUi.sending,
             sendError = sessionUi.sendError,
             sent = sessionUi.sent,
+            dictation = sessionUi.dictation,
             onSend = {
                 val prompt = coreComposePrompt(
                     sessionUi.draft,
@@ -1969,6 +2002,9 @@ private fun SessionScreen(
             },
             onCamera = { openCamera() },
             onPickImage = { openPicker() },
+            onStartDictation = { dictationSession.start(sessionUi.draft) },
+            onStopDictation = { dictationSession.stop() },
+            onCancelDictation = { dictationSession.cancel() },
             onRetryUpload = { id ->
                 val uri = sessionUi.attachmentUris[id]
                 if (uri != null) {
