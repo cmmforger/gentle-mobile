@@ -273,6 +273,16 @@ impl CompanionConnection {
             .unwrap_or(true)
     }
 
+    /// Ping the host now instead of trusting a socket that may have died
+    /// unnoticed — the foreground-return check (T8c). An unanswered probe
+    /// ends the connection, and the next liveness poll reports the drop.
+    pub fn probe_liveness(&self) {
+        let guard = self.inner.lock().ok();
+        if let Some(connection) = guard.as_deref().and_then(|inner| inner.as_ref()) {
+            connection.probe_liveness();
+        }
+    }
+
     /// Disconnect cleanly and drop the connection.
     pub fn disconnect(&self) {
         if let Ok(mut inner) = self.inner.lock() {

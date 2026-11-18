@@ -3,6 +3,7 @@ package com.gentlemanprogramming.gentlemobile
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -44,6 +45,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,14 +71,21 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.gentlemanprogramming.gentlemobile.supervision.PollTracker
+import com.gentlemanprogramming.gentlemobile.supervision.SupervisionMachine
+import com.gentlemanprogramming.gentlemobile.supervision.SupervisionState
+import com.gentlemanprogramming.gentlemobile.supervision.livenessLabel
 import com.gentlemanprogramming.gentlemobile.core.SurfaceDto
 import com.gentlemanprogramming.gentlemobile.core.acceptHostKey
 import com.gentlemanprogramming.gentlemobile.core.AgentDto
@@ -183,6 +192,9 @@ class MainActivity : ComponentActivity() {
 private val executor = Executors.newFixedThreadPool(2)
 private val mainHandler = Handler(Looper.getMainLooper())
 
+/** Log tag for supervision evidence: poller registration and stop lines. */
+private const val TAG = "Supervision"
+
 private sealed interface UiState {
     data object Form : UiState
     data object Connecting : UiState
@@ -191,10 +203,6 @@ private sealed interface UiState {
     data class Connected(
         val connection: CompanionConnection,
         val snapshot: SnapshotDto?,
-        /** True once the socket ended: the screen keeps the last snapshot
-         * and shows the board's interrupted notice instead of dying to a
-         * failure form. Retry re-runs the connect path. */
-        val interrupted: Boolean = false,
     ) : UiState
     data class Session(val connection: CompanionConnection, val agent: AgentDto) : UiState
     data class Failed(val message: String) : UiState
@@ -210,6 +218,17 @@ private class ScreenState {
     /** Connected splits into the Nodes screen and the agent Inbox; this
      * flag is the entry point from the host row into the agent list. */
     var inboxOpen by mutableStateOf(false)
+
+    /** T8c supervision: the four words (connecting, connected, interrupted,
+     * failed) and the liveness rule, in one tested place. Screens read this
+     * machine instead of a separate interrupted flag that can drift from
+     * what the connection is really doing. */
+    val machine = SupervisionMachine()
+
+    /** Registered pollers, logged at every change so teardown — cancelling
+     * a session, going back to the host list, replacing the connection — is
+     * provable with a counter that returns to zero. */
+    val pollers = PollTracker()
 }
 
 /** The mutable state of one open agent session. */
@@ -301,6 +320,7 @@ fun ConnectScreen(
                 }
             }
             screen.ui = UiState.Form
+            screen.machine.reset()
         }
     }
 
@@ -376,6 +396,12 @@ fun ConnectScreen(
     fun connect(acceptChallenge: UiState.Challenge?, pair: PairParams?) {
         screen.generation += 1
         val generation = screen.generation
+        // Supervision (T8c): a new attempt begins — first connect, manual
+        // retry, or the one automatic foreground attempt. The challenge accept
+        // continues the attempt already in flight, so it does not re-begin.
+        if (acceptChallenge == null && screen.machine.state !is SupervisionState.Connecting) {
+            screen.machine.begin()
+        }
         screen.ui = UiState.Connecting
         pairStatus = pair?.let {
             "Pairing — sending this phone's key to ${it.host}:${it.port}…"
@@ -404,6 +430,7 @@ fun ConnectScreen(
                         is PairClient.Result.Refused -> {
                             mainHandler.post {
                                 if (screen.generation == generation) {
+                                    screen.machine.onRefused(reply.message)
                                     screen.ui = UiState.Failed(reply.message)
                                 }
                             }
@@ -436,6 +463,7 @@ fun ConnectScreen(
                 when (val outcome = coreConnect(profile, session)) {
                     is ConnectOutcome.Challenge -> mainHandler.post {
                         if (screen.generation == generation) {
+                            // Still the same attempt, paused for the human.
                             screen.ui = UiState.Challenge(
                                 fingerprint = outcome.v1.fingerprint,
                                 pinned = outcome.v1.pinnedFingerprint,
@@ -452,6 +480,7 @@ fun ConnectScreen(
                                 // and the host row — not the inbox — leads.
                                 screen.sessions.values.forEach { it.resetBaseline() }
                                 screen.inboxOpen = false
+                                screen.machine.onLive()
                                 screen.ui = UiState.Connected(connection, snapshot = null)
                             }
                         }
@@ -460,9 +489,71 @@ fun ConnectScreen(
                 }
             } catch (error: Exception) {
                 val message = describe(error)
-                mainHandler.post { screen.ui = UiState.Failed(message) }
+                mainHandler.post {
+                    // A refused attempt fails with its reason and never
+                    // retries on its own (T8c).
+                    if (screen.generation == generation) {
+                        screen.machine.onRefused(message)
+                    }
+                    screen.ui = UiState.Failed(message)
+                }
             }
         }
+    }
+
+    // Foreground return (T8c): never assume the socket survived a sleep. A
+    // live link gets a cheap liveness probe — an unanswered probe ends the
+    // connection and the pollers surface the interruption; an interrupted
+    // link gets exactly one automatic attempt, never a silent loop.
+    fun onAppForeground() {
+        when (val supervision = screen.machine.state) {
+            is SupervisionState.Interrupted -> {
+                if (screen.machine.onForeground()) {
+                    connect(acceptChallenge = null, pair = null)
+                }
+            }
+            is SupervisionState.Connected -> {
+                val current = screen.ui
+                if (current is UiState.Connected) {
+                    val connection = current.connection
+                    val generation = screen.generation
+                    executor.execute {
+                        val dead = try {
+                            connection.isDisconnected()
+                        } catch (_: Exception) {
+                            true
+                        }
+                        if (dead) {
+                            mainHandler.post {
+                                if (screen.generation == generation) {
+                                    screen.machine.onDropped("the link was down while the app was away")
+                                }
+                            }
+                        } else {
+                            // Cheap probe: ping now; a host that stays silent
+                            // ends the connection within a few seconds, and
+                            // the pollers report the interruption.
+                            try {
+                                connection.probeLiveness()
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }
+                }
+            }
+            else -> {}
+        }
+    }
+
+    // ON_RESUME is the supervision trigger: verify liveness or retry once,
+    // instead of trusting a socket that may have died unnoticed.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) onAppForeground()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Column(
@@ -857,8 +948,16 @@ fun ConnectScreen(
             }
 
             is UiState.Connected -> {
-                if (current.interrupted) {
-                    InterruptedNotice(onRetry = { connect(acceptChallenge = null, pair = pairParams) })
+                // Supervision (T8c): the interruption lives in the machine,
+                // not in a flag that can drift. The last snapshot stays on
+                // screen behind the board's interrupted notice, and Retry
+                // now re-runs the connect path.
+                val interrupted = screen.machine.state as? SupervisionState.Interrupted
+                if (interrupted != null) {
+                    InterruptedNotice(
+                        reason = interrupted.reason,
+                        onRetry = { connect(acceptChallenge = null, pair = pairParams) },
+                    )
                     Spacer(Modifier.height(8.dp))
                 }
                 if (screen.inboxOpen) {
@@ -932,9 +1031,22 @@ fun ConnectScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
+                        // The badge must never claim a live link the machine
+                        // does not have: the word comes from the supervision
+                        // state, not from the fact that this branch renders.
+                        val stateWord = when (screen.machine.state) {
+                            is SupervisionState.Interrupted -> "Interrupted"
+                            is SupervisionState.Failed -> "Failed"
+                            is SupervisionState.Connecting -> "Connecting"
+                            else -> "Connected"
+                        }
                         Text(
-                            text = "Connected · $session",
-                            color = LocalPalette.current.accent,
+                            text = "$stateWord · $session",
+                            color = if (stateWord == "Connected") {
+                                LocalPalette.current.accent
+                            } else {
+                                LocalPalette.current.error
+                            },
                             fontSize = 11.sp,
                             letterSpacing = 0.8.sp,
                         )
@@ -966,7 +1078,9 @@ fun ConnectScreen(
                         GroupLabel("$user@$host")
                         NodeRow(
                             name = host,
-                            state = "connected",
+                            // State as a word, never a stale snapshot rendered
+                            // as if it were live (T8c).
+                            state = if (interrupted != null) "interrupted" else "connected",
                             meta = "$user@$host · port $port · protocol 22 · ${snapshot.agents.size} agents",
                             onOpen = { screen.inboxOpen = true },
                         )
@@ -991,6 +1105,7 @@ fun ConnectScreen(
                     connection = current.connection,
                     agent = current.agent,
                     sessionUi = sessionUi,
+                    supervision = screen.machine.state,
                     terminalFontPx = terminalFontPx,
                     onFontPxChange = { terminalFontPx = it },
                     onBack = {
@@ -1003,6 +1118,7 @@ fun ConnectScreen(
                         // no longer matches a Connected screen.
                         poll(screen, current.connection, screen.generation)
                     },
+                    onRetry = { connect(acceptChallenge = null, pair = pairParams) },
                     onRefresh = {
                         val generation = screen.generation
                         requestPaneRead(screen, sessionUi, current.connection, current.agent.paneId, generation)
@@ -1070,55 +1186,74 @@ fun ConnectScreen(
 
 /**
  * Snapshot polling: ask the core for the latest full snapshot every 500 ms
- * while the connection is live. Stops when the generation changes (a new
- * connect or disconnect) or the connection reports it ended.
+ * while the connection is live. One poller slot is registered for the
+ * poller's whole life — rescheduling keeps it, stopping closes it, and the
+ * log line at every change is the teardown proof (T8c). A dead connection
+ * is reported to the supervision machine: the screen keeps the last
+ * snapshot, rendered as not live (board 03), and Retry now re-runs the
+ * connect path.
  */
+private const val POLL_INTERVAL_MS = 500L
+
 private fun poll(screen: ScreenState, connection: CompanionConnection, generation: Int) {
-    executor.execute {
-        val snapshot = try {
-            connection.snapshot()
-        } catch (error: Exception) {
-            // The connection dropped mid-session: keep the last snapshot on
-            // screen behind the interrupted notice (board 03) instead of
-            // throwing the user back to a failure form. Retry re-connects.
-            mainHandler.post {
-                val current = screen.ui
-                if (screen.generation == generation && current is UiState.Connected) {
-                    screen.ui = current.copy(interrupted = true)
+    val slot = screen.pollers.register()
+    Log.i(TAG, "snapshot poller registered, active=${screen.pollers.count}")
+    fun runOnce() {
+        executor.execute {
+            var reschedule = false
+            try {
+                val snapshot = try {
+                    connection.snapshot()
+                } catch (error: Exception) {
+                    mainHandler.post {
+                        if (screen.generation == generation) {
+                            screen.machine.onDropped(describe(error))
+                        }
+                    }
+                    return@execute
+                }
+                val ended = try {
+                    connection.isDisconnected()
+                } catch (_: Exception) {
+                    true
+                }
+                mainHandler.post {
+                    val current = screen.ui
+                    if (screen.generation == generation &&
+                        current is UiState.Connected &&
+                        current.connection === connection
+                    ) {
+                        if (ended) {
+                            screen.machine.onDropped("the host closed the connection")
+                        } else if (snapshot != null) {
+                            screen.ui = current.copy(snapshot = snapshot)
+                        }
+                    }
+                }
+                reschedule = !ended
+            } finally {
+                if (!reschedule) {
+                    slot.close()
+                    Log.i(TAG, "snapshot poller stopped, active=${screen.pollers.count}")
                 }
             }
-            return@execute
-        }
-        val ended = try {
-            connection.isDisconnected()
-        } catch (_: Exception) {
-            true
-        }
-        mainHandler.post {
-            val current = screen.ui
-            if (screen.generation == generation &&
-                current is UiState.Connected &&
-                current.connection === connection
-            ) {
-                screen.ui = if (ended) {
-                    current.copy(interrupted = true)
-                } else {
-                    current.copy(snapshot = snapshot ?: current.snapshot)
-                }
+            if (reschedule) {
+                mainHandler.postDelayed({
+                    val current = screen.ui
+                    if (screen.generation == generation &&
+                        current is UiState.Connected &&
+                        current.connection === connection
+                    ) {
+                        runOnce()
+                    } else {
+                        slot.close()
+                        Log.i(TAG, "snapshot poller stopped, active=${screen.pollers.count}")
+                    }
+                }, POLL_INTERVAL_MS)
             }
-        }
-        if (!ended) {
-            mainHandler.postDelayed({
-                val current = screen.ui
-                if (screen.generation == generation &&
-                    current is UiState.Connected &&
-                    current.connection === connection
-                ) {
-                    poll(screen, connection, generation)
-                }
-            }, 500)
         }
     }
+    runOnce()
 }
 
 private fun describe(error: Exception): String = when (error) {
@@ -1163,35 +1298,63 @@ private fun pollSurface(
     paneId: String,
     generation: Int,
 ) {
-    executor.execute {
-        val surface = try {
-            connection.latestSurface()
-        } catch (_: Exception) {
-            null
-        }
-        mainHandler.post {
-            val previous = sessionUi.surface
-            if (sessionStillCurrent(screen, sessionUi, paneId, generation) &&
-                surface != null &&
-                (previous == null || surface.revision != previous.revision)
-            ) {
-                sessionUi.surface = surface
-                sessionUi.surfaceStats = surfaceStats(surface)
+    // One slot for the poller's whole life; the stop log is the teardown
+    // proof (T8c), and a dead connection is reported to the machine so the
+    // session header says not live instead of a frozen grid passing as
+    // current.
+    val slot = screen.pollers.register()
+    Log.i(TAG, "surface poller registered, active=${screen.pollers.count}")
+    fun runOnce() {
+        executor.execute {
+            var reschedule = false
+            try {
+                val surface = try {
+                    connection.latestSurface()
+                } catch (_: Exception) {
+                    null
+                }
+                mainHandler.post {
+                    val previous = sessionUi.surface
+                    if (sessionStillCurrent(screen, sessionUi, paneId, generation) &&
+                        surface != null &&
+                        (previous == null || surface.revision != previous.revision)
+                    ) {
+                        sessionUi.surface = surface
+                        sessionUi.surfaceStats = surfaceStats(surface)
+                    }
+                }
+                val ended = try {
+                    connection.isDisconnected()
+                } catch (_: Exception) {
+                    true
+                }
+                if (ended) {
+                    mainHandler.post {
+                        if (screen.generation == generation) {
+                            screen.machine.onDropped("the host closed the connection")
+                        }
+                    }
+                }
+                reschedule = !ended
+            } finally {
+                if (!reschedule) {
+                    slot.close()
+                    Log.i(TAG, "surface poller stopped, active=${screen.pollers.count}")
+                }
+            }
+            if (reschedule) {
+                mainHandler.postDelayed({
+                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                        runOnce()
+                    } else {
+                        slot.close()
+                        Log.i(TAG, "surface poller stopped, active=${screen.pollers.count}")
+                    }
+                }, SURFACE_POLL_MS)
             }
         }
-        val ended = try {
-            connection.isDisconnected()
-        } catch (_: Exception) {
-            true
-        }
-        if (!ended) {
-            mainHandler.postDelayed({
-                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                    pollSurface(screen, sessionUi, connection, paneId, generation)
-                }
-            }, SURFACE_POLL_MS)
-        }
     }
+    runOnce()
 }
 
 /** One immediate read, off the poll cadence — the manual refresh button. */
@@ -1234,51 +1397,82 @@ private fun pollPane(
     paneId: String,
     generation: Int,
 ) {
-    executor.execute {
-        try {
-            val read = connection.readPane(paneId)
-            mainHandler.post {
-                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                    sessionUi.pane = read
-                    sessionUi.readError = null
+    // Same slot discipline as the other pollers (T8c teardown proof).
+    val slot = screen.pollers.register()
+    Log.i(TAG, "pane poller registered, active=${screen.pollers.count}")
+    fun runOnce() {
+        executor.execute {
+            var reschedule = false
+            try {
+                try {
+                    val read = connection.readPane(paneId)
+                    mainHandler.post {
+                        if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                            sessionUi.pane = read
+                            sessionUi.readError = null
+                        }
+                    }
+                } catch (error: Exception) {
+                    mainHandler.post {
+                        if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                            sessionUi.readError = describe(error)
+                        }
+                    }
+                }
+                val ended = try {
+                    connection.isDisconnected()
+                } catch (_: Exception) {
+                    true
+                }
+                if (ended) {
+                    mainHandler.post {
+                        if (screen.generation == generation) {
+                            screen.machine.onDropped("the host closed the connection")
+                        }
+                    }
+                }
+                reschedule = !ended && sessionUi.surface == null
+            } finally {
+                if (!reschedule) {
+                    slot.close()
+                    Log.i(TAG, "pane poller stopped, active=${screen.pollers.count}")
                 }
             }
-        } catch (error: Exception) {
-            mainHandler.post {
-                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                    sessionUi.readError = describe(error)
-                }
+            if (reschedule) {
+                mainHandler.postDelayed({
+                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                        runOnce()
+                    } else {
+                        slot.close()
+                        Log.i(TAG, "pane poller stopped, active=${screen.pollers.count}")
+                    }
+                }, 500)
             }
-        }
-        val ended = try {
-            connection.isDisconnected()
-        } catch (_: Exception) {
-            true
-        }
-        if (!ended && sessionUi.surface == null) {
-            mainHandler.postDelayed({
-                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                    pollPane(screen, sessionUi, connection, paneId, generation)
-                }
-            }, 500)
         }
     }
+    runOnce()
 }
 
-/** The agent session screen: header, terminal grid (or text fallback), composer. */
+/** The agent session screen: header, terminal grid (or text fallback), composer.
+ * Supervision (T8c) rides in as `supervision`: while the connection is not
+ * live, the header says so — a frozen grid never passes as current — and the
+ * board's interrupted notice with Retry now sits above the terminal. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun SessionScreen(
     connection: CompanionConnection,
     agent: AgentDto,
     sessionUi: SessionUi,
+    supervision: SupervisionState,
     terminalFontPx: Float,
     onFontPxChange: (Float) -> Unit,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
+    onRetry: () -> Unit,
     onSend: (String) -> Unit,
     onSendKeys: (List<String>) -> Unit,
 ) {
+    val interrupted = supervision as? SupervisionState.Interrupted
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1330,11 +1524,21 @@ private fun SessionScreen(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "The agent's pane, drawn live from the surface stream",
-            color = LocalPalette.current.muted,
+            // The liveness word is the machine's, never assumed: only a
+            // connected connection may claim live (T8c).
+            text = if (interrupted == null) {
+                "live · ${livenessLabel(supervision)} · the agent's pane from the surface stream"
+            } else {
+                "not live · this is the last frame before the interruption"
+            },
+            color = if (interrupted == null) LocalPalette.current.muted else LocalPalette.current.error,
             fontSize = 11.sp,
             letterSpacing = 0.8.sp,
         )
+        if (interrupted != null) {
+            Spacer(Modifier.height(8.dp))
+            InterruptedNotice(reason = interrupted.reason, onRetry = onRetry)
+        }
 
         // Terminal area: the cell grid from the surface stream. Before the
         // first surface arrives (or if the host never sends one) the pane's
@@ -1692,7 +1896,7 @@ private fun GroupLabel(text: String) {
  * as accent text.
  */
 @Composable
-private fun InterruptedNotice(onRetry: () -> Unit) {
+private fun InterruptedNotice(reason: String, onRetry: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1714,7 +1918,9 @@ private fun InterruptedNotice(onRetry: () -> Unit) {
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "The host socket closed — the lists below are the last snapshot.",
+                // The honest reason, then the rule: what is on screen is the
+                // last snapshot, never live data (board 03, T8c).
+                text = "$reason — what is on screen is the last snapshot.",
                 color = LocalPalette.current.muted,
                 fontSize = 13.sp,
             )

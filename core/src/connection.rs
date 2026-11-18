@@ -343,6 +343,17 @@ impl Connection {
         self.stop.load(Ordering::Acquire)
     }
 
+    /// Prove the link is alive now: ping the host immediately instead of
+    /// waiting for the routine quiet-link check. Use when the app returns to
+    /// the foreground after a sleep — the socket may have died unnoticed, and
+    /// an unanswered probe ends the connection so the next liveness poll
+    /// reports the interruption (T8c).
+    pub fn probe_liveness(&self) {
+        if let Some(client) = self.client.as_ref() {
+            client.handle.check_liveness();
+        }
+    }
+
     /// Read one pane's visible text over the request channel. `source: visible`
     /// and ANSI stripped, so what comes back is exactly what the host's own
     /// `herdr pane read <id> --source visible` shows.
@@ -495,7 +506,15 @@ fn spawn_forwarder(
                                 ended = deliver(&out, Event::Message(message));
                             }
                             ClientEvent::Disconnected { reason, .. } => {
-                                ended = deliver(&out, Event::Disconnected { reason });
+                                // The connection is over for the product too:
+                                // flip the stop flag so `is_disconnected()` —
+                                // the only liveness word the UI polls — stops
+                                // lying about a dead link (T8c). The forwarder
+                                // ends with the connection: there is nothing
+                                // left to forward.
+                                stop.store(true, Ordering::Release);
+                                let _ = deliver(&out, Event::Disconnected { reason });
+                                ended = true;
                             }
                             // Connected, Response, CommandRejected, SurfaceImages, and
                             // VersionMismatch are vendored-side detail; a refused
@@ -505,17 +524,23 @@ fn spawn_forwarder(
                     }
                     Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                         if stop.load(Ordering::Acquire) {
-                            ended = deliver(
+                            stop.store(true, Ordering::Release);
+                            let _ = deliver(
                                 &out,
                                 Event::Disconnected { reason: "disconnected".to_owned() },
                             );
+                            ended = true;
                         }
                     }
                     Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                        ended = deliver(
+                        // The vendored client is gone; the connection is over
+                        // for the product too.
+                        stop.store(true, Ordering::Release);
+                        let _ = deliver(
                             &out,
                             Event::Disconnected { reason: "connection closed".to_owned() },
                         );
+                        ended = true;
                     }
                 }
             }
@@ -549,7 +574,10 @@ fn spawn_watchdog(
                 return;
             }
             if handle.is_disconnected() {
-                // The worker already knows; the forwarder surfaces it.
+                // The worker already knows; flip the product stop flag so the
+                // UI's liveness polls see it, then let the forwarder surface
+                // the typed reason.
+                stop.store(true, Ordering::Release);
                 return;
             }
             let quiet_for = match last_event.lock() {
@@ -752,5 +780,39 @@ mod tests {
         assert_ne!(KEEPALIVE_INTERVAL, Duration::ZERO);
         assert_ne!(KEEPALIVE_MAX, 0);
         assert!(WATCHDOG_QUIET_AFTER > KEEPALIVE_INTERVAL);
+    }
+
+    use herdr_client::protocol::ClientShellSnapshot;
+
+    /// The product stop flag must flip when the vendored client reports the
+    /// connection over: `is_disconnected()` is the only liveness word the UI
+    /// reads (T8c), and a dead link that keeps it false would leave the app
+    /// rendering the last snapshot as if it were live.
+    #[test]
+    fn forwarder_marks_the_connection_over_when_the_host_reports_it() {
+        let (client_tx, client_rx) = crossbeam_channel::bounded::<ClientEvent>(8);
+        let (out_tx, out_rx) = crossbeam_channel::bounded::<Event>(8);
+        let latest = Arc::new(Mutex::new(None::<Arc<ClientShellSnapshot>>));
+        let surfaces = Arc::new(SurfaceStore::new());
+        let last_event = Arc::new(Mutex::new(Instant::now()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let forwarder =
+            spawn_forwarder(client_rx, out_tx, latest, surfaces, last_event, stop.clone()).unwrap();
+
+        client_tx
+            .send(ClientEvent::Disconnected {
+                reason: "keepalive gave up".to_owned(),
+                ssh: None,
+            })
+            .unwrap();
+        let event = out_rx.recv_timeout(Duration::from_secs(2)).expect("the drop must be delivered");
+        assert!(matches!(event, Event::Disconnected { .. }), "{event:?}");
+        assert!(
+            stop.load(Ordering::Acquire),
+            "a reported disconnection must flip the product stop flag"
+        );
+
+        drop(client_tx);
+        let _ = forwarder.join();
     }
 }

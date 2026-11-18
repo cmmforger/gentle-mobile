@@ -685,6 +685,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_latest_surface(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_probe_liveness(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_prompt_agent(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane(
@@ -723,6 +725,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_latest_surface(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_probe_liveness(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_prompt_agent(`ptr`: Long,`target`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_read_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -867,6 +871,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_latest_surface() and 0xFFFF) != 1162) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_probe_liveness() and 0xFFFF) != 41447) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_prompt_agent() and 0xFFFF) != 55635) {
@@ -1339,6 +1346,13 @@ public interface CompanionConnectionInterface {
     fun `latestSurface`(): SurfaceDto?
     
     /**
+     * Ping the host now instead of trusting a socket that may have died
+     * unnoticed — the foreground-return check (T8c). An unanswered probe
+     * ends the connection, and the next liveness poll reports the drop.
+     */
+    fun `probeLiveness`()
+    
+    /**
      * Submit one prompt to an agent, addressed by its pane id. `Ok(())`
      * means the daemon confirmed the submission (`agent_prompted`); a
      * failure names why, so the UI never claims "sent" without a reply.
@@ -1525,6 +1539,23 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
     }
     )
     }
+    
+
+    
+    /**
+     * Ping the host now instead of trusting a socket that may have died
+     * unnoticed — the foreground-return check (T8c). An unanswered probe
+     * ends the connection, and the next liveness poll reports the drop.
+     */override fun `probeLiveness`()
+        = 
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_probe_liveness(
+        it,
+        _status)
+}
+    }
+    
     
 
     
