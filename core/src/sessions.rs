@@ -525,14 +525,38 @@ pub async fn list_sessions_over_sftp(
                 detail: format!("the sessions directory could not be read: {error}"),
             }))?
         ;
-        let mut out = Vec::new();
+        // Gentle Shell nests one directory per working directory
+        // (`--mnt-...--/<session>.jsonl`), so a shallow read of the root
+        // reports an empty host while hundreds of sessions exist. Collect the
+        // root's session files plus one level down; read_dir on a regular file
+        // simply errors, which is how a non-directory is skipped.
+        let mut candidates: Vec<(String, String)> = Vec::new();
         for entry in entries {
-            let file_name = entry.file_name();
-            if !is_session_file_name(&file_name) {
+            let name = entry.file_name();
+            let path = entry.path();
+            if is_session_file_name(&name) {
+                candidates.push((name, path));
                 continue;
             }
-            let path = entry.path();
-            let metadata = entry.metadata();
+            // `entry.path()` is not guaranteed to be absolute, and read_dir
+            // needs a full path, so build the child directory from the known
+            // root instead of trusting the entry.
+            let child_dir = format!("{dir}/{name}");
+            if let Ok(children) = sftp.read_dir(&child_dir).await {
+                for child in children {
+                    let child_name = child.file_name();
+                    if is_session_file_name(&child_name) {
+                        candidates.push((child_name.clone(), format!("{child_dir}/{child_name}")));
+                    }
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for (file_name, path) in candidates {
+            let metadata = match sftp.metadata(&path).await {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
             let last_modified_epoch_ms = metadata
                 .modified()
                 .ok()

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -94,7 +95,7 @@ fun SessionsScreen(
             try {
                 val listed = listSessions(profile, sessionsDir, deviceLeaseId)
                 mainHandler.post {
-                    sessions = listed
+                    sessions = SessionsModel.ordered(listed)
                     error = null
                 }
             } catch (e: Exception) {
@@ -156,6 +157,7 @@ fun SessionsScreen(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .safeDrawingPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
             .padding(top = 12.dp),

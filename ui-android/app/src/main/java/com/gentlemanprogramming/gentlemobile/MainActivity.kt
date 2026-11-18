@@ -222,6 +222,13 @@ class MainActivity : FragmentActivity() {
         // surface so terminal geometry can be iterated without an SSH host, a
         // host-key challenge or a live agent.
         val showFixture = intent?.getBooleanExtra("fixture", false) == true
+        // Debug-only, per-launch override used by the tests; absent in release.
+        val devSessionsDirOverride =
+            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                intent?.getStringExtra("sessions_dir")
+            } else {
+                null
+            }
         setContent {
             val themeStore = remember {
                 ThemeStore(SharedPreferencesStore(this@MainActivity))
@@ -449,6 +456,7 @@ private fun describeResumeFailure(error: Exception): String =
 
 @Composable
 fun ConnectScreen(
+    sessionsDirOverride: String? = null,
     keyPath: String,
     knownHostsPath: String,
     appTheme: AppTheme,
@@ -755,10 +763,10 @@ fun ConnectScreen(
             SessionsScreen(
                 profile = sessionsProfile,
                 deviceLeaseId = sessionsDeviceId,
-                sessionsDir = SessionsConfig.sessionsDir(
-                    SharedPreferencesStore(context),
-                    defaultSessionsDir(sessionsProfile.user),
-                ),
+                // The sessions root is the host's own default. A dev override
+                // exists only in a debug build and only for this launch
+                // (`--es sessions_dir <path>`), never a silent persisted value.
+                sessionsDir = sessionsDirOverride ?: defaultSessionsDir(sessionsProfile.user),
                 heldLease = screen.heldLease,
                 onLeaseTaken = { sessionId, token ->
                     screen.heldLease = HeldLease(sessionId, token)

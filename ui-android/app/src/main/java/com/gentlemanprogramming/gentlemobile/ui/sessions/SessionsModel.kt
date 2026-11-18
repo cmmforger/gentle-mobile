@@ -78,11 +78,19 @@ object SessionsModel {
     /** The row's mono meta line: cwd · message count · relative time, each
      *  part only when the host actually gave it. */
     fun rowMeta(session: SessionDto, relative: String): String =
+        // The time leads: two sessions of the same project share the whole cwd
+        // prefix, so a trailing timestamp is what gets ellipsised away and the
+        // rows become indistinguishable.
         listOfNotNull(
-            session.cwd,
-            session.messageCount?.let { "${it.toLong()} messages" },
             relative,
+            session.messageCount?.let { "${it.toLong()} messages" },
+            session.cwd,
         ).joinToString(" · ")
+
+    /** Newest first, and capped: a host can hold hundreds of sessions and a
+     *  phone list is not a file browser. */
+    fun ordered(sessions: List<SessionDto>, cap: Int = 60): List<SessionDto> =
+        sessions.sortedByDescending { it.lastModifiedEpochMs }.take(cap)
 
     /** The visible note after reclaiming a stale lease (S18: never
      *  silently). */
