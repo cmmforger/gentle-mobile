@@ -16,6 +16,24 @@ import java.security.MessageDigest
  */
 object SessionsModel {
 
+    /** The loading state of the sessions list (S24-3): it must say why it
+     *  can be slow — the host's session files are read one by one over
+     *  SSH — and past two seconds say so, so the state never reads as
+     *  frozen. The per-session count is not surfaced because the core's
+     *  one-shot listing cannot report progress mid-call; the elapsed
+     *  seconds are the honest progress the app can give. */
+    fun listingStatus(elapsedMs: Long): String = when {
+        elapsedMs < SLOW_LISTING_AFTER_MS ->
+            "Reading the session files over SSH — a host with many sessions can take a while."
+        else ->
+            "Still reading — the host's sessions are read one file at a time over SSH. " +
+                "(${elapsedMs / 1000} s so far)"
+    }
+
+    /** Past this many milliseconds the listing state says it is still
+     *  working, so a slow host never looks frozen. */
+    const val SLOW_LISTING_AFTER_MS = 2_000L
+
     /** The device id the advisory lease carries: pid-less, derived from the
      *  identity key so reinstalling the app keeps the same claim holder.
      *  The id hashes the key *blob* — the second token of the OpenSSH line

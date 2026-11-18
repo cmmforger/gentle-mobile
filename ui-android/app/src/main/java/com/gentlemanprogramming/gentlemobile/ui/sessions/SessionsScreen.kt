@@ -80,6 +80,11 @@ fun SessionsScreen(
     val p = LocalPalette.current
     var sessions by remember { mutableStateOf<List<SessionDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // S24-3: the listing can be genuinely slow (the host's session files are
+    // read one by one over SSH), so the state carries a ticking clock: after
+    // two seconds it says it is still working, never frozen.
+    var listingStartedAtMs by remember { mutableStateOf(0L) }
+    var nowMs by remember { mutableStateOf(0L) }
     var sheetFor by remember { mutableStateOf<SessionDto?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     var noteIsError by remember { mutableStateOf(false) }
@@ -103,7 +108,21 @@ fun SessionsScreen(
             }
         }
     }
-    LaunchedEffect(reloadNonce) { load() }
+    LaunchedEffect(reloadNonce) {
+        listingStartedAtMs = System.currentTimeMillis()
+        load()
+    }
+    // While the list is loading, tick once a second so the honest elapsed
+    // time is visible — a slow host never looks frozen (S24-3).
+    val listing = sessions == null && error == null
+    if (listing) {
+        LaunchedEffect(reloadNonce) {
+            while (true) {
+                nowMs = System.currentTimeMillis()
+                kotlinx.coroutines.delay(1_000)
+            }
+        }
+    }
 
     fun showNote(text: String, isError: Boolean) {
         note = text
@@ -186,7 +205,7 @@ fun SessionsScreen(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Sessions",
+            text = "Session history",
             color = MaterialTheme.colorScheme.onBackground,
             fontSize = 22.sp,
             lineHeight = 26.sp,
@@ -206,7 +225,7 @@ fun SessionsScreen(
 
         when {
             sessions == null && error == null -> Text(
-                text = "Listing sessions…",
+                text = SessionsModel.listingStatus(nowMs - listingStartedAtMs),
                 color = p.muted,
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,

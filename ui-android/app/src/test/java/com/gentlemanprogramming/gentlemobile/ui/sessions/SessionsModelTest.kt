@@ -141,17 +141,40 @@ class SessionsModelTest {
     }
 
     @Test
-    fun row_meta_joins_cwd_count_and_time() {
+    fun row_meta_joins_time_count_and_cwd() {
         val meta = SessionsModel.rowMeta(
             session(cwd = "/srv/app", messageCount = 12),
             relative = "2 min ago",
         )
-        assertEquals("/srv/app · 12 messages · 2 min ago", meta)
+        // The time leads (committed rule): two sessions of the same project
+        // share the whole cwd prefix, so a trailing timestamp is what gets
+        // ellipsised away and the rows become indistinguishable.
+        assertEquals("2 min ago · 12 messages · /srv/app", meta)
     }
 
     @Test
     fun row_meta_hides_what_the_host_did_not_give() {
         assertEquals("2 min ago", SessionsModel.rowMeta(session(cwd = null, messageCount = null), "2 min ago"))
+    }
+
+    // --- the listing state (S24-3) ------------------------------------------------
+
+    @Test
+    fun the_listing_state_says_why_it_can_be_slow() {
+        val status = SessionsModel.listingStatus(500)
+        assertTrue("mentions SSH: $status", status.contains("SSH"))
+    }
+
+    @Test
+    fun past_two_seconds_the_listing_state_says_it_is_still_working() {
+        val status = SessionsModel.listingStatus(5_000)
+        assertTrue("still working: $status", status.contains("Still"))
+        assertTrue("carries the elapsed seconds: $status", status.contains("5 s"))
+    }
+
+    @Test
+    fun exactly_at_two_seconds_the_state_is_already_the_slow_one() {
+        assertTrue(SessionsModel.listingStatus(2_000).contains("Still"))
     }
 
     // --- sessions directory override ------------------------------------------------------

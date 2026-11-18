@@ -42,6 +42,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -92,6 +93,9 @@ import com.gentlemanprogramming.gentlemobile.notifications.TrackedAgent
 import com.gentlemanprogramming.gentlemobile.notifications.ensureChannels
 import com.gentlemanprogramming.gentlemobile.notifications.postAgentAlert
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
@@ -128,6 +132,8 @@ import com.gentlemanprogramming.gentlemobile.core.refreshLease
 import com.gentlemanprogramming.gentlemobile.core.releaseLease
 import com.gentlemanprogramming.gentlemobile.core.resumeSession as coreResumeSession
 import com.gentlemanprogramming.gentlemobile.ui.sessions.HeldLease
+import com.gentlemanprogramming.gentlemobile.ui.AgentRowModel
+import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.ui.sessions.ResumedSessionScreen
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
@@ -1226,26 +1232,25 @@ fun ConnectScreen(
     ) {
         if (screen.ui !is UiState.Session) {
             // The session screen has its own compact header; the topbar stays
-            // quiet so the Pair screen's own headline leads the surface. The
-            // Settings affordance lives here: the one screen the boards route
-            // everything else from.
+            // quiet. S24-7: no product name in the chrome — the one word the
+            // screen needed removed — and the single way into Settings is a
+            // gear icon, labelled for screen readers, instead of the repeated
+            // `Settings` word.
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text(
-                    text = "Gentle Mobile",
-                    color = LocalPalette.current.muted,
-                    fontSize = 13.sp,
-                )
                 Spacer(Modifier.weight(1f))
-                Text(
-                    text = "Settings",
-                    color = LocalPalette.current.accentEdge,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
+                Box(
                     modifier = Modifier
-                        .heightIn(min = 44.dp)
-                        .clickable { route = Route.Settings }
-                        .padding(horizontal = 8.dp, vertical = 12.dp),
-                )
+                        .size(44.dp)
+                        .clickable { route = Route.Settings },
+                    contentAlignment = androidx.compose.ui.Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_settings),
+                        contentDescription = "Settings",
+                        tint = LocalPalette.current.accentEdge,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -1631,21 +1636,27 @@ fun ConnectScreen(
                     // --- order needs you → done → working → idle; the    ---
                     // --- group label carries the word and the count, and ---
                     // --- no row repeats it with a status chip.           ---
+                    // S24-7: the chevron alone explains the way back — no
+                    // repeated `Hosts` word. The row keeps a screen-reader
+                    // label because the chevron glyph reads as nothing.
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         Text(
-                            text = "‹ Hosts",
+                            text = "‹",
                             color = LocalPalette.current.accent,
-                            fontSize = 13.sp,
+                            fontSize = 20.sp,
                             modifier = Modifier
                                 .clickable { screen.inboxOpen = false }
-                                .padding(vertical = 12.dp),
+                                .semantics { contentDescription = "Back to hosts" }
+                                .padding(horizontal = 12.dp, vertical = 12.dp),
                         )
                         Spacer(Modifier.weight(1f))
                         Text(
                             text = "Disconnect",
                             color = LocalPalette.current.muted,
                             fontSize = 11.sp,
-                            modifier = Modifier.clickable { disconnectLive() },
+                            modifier = Modifier
+                                .clickable { disconnectLive() }
+                                .padding(horizontal = 12.dp, vertical = 12.dp),
                         )
                     }
                     val snapshot = current.snapshot
@@ -1664,15 +1675,18 @@ fun ConnectScreen(
                         else -> {
                             // `unknown` is not on the board; it keeps its own
                             // honest group last rather than lying as idle.
+                            // S24-6: human words in sentence case, and the
+                            // count only when it is not one. S24-8: rows
+                            // lead with the project name, not the path.
                             listOf(
-                                Triple("needs you", snapshot.agents.filter { it.status == AgentStatusDto.BLOCKED }, true),
-                                Triple("done", snapshot.agents.filter { it.status == AgentStatusDto.DONE }, false),
-                                Triple("working", snapshot.agents.filter { it.status == AgentStatusDto.WORKING }, false),
-                                Triple("idle", snapshot.agents.filter { it.status == AgentStatusDto.IDLE }, false),
-                                Triple("unknown", snapshot.agents.filter { it.status == AgentStatusDto.UNKNOWN }, false),
+                                Triple("Needs you", snapshot.agents.filter { it.status == AgentStatusDto.BLOCKED }, true),
+                                Triple("Done", snapshot.agents.filter { it.status == AgentStatusDto.DONE }, false),
+                                Triple("Working", snapshot.agents.filter { it.status == AgentStatusDto.WORKING }, false),
+                                Triple("Idle", snapshot.agents.filter { it.status == AgentStatusDto.IDLE }, false),
+                                Triple("Unknown", snapshot.agents.filter { it.status == AgentStatusDto.UNKNOWN }, false),
                             ).forEach { (label, agents, needsYou) ->
                                 if (agents.isNotEmpty()) {
-                                    GroupLabel("$label · ${agents.size}")
+                                    GroupLabel(AgentRowModel.groupLabel(label, agents.size), uppercase = false)
                                     agents.forEach { agent ->
                                         InboxRow(agent, needsYou = needsYou, onOpen = {
                                             openAgentSession(current, agent)
@@ -1746,12 +1760,14 @@ fun ConnectScreen(
                         )
                         // T17a (S15): the host's Gentle Shell sessions, listed
                         // over SFTP and lease-guarded — the entry point the
-                        // continuity flow starts from.
-                        GroupLabel("gentle shell sessions")
+                        // continuity flow starts from. S24-3: plain language —
+                        // the row itself says what it does, instead of the
+                        // jargon group label `gentle shell sessions` and the
+                        // `list · lease-guarded` state word.
                         NodeRow(
-                            name = "Sessions",
-                            state = "list · lease-guarded",
-                            meta = "cwd · last used · $user@$host",
+                            name = "Session history",
+                            state = null,
+                            meta = "Open a Gentle Shell session that already exists on the host.",
                             onOpen = { route = Route.Sessions },
                         )
                         Spacer(Modifier.height(24.dp))
@@ -2784,16 +2800,20 @@ private fun InboxRow(agent: AgentDto, needsYou: Boolean, onOpen: () -> Unit) {
         )
         Spacer(Modifier.width(if (needsYou) 10.dp else 12.dp))
         Column(Modifier.weight(1f)) {
+            // S24-8: the project name leads, never the full path.
             Text(
-                text = agent.name,
+                text = AgentRowModel.projectTitle(agent.cwd, agent.name),
                 color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // S24-8: the full cwd stays here (board 03's meta), but the
+            // default kind `pi` is never repeated beside the name.
             Text(
-                text = listOfNotNull(agent.cwd, agent.kind).joinToString(" · "),
+                text = listOfNotNull(agent.cwd, AgentRowModel.secondaryKind(agent.kind))
+                    .joinToString(" · "),
                 color = LocalPalette.current.muted,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -2806,9 +2826,10 @@ private fun InboxRow(agent: AgentDto, needsYou: Boolean, onOpen: () -> Unit) {
 }
 
 /** One host row on the Nodes screen (board 02): state is a plain word in
- * secondary text — no chip, no row fill — and the row opens the agent list. */
+ * secondary text — no chip, no row fill — and the row opens the agent list.
+ * A row that explains itself (S24-3) passes `state = null` and shows none. */
 @Composable
-private fun NodeRow(name: String, state: String, meta: String, onOpen: () -> Unit) {
+private fun NodeRow(name: String, state: String?, meta: String, onOpen: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2824,13 +2845,15 @@ private fun NodeRow(name: String, state: String, meta: String, onOpen: () -> Uni
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = state,
-                    color = LocalPalette.current.muted,
-                    fontSize = 11.sp,
-                    letterSpacing = 0.5.sp,
-                )
+                if (!state.isNullOrBlank()) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = state,
+                        color = LocalPalette.current.muted,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.5.sp,
+                    )
+                }
             }
             Text(
                 text = meta,
@@ -2845,11 +2868,13 @@ private fun NodeRow(name: String, state: String, meta: String, onOpen: () -> Uni
     }
 }
 
-/** The group header: the word and the count, uppercase, quiet (board 03). */
+/** The group header: the word and the count, quiet (board 03). S24-6: the
+ *  inbox's human words arrive already sentence-cased (`uppercase = false`);
+ *  meta labels keep the design's uppercase step. */
 @Composable
-private fun GroupLabel(text: String) {
+private fun GroupLabel(text: String, uppercase: Boolean = true) {
     Text(
-        text = text.uppercase(),
+        text = if (uppercase) text.uppercase() else text,
         color = LocalPalette.current.muted,
         fontSize = 11.sp,
         letterSpacing = 1.sp,

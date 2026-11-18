@@ -36,12 +36,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.gentlemanprogramming.gentlemobile.core.KnownHostDto
 import com.gentlemanprogramming.gentlemobile.notifications.notificationsRowDetail
 import com.gentlemanprogramming.gentlemobile.notifications.notificationsRowWord
@@ -91,6 +95,10 @@ fun SettingsScreen(
     var confirmRegenerate by remember { mutableStateOf(false) }
     var confirmRevoke by remember { mutableStateOf(false) }
     var hostsOpen by remember { mutableStateOf(false) }
+    // S24-2: the four sections are collapsible, one open at a time — the
+    // screen opens as a compact index of four rows, not one long wall, and
+    // no section can push the others past a screen.
+    var openSection by remember { mutableStateOf<Section?>(null) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -99,29 +107,34 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 12.dp),
     ) {
-        // Topbar: back stays a 44dp target; the title sits between.
+        // Compact top area (S24-2): one title next to the back chevron — the
+        // duplicated small topbar word is gone.
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .clickable(onClick = onBack),
+                    .clickable(onClick = onBack)
+                    .semantics { contentDescription = "Back" },
                 contentAlignment = Alignment.Center,
             ) {
                 Text("‹", color = p.text, fontSize = 18.sp)
             }
             Spacer(Modifier.width(8.dp))
-            Text(text = "Settings", color = p.muted, fontSize = 13.sp)
+            Text(
+                text = "Settings",
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 22.sp,
+                lineHeight = 26.sp,
+                fontWeight = FontWeight.Bold,
+            )
         }
         Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Settings",
-            color = MaterialTheme.colorScheme.onBackground,
-            fontSize = 22.sp,
-            lineHeight = 26.sp,
-            fontWeight = FontWeight.Bold,
-        )
 
-        SectionLabel("Security")
+        SectionBody(
+            section = Section.Security,
+            open = openSection == Section.Security,
+            onToggle = { openSection = if (openSection == Section.Security) null else Section.Security },
+        ) {
 
         // Device key: the real identity, its type, a short fingerprint and
         // where it lives. Regenerate is real (T18): a confirmation first —
@@ -200,61 +213,6 @@ fun SettingsScreen(
             )
         }
 
-        // Sessions directory (T17a): where the Sessions screen lists from.
-        // Blank = the core's default (the Gentle Shell agent home). The
-        // override is how a test build points the app at a fixture
-        // directory instead of the real sessions.
-        val context = LocalContext.current
-        val sessionsStore = remember { SharedPreferencesStore(context) }
-        var editingSessionsDir by remember { mutableStateOf(false) }
-        var sessionsDirDraft by remember { mutableStateOf("") }
-        var sessionsDirOverride by remember {
-            mutableStateOf(sessionsStore.getString(SessionsConfig.OVERRIDE_KEY))
-        }
-        SectionLabel("Sessions (Gentle Shell)")
-        SettingRow(
-            name = "Sessions directory",
-            sub = sessionsDirOverride?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "default · ~/.gentle-shell/agent/sessions",
-            isMono = true,
-            trailing = {
-                MiniButton(label = "Edit", enabled = true) {
-                    sessionsDirDraft = sessionsDirOverride?.trim().orEmpty()
-                    editingSessionsDir = true
-                }
-            },
-        )
-        UnavailableNote("T17a lists the host's sessions; resume lands in a later build.")
-        if (editingSessionsDir) {
-            AlertDialog(
-                onDismissRequest = { editingSessionsDir = false },
-                title = { Text("Sessions directory") },
-                text = {
-                    OutlinedTextField(
-                        value = sessionsDirDraft,
-                        onValueChange = { sessionsDirDraft = it },
-                        placeholder = { Text("blank = the host default") },
-                        singleLine = true,
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        sessionsStore.putString(SessionsConfig.OVERRIDE_KEY, sessionsDirDraft)
-                        sessionsDirOverride = sessionsDirDraft
-                        editingSessionsDir = false
-                    }) { Text("Save", color = p.accent) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { editingSessionsDir = false }) {
-                        Text("Cancel", color = p.muted)
-                    }
-                },
-                containerColor = p.surfaceRaised,
-                titleContentColor = MaterialTheme.colorScheme.onBackground,
-                textContentColor = p.muted,
-            )
-        }
-
         // Biometric unlock: a real switch (T18). On, it stands between the
         // user and every session open and every connect — a BiometricPrompt
         // with the device credential as fallback. A device that cannot
@@ -288,8 +246,65 @@ fun SettingsScreen(
             sub = "Refuses a host whose SSH key changed.",
             trailing = { DisabledSwitch(checked = true, locked = true) },
         )
+        }
 
-        SectionLabel("Connection")
+        SectionBody(
+            section = Section.Connection,
+            open = openSection == Section.Connection,
+            onToggle = { openSection = if (openSection == Section.Connection) null else Section.Connection },
+        ) {
+
+        // Where the Sessions screen lists from (T17a): the host's own
+        // default unless a debug/test override was entered. A connection
+        // setting: it points at the host, not at a security decision.
+        val context = LocalContext.current
+        val sessionsStore = remember { SharedPreferencesStore(context) }
+        var editingSessionsDir by remember { mutableStateOf(false) }
+        var sessionsDirDraft by remember { mutableStateOf("") }
+        var sessionsDirOverride by remember {
+            mutableStateOf(sessionsStore.getString(SessionsConfig.OVERRIDE_KEY))
+        }
+        SettingRow(
+            name = "Sessions directory",
+            sub = sessionsDirOverride?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "default · ~/.gentle-shell/agent/sessions",
+            isMono = true,
+            trailing = {
+                MiniButton(label = "Edit", enabled = true) {
+                    sessionsDirDraft = sessionsDirOverride?.trim().orEmpty()
+                    editingSessionsDir = true
+                }
+            },
+        )
+        if (editingSessionsDir) {
+            AlertDialog(
+                onDismissRequest = { editingSessionsDir = false },
+                title = { Text("Sessions directory") },
+                text = {
+                    OutlinedTextField(
+                        value = sessionsDirDraft,
+                        onValueChange = { sessionsDirDraft = it },
+                        placeholder = { Text("blank = the host default") },
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        sessionsStore.putString(SessionsConfig.OVERRIDE_KEY, sessionsDirDraft)
+                        sessionsDirOverride = sessionsDirDraft
+                        editingSessionsDir = false
+                    }) { Text("Save", color = p.accent) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editingSessionsDir = false }) {
+                        Text("Cancel", color = p.muted)
+                    }
+                },
+                containerColor = p.surfaceRaised,
+                titleContentColor = MaterialTheme.colorScheme.onBackground,
+                textContentColor = p.muted,
+            )
+        }
 
         // The lane selector. Herdr TUI is the only implemented lane; Gentle
         // Shell direct sessions are not in the core yet (S3), and the radio
@@ -318,8 +333,6 @@ fun SettingsScreen(
         }
         UnavailableNote("Gentle Shell direct sessions are not in the core yet — Herdr TUI is the only lane.")
 
-        SectionLabel("Notifications")
-
         // T15 (S11): the permission, stated honestly. A denial is never a
         // silent failure — the row says notifications are off and why, and
         // the way back is one tap into the system's own settings.
@@ -337,7 +350,13 @@ fun SettingsScreen(
             )
         }
 
-        SectionLabel("Appearance")
+        }
+
+        SectionBody(
+            section = Section.Appearance,
+            open = openSection == Section.Appearance,
+            onToggle = { openSection = if (openSection == Section.Appearance) null else Section.Appearance },
+        ) {
         SettingRow(
             name = "Theme · ${theme.label}",
             sub = if (theme == AppTheme.CUTE) {
@@ -348,8 +367,13 @@ fun SettingsScreen(
             onClick = onOpenThemes,
             trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
         )
+        }
 
-        SectionLabel("About")
+        SectionBody(
+            section = Section.About,
+            open = openSection == Section.About,
+            onToggle = { openSection = if (openSection == Section.About) null else Section.About },
+        ) {
         val version = appVersion()
         SettingRow(
             name = "Gentle Mobile $version",
@@ -358,6 +382,7 @@ fun SettingsScreen(
             trailing = { MiniButton(label = "What's new", enabled = false) },
         )
         UnavailableNote("No release notes yet — this is $version.")
+        }
         Spacer(Modifier.height(24.dp))
 
         // Actions. Disconnect works only against a live connection; revoke
@@ -469,16 +494,61 @@ private fun ConfirmDialog(
     )
 }
 
+/// The four Settings sections (S24-2): the screen opens as a compact index
+/// of these four rows, each collapsible, one open at a time, so no section
+/// can push the rest past one screen. `summary` is the collapsed one-liner.
+private enum class Section(val label: String, val summary: String) {
+    Security("Security", "device key · known hosts · biometrics · pinning"),
+    Connection("Connection", "lane · sessions directory · notifications"),
+    Appearance("Appearance", "theme"),
+    About("About", "version · what's new"),
+}
+
+/** One collapsible section (S24-2): a full-width 44dp header row — label,
+ *  one-line summary and a chevron that turns when open — then the rows only
+ *  while it is open. Exactly one section is open at a time (the caller owns
+ *  `openSection`). */
 @Composable
-private fun SectionLabel(text: String) {
-    // design/system.md: uppercase meta labels, one step smaller and muted.
-    Text(
-        text = text.uppercase(),
-        color = LocalPalette.current.muted,
-        fontSize = 11.sp,
-        letterSpacing = 0.8.sp,
-        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
-    )
+private fun SectionBody(
+    section: Section,
+    open: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val p = LocalPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .clickable(onClick = onToggle)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = section.label.uppercase(),
+                color = p.muted,
+                fontSize = 11.sp,
+                letterSpacing = 0.8.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = section.summary,
+                color = p.textDisabled,
+                fontSize = 11.sp,
+            )
+        }
+        Text(
+            text = "›",
+            color = p.muted,
+            fontSize = 15.sp,
+            modifier = Modifier.graphicsLayer { rotationZ = if (open) 90f else 0f },
+        )
+    }
+    HairlineRow()
+    if (open) {
+        content()
+    }
 }
 
 /** One hairline row: name + sub on the left, trailing control on the right. */
