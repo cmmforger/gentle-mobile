@@ -94,6 +94,12 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   prints what it wrote so the user can see it.
   This replaces the "many steps" complaint as the last blocker before the human tests the app.
 
+- **S23 — No release APK until the human approves the build.**
+  "la ultima fase sera generar el apk y cuando se apruebe recien ahi se puede hacer un apk release, pero antes no."
+  Until that approval, verification uses **debug** builds installed on the emulator or a test device. Do not
+  produce, copy or hand over a release APK, and do not touch the keystore, in any intermediate step. The
+  release build is the last phase and it happens once, after the human says the app is right.
+
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
 
