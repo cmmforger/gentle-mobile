@@ -79,6 +79,18 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import android.provider.OpenableColumns
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
+import com.gentlemanprogramming.gentlemobile.notifications.AgentAlertTracker
+import com.gentlemanprogramming.gentlemobile.notifications.ConnectionService
+import com.gentlemanprogramming.gentlemobile.notifications.ForegroundHub
+import com.gentlemanprogramming.gentlemobile.notifications.ForegroundServiceGate
+import com.gentlemanprogramming.gentlemobile.notifications.TrackedAgent
+import com.gentlemanprogramming.gentlemobile.notifications.ensureChannels
+import com.gentlemanprogramming.gentlemobile.notifications.postAgentAlert
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
@@ -173,11 +185,22 @@ import java.util.concurrent.Executors
  * that use it.
  */
 class MainActivity : FragmentActivity() {
+    /** T15 (S11): the agent pane a notification tap asked to open. Set from
+     *  the launch intent here and from onNewIntent when the task is already
+     *  running (singleTop); consumed by the connect screen once the live
+     *  snapshot actually contains the agent. */
+    private val openAgentPane = androidx.compose.runtime.mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // The launch theme carries the splash background; this is the real
         // app theme from the first composed frame on.
         setTheme(R.style.Theme_GentleMobile)
         super.onCreate(savedInstanceState)
+        // Notification channels exist before anything can post (T15): the
+        // persistent connection channel is quiet, the agent-alert channel
+        // is the one that must be seen.
+        ensureChannels(this)
+        openAgentPane.value = intent?.getStringExtra(ConnectionService.EXTRA_OPEN_AGENT_PANE)
         // Edge-to-edge with real insets: the session composer must stay above
         // the keyboard and the navigation bar, which only works when the app
         // receives IME/nav-bar insets instead of the decor consuming them.
@@ -209,6 +232,7 @@ class MainActivity : FragmentActivity() {
                         keyPath = keyPath,
                         knownHostsPath = knownHostsPath,
                         appTheme = appTheme,
+                        openAgentPane = openAgentPane,
                         onSelectTheme = { theme ->
                             // Applied immediately, persisted for the next launch.
                             appTheme = theme
@@ -218,6 +242,15 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // A notification tap while the task already exists (singleTop):
+        // record the agent to open, and keep the intent current so a later
+        // recreation does not replay a stale one.
+        openAgentPane.value = intent.getStringExtra(ConnectionService.EXTRA_OPEN_AGENT_PANE)
+        setIntent(intent)
     }
 }
 
@@ -260,9 +293,22 @@ private class ScreenState {
     val machine = SupervisionMachine()
 
     /** Registered pollers, logged at every change so teardown — cancelling
-     * a session, going back to the host list, replacing the connection — is
-     * provable with a counter that returns to zero. */
+     *  a session, going back to the host list, replacing the connection — is
+     *  provable with a counter that returns to zero. */
     val pollers = PollTracker()
+
+    /** T15 (S11): the pure alert brain, fed by its own slow poller over the
+     *  connection the app already holds — no extra network traffic, no
+     *  relay. Reset whenever a new connection goes live. */
+    val alertTracker = AgentAlertTracker()
+
+    /** The foreground service runs exactly while the machine says
+     *  connected; the unit-tested gate owns the start/stop pairing. */
+    val serviceGate = ForegroundServiceGate()
+
+    /** Whether the app is (probably) visible: the notification suppression
+     *  rule — never notify about the agent whose session is on screen. */
+    var appInForeground by mutableStateOf(true)
 }
 
 /** The mutable state of one open agent session. */
@@ -368,6 +414,7 @@ fun ConnectScreen(
     knownHostsPath: String,
     appTheme: AppTheme,
     onSelectTheme: (AppTheme) -> Unit,
+    openAgentPane: androidx.compose.runtime.MutableState<String?>,
 ) {
     val screen = remember { ScreenState() }
     val context = LocalContext.current
@@ -450,6 +497,27 @@ fun ConnectScreen(
         }
     }
 
+    // T15 (S11): POST_NOTIFICATIONS on Android 13+, requested once, with an
+    // explanation on screen while the system dialog is up. A denial keeps
+    // the app fully working — the Settings row then says notifications are
+    // off and why. Below Android 13 there is nothing to ask (null).
+    var notificationsGranted by remember {
+        mutableStateOf(notificationPermissionGranted(context))
+    }
+    var notificationsAsked by remember { mutableStateOf(false) }
+    val notificationsPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        notificationsGranted = granted
+        notificationsAsked = true
+    }
+    fun askForNotifications() {
+        if (Build.VERSION.SDK_INT < 33) return
+        if (notificationsGranted == true || notificationsAsked) return
+        notificationsAsked = true
+        notificationsPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+    }
+
     // Splash (S21, board 01): the mark, the wordmark and a thin progress line
     // for exactly as long as the cold-start key work runs — never a fake
     // delay. It hides as soon as the first screen is ready, including when
@@ -460,10 +528,16 @@ fun ConnectScreen(
     }
 
     fun disconnectLive() {
-        val current = screen.ui
-        if (current is UiState.Connected) {
+        // T15 (S11): the notification's Disconnect action can land while a
+        // session screen is up; the user is disconnecting the connection,
+        // whatever screen shows it.
+        val connection = when (val current = screen.ui) {
+            is UiState.Connected -> current.connection
+            is UiState.Session -> current.connection
+            else -> null
+        }
+        if (connection != null) {
             screen.generation += 1
-            val connection = current.connection
             executor.execute {
                 try {
                     connection.disconnect()
@@ -485,6 +559,7 @@ fun ConnectScreen(
             theme = appTheme,
             connected = screen.ui is UiState.Connected,
             regenerated = regenerated,
+            notificationsGranted = notificationsGranted,
             onCopyKey = {
                 identity?.let { clipboard.setText(AnnotatedString(it.publicKeyLine)) }
             },
@@ -546,6 +621,18 @@ fun ConnectScreen(
             onDisconnect = {
                 disconnectLive()
                 route = Route.Main
+            },
+            onOpenNotificationSettings = {
+                // Permission honesty (T15): a denied row opens the system's
+                // own notification settings for this app, one tap away.
+                try {
+                    context.startActivity(
+                        Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                } catch (_: Exception) {
+                }
             },
             onBack = { route = Route.Main },
         )
@@ -689,10 +776,24 @@ fun ConnectScreen(
                                 // A new connection is a fresh baseline: every
                                 // session's grid and read start empty again,
                                 // and the host row — not the inbox — leads.
+                                // The alert brain re-primes too: the first
+                                // snapshot of THIS connection is the baseline
+                                // (an agent already in needs you never alerts).
                                 screen.sessions.values.forEach { it.resetBaseline() }
+                                screen.alertTracker.reset()
                                 screen.inboxOpen = false
                                 screen.machine.onLive()
                                 screen.ui = UiState.Connected(connection, snapshot = null)
+                                // T15 (S11): the foreground service keeps the
+                                // SSH link alive in the background, and the
+                                // slow alert poller watches for transitions.
+                                if (screen.serviceGate.onConnected(host)) {
+                                    ContextCompat.startForegroundService(
+                                        context,
+                                        ConnectionService.connectionIntent(context, host),
+                                    )
+                                }
+                                pollAlerts(context, screen, connection)
                             }
                         }
                         poll(screen, connection, generation)
@@ -709,6 +810,21 @@ fun ConnectScreen(
                     screen.ui = UiState.Failed(message)
                 }
             }
+        }
+    }
+
+    /** Open one agent's session screen — the exact path the inbox row and
+     *  a notification tap both take. The biometric gate wraps it like any
+     *  other session open. */
+    fun openAgentSession(current: UiState.Connected, agent: AgentDto) {
+        gated {
+            val connection = current.connection
+            screen.generation += 1
+            val generation = screen.generation
+            val sessionUi = screen.sessions.getOrPut(agent.paneId) { SessionUi() }
+            screen.ui = UiState.Session(connection, agent)
+            pollPane(screen, sessionUi, connection, agent.paneId, generation)
+            pollSurface(screen, sessionUi, connection, agent.paneId, generation)
         }
     }
 
@@ -757,14 +873,71 @@ fun ConnectScreen(
     }
 
     // ON_RESUME is the supervision trigger: verify liveness or retry once,
-    // instead of trusting a socket that may have died unnoticed.
+    // instead of trusting a socket that may have died unnoticed. ON_PAUSE
+    // flips the visibility flag the notification suppression reads (T15):
+    // the agent on screen never alerts, the background always may.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) onAppForeground()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    screen.appInForeground = true
+                    notificationsGranted = notificationPermissionGranted(context)
+                    onAppForeground()
+                }
+                Lifecycle.Event.ON_PAUSE -> screen.appInForeground = false
+                else -> {}
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // T15 (S11): the foreground service runs exactly while the supervision
+    // machine says connected — one start per connection, one stop when the
+    // link drops, fails, or the user disconnects. The unit-tested gate
+    // (ForegroundServiceGate) owns the pairing, so a drop during a retry
+    // never leaves an orphaned notification behind.
+    LaunchedEffect(Unit) {
+        snapshotFlow { screen.machine.state }.collect { state ->
+            if (state is SupervisionState.Connected) {
+                if (screen.serviceGate.onConnected(host)) {
+                    ContextCompat.startForegroundService(
+                        context,
+                        ConnectionService.connectionIntent(context, host),
+                    )
+                }
+            } else if (screen.serviceGate.onConnectionEnded()) {
+                context.stopService(Intent(context, ConnectionService::class.java))
+            }
+        }
+    }
+
+    // T15 (S11): the notification's Disconnect action reaches the screen
+    // that owns the live connection. Unregistered when this screen goes
+    // away, so a stale teardown can never fire.
+    DisposableEffect(Unit) {
+        ForegroundHub.userDisconnect = {
+            disconnectLive()
+            route = Route.Main
+        }
+        onDispose { ForegroundHub.userDisconnect = null }
+    }
+
+    // T15 (S11): a notification tap opens that agent's session. The pane id
+    // may arrive before the agent is in a snapshot (or before any
+    // connection exists), so it stays pending until the connected snapshot
+    // actually contains it.
+    LaunchedEffect(openAgentPane.value, screen.ui) {
+        val paneId = openAgentPane.value ?: return@LaunchedEffect
+        val current = screen.ui
+        if (current is UiState.Connected) {
+            val agent = current.snapshot?.agents?.firstOrNull { it.paneId == paneId }
+            if (agent != null) {
+                openAgentPane.value = null
+                openAgentSession(current, agent)
+            }
+        }
     }
 
     Column(
@@ -1022,6 +1195,10 @@ fun ConnectScreen(
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
+                        // The notification permission rides the connect
+                        // action: one explicit moment, with the explanation
+                        // below while the dialog is up.
+                        askForNotifications()
                         // A typed link is applied first; a pasted or scanned
                         // one was already applied, so Connect reuses it. With
                         // the biometric switch on, connecting is the device
@@ -1065,6 +1242,19 @@ fun ConnectScreen(
                 }
                 if (current is UiState.Failed) {
                     Notice(current.message, LocalPalette.current.error)
+                }
+                if (notificationsAsked && notificationsGranted == null) {
+                    // The request is up: the explanation the honest flow
+                    // needs, never a bare dialog.
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Android is asking whether Gentle Mobile may notify you — " +
+                            "when an agent needs you, the phone should say so. " +
+                            "Declining keeps everything working; Settings will show " +
+                            "notifications are off.",
+                        color = LocalPalette.current.muted,
+                        fontSize = 11.sp,
+                    )
                 }
                 Spacer(Modifier.height(12.dp))
                 Hairline()
@@ -1224,15 +1414,7 @@ fun ConnectScreen(
                                     GroupLabel("$label · ${agents.size}")
                                     agents.forEach { agent ->
                                         InboxRow(agent, needsYou = needsYou, onOpen = {
-                                            gated {
-                                                val connection = current.connection
-                                                screen.generation += 1
-                                                val generation = screen.generation
-                                                val sessionUi = screen.sessions.getOrPut(agent.paneId) { SessionUi() }
-                                                screen.ui = UiState.Session(connection, agent)
-                                                pollPane(screen, sessionUi, connection, agent.paneId, generation)
-                                                pollSurface(screen, sessionUi, connection, agent.paneId, generation)
-                                            }
+                                            openAgentSession(current, agent)
                                         })
                                     }
                                 }
@@ -1475,6 +1657,100 @@ private fun poll(screen: ScreenState, connection: CompanionConnection, generatio
     }
     runOnce()
 }
+
+/**
+ * Alert polling (T15, S11): a slow, separate poller that exists only for
+ * notifications. It rides the same connection and the same core snapshot
+ * the UI already uses — no extra network traffic, no relay — and it does
+ * not stop while a session screen is up: the phone must still tell you
+ * when an agent needs you even after you opened someone else's session.
+ * Deliberately slower than the UI's 500 ms snapshot poll (2 s): the shade
+ * does not need render cadence, and the battery rule stands — no new
+ * wakeup pattern beyond what supervision already costs. The pure rules
+ * (baseline, transition-only, suppression, debounce) live in
+ * AgentAlertTracker and are unit-tested.
+ */
+private const val ALERT_POLL_MS = 2000L
+
+private fun pollAlerts(
+    context: Context,
+    screen: ScreenState,
+    connection: CompanionConnection,
+) {
+    val slot = screen.pollers.register()
+    Log.i(TAG, "alert poller registered, active=${screen.pollers.count}")
+    fun runOnce() {
+        executor.execute {
+            var reschedule = false
+            try {
+                val ended = try {
+                    connection.isDisconnected()
+                } catch (_: Exception) {
+                    true
+                }
+                if (!ended) {
+                    val snapshot = try {
+                        connection.snapshot()
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (snapshot != null) {
+                        mainHandler.post {
+                            // The suppression rule reads UI state, so the
+                            // transition decision runs on the main thread.
+                            val showingPaneId = if (screen.appInForeground) {
+                                (screen.ui as? UiState.Session)?.agent?.paneId
+                            } else {
+                                null
+                            }
+                            val alerts = screen.alertTracker.onSnapshot(
+                                snapshot.agents.map {
+                                    TrackedAgent(it.paneId, it.name, it.cwd, it.status)
+                                },
+                                showingPaneId,
+                            )
+                            alerts.forEach { postAgentAlert(context, it) }
+                        }
+                    }
+                }
+                reschedule = !ended
+            } finally {
+                if (!reschedule) {
+                    slot.close()
+                    Log.i(TAG, "alert poller stopped, active=${screen.pollers.count}")
+                }
+            }
+            if (reschedule) {
+                mainHandler.postDelayed({
+                    val ended = try {
+                        connection.isDisconnected()
+                    } catch (_: Exception) {
+                        true
+                    }
+                    if (!ended) {
+                        runOnce()
+                    } else {
+                        slot.close()
+                        Log.i(TAG, "alert poller stopped, active=${screen.pollers.count}")
+                    }
+                }, ALERT_POLL_MS)
+            }
+        }
+    }
+    runOnce()
+}
+
+/** The notification permission as this device currently has it: `null`
+ *  below Android 13, where there is no runtime permission to deny. */
+private fun notificationPermissionGranted(context: Context): Boolean? =
+    if (Build.VERSION.SDK_INT >= 33) {
+        ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        null
+    }
 
 private fun describe(error: Exception): String = when (error) {
     is CompanionException.HostKeyMismatch ->
@@ -2493,6 +2769,7 @@ private fun ConnectScreenPreview() {
             keyPath = "/data/local/tmp/client_ed25519",
             knownHostsPath = "/data/known_hosts",
             appTheme = AppTheme.CUTE,
+            openAgentPane = androidx.compose.runtime.mutableStateOf<String?>(null),
             onSelectTheme = {},
         )
     }

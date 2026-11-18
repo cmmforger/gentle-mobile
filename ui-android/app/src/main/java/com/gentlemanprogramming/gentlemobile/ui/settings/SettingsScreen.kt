@@ -41,6 +41,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gentlemanprogramming.gentlemobile.core.KnownHostDto
+import com.gentlemanprogramming.gentlemobile.notifications.notificationsRowDetail
+import com.gentlemanprogramming.gentlemobile.notifications.notificationsRowWord
 import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
 import com.gentlemanprogramming.gentlemobile.identity.OpenSshKey
 import com.gentlemanprogramming.gentlemobile.security.BiometricDecision
@@ -68,6 +70,9 @@ fun SettingsScreen(
     theme: AppTheme,
     connected: Boolean,
     regenerated: Boolean,
+    /** T15 (S11): the notification permission as the device holds it —
+     *  `null` below Android 13, where there is nothing to deny. */
+    notificationsGranted: Boolean?,
     onCopyKey: () -> Unit,
     onOpenThemes: () -> Unit,
     onToggleBiometric: (Boolean) -> Unit,
@@ -75,6 +80,7 @@ fun SettingsScreen(
     onForgetHost: (KnownHostDto) -> Unit,
     onRevoke: () -> Unit,
     onDisconnect: () -> Unit,
+    onOpenNotificationSettings: () -> Unit,
     onBack: () -> Unit,
 ) {
     val p = LocalPalette.current
@@ -252,6 +258,25 @@ fun SettingsScreen(
             )
         }
         UnavailableNote("Gentle Shell direct sessions are not in the core yet — Herdr TUI is the only lane.")
+
+        SectionLabel("Notifications")
+
+        // T15 (S11): the permission, stated honestly. A denial is never a
+        // silent failure — the row says notifications are off and why, and
+        // the way back is one tap into the system's own settings.
+        SettingRow(
+            name = "Agent notifications",
+            sub = notificationsRowDetail(notificationsGranted),
+            trailing = { Text(notificationsRowWord(notificationsGranted), color = p.muted, fontSize = 13.sp) },
+        )
+        if (notificationsGranted == false) {
+            SettingRow(
+                name = "Enable notifications",
+                sub = "Opens Android's notification settings for Gentle Mobile.",
+                onClick = onOpenNotificationSettings,
+                trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
+            )
+        }
 
         SectionLabel("Appearance")
         SettingRow(
