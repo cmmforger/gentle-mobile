@@ -1,6 +1,7 @@
 package com.gentlemanprogramming.gentlemobile.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -327,9 +328,10 @@ private fun MiniButton(label: String, enabled: Boolean) {
 }
 
 /**
- * The board's locked switch: checked but not togglable. `locked` keeps the
- * track on the raised surface (the pinning row); a plain disabled switch
- * reads as "off" (biometrics).
+ * The board's locked switch (board 07): checked-on renders ON — the thumb in
+ * textSecondary parked right on a surfaceRaised track with the board's 1px
+ * border — so mandatory pinning cannot read as an OFF switch (the T16 fix).
+ * A plain disabled switch keeps the quiet off reading (biometrics).
  */
 @Composable
 private fun DisabledSwitch(checked: Boolean, locked: Boolean = false) {
@@ -342,6 +344,11 @@ private fun DisabledSwitch(checked: Boolean, locked: Boolean = false) {
             modifier = Modifier
                 .width(44.dp)
                 .height(26.dp)
+                .border(
+                    1.dp,
+                    if (checked && locked) p.line else Color.Transparent,
+                    RoundedCornerShape(999.dp),
+                )
                 .background(
                     if (checked && locked) p.surfaceRaised else p.surface,
                     RoundedCornerShape(999.dp),
@@ -352,10 +359,7 @@ private fun DisabledSwitch(checked: Boolean, locked: Boolean = false) {
                 modifier = Modifier
                     .padding(start = if (checked) 21.dp else 3.dp)
                     .size(18.dp)
-                    .background(
-                        if (checked) p.textDisabled else p.muted,
-                        CircleShape,
-                    ),
+                    .background(p.muted, CircleShape),
             )
         }
     }

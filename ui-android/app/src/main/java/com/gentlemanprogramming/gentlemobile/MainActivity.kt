@@ -8,6 +8,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -49,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -181,7 +185,14 @@ private sealed interface UiState {
     data object Connecting : UiState
     data object Scanning : UiState
     data class Challenge(val fingerprint: String, val pinned: String?, val keyBlob: String) : UiState
-    data class Connected(val connection: CompanionConnection, val snapshot: SnapshotDto?) : UiState
+    data class Connected(
+        val connection: CompanionConnection,
+        val snapshot: SnapshotDto?,
+        /** True once the socket ended: the screen keeps the last snapshot
+         * and shows the board's interrupted notice instead of dying to a
+         * failure form. Retry re-runs the connect path. */
+        val interrupted: Boolean = false,
+    ) : UiState
     data class Session(val connection: CompanionConnection, val agent: AgentDto) : UiState
     data class Failed(val message: String) : UiState
 }
@@ -190,8 +201,12 @@ private sealed interface UiState {
 private class ScreenState {
     var ui by mutableStateOf<UiState>(UiState.Form)
     var generation: Int = 0
-    /** One session state per agent pane, so drafts survive going back. */
+ /** One session state per agent pane, so drafts survive going back. */
     val sessions = mutableMapOf<String, SessionUi>()
+
+    /** Connected splits into the Nodes screen and the agent Inbox; this
+     * flag is the entry point from the host row into the agent list. */
+    var inboxOpen by mutableStateOf(false)
 }
 
 /** The mutable state of one open agent session. */
@@ -379,8 +394,10 @@ fun ConnectScreen(
                         mainHandler.post {
                             if (screen.generation == generation) {
                                 // A new connection is a fresh baseline: every
-                                // session's grid and read start empty again.
+                                // session's grid and read start empty again,
+                                // and the host row — not the inbox — leads.
                                 screen.sessions.values.forEach { it.resetBaseline() }
+                                screen.inboxOpen = false
                                 screen.ui = UiState.Connected(connection, snapshot = null)
                             }
                         }
@@ -774,85 +791,130 @@ fun ConnectScreen(
             }
 
             is UiState.Connected -> {
-                val snapshot = current.snapshot
-                Row(
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = "Connected · $session",
-                        color = LocalPalette.current.accent,
-                        fontSize = 11.sp,
-                        letterSpacing = 0.8.sp,
-                    )
-                    Text(
-                        text = "Disconnect",
-                        color = LocalPalette.current.muted,
-                        fontSize = 11.sp,
-                        modifier = Modifier.clickable {
-                            screen.generation += 1
-                            val connection = current.connection
-                            executor.execute {
-                                try {
-                                    connection.disconnect()
-                                } catch (_: Exception) {
-                                }
-                            }
-                            screen.ui = UiState.Form
-                        },
-                    )
+                if (current.interrupted) {
+                    InterruptedNotice(onRetry = { connect(acceptChallenge = null) })
+                    Spacer(Modifier.height(8.dp))
                 }
-                Spacer(Modifier.height(8.dp))
-                if (snapshot == null) {
-                    Text(
-                        text = "Waiting for the first snapshot…",
-                        color = LocalPalette.current.muted,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                } else {
-                    Text(
-                        text = "${snapshot.workspaces.size} workspaces · " +
-                            "${snapshot.tabs.size} tabs · ${snapshot.panes.size} panes · " +
-                            "${snapshot.agents.size} agents",
-                        color = LocalPalette.current.muted,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = "Agents",
-                        color = LocalPalette.current.muted,
-                        fontSize = 11.sp,
-                        letterSpacing = 0.8.sp,
-                    )
-                    if (snapshot.agents.isEmpty()) {
-                        Spacer(Modifier.height(8.dp))
+                if (screen.inboxOpen) {
+                    // --- 03-inbox.html: one surface, groups in the fixed ---
+                    // --- order needs you → done → working → idle; the    ---
+                    // --- group label carries the word and the count, and ---
+                    // --- no row repeats it with a status chip.           ---
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         Text(
+                            text = "‹ Hosts",
+                            color = LocalPalette.current.accent,
+                            fontSize = 13.sp,
+                            modifier = Modifier
+                                .clickable { screen.inboxOpen = false }
+                                .padding(vertical = 12.dp),
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = "Disconnect",
+                            color = LocalPalette.current.muted,
+                            fontSize = 11.sp,
+                            modifier = Modifier.clickable { disconnectLive() },
+                        )
+                    }
+                    val snapshot = current.snapshot
+                    when {
+                        snapshot == null -> Text(
+                            text = "Waiting for the first snapshot…",
+                            color = LocalPalette.current.muted,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                        snapshot.agents.isEmpty() -> Text(
                             text = "No agents in this snapshot.",
                             color = LocalPalette.current.muted,
                             fontSize = 13.sp,
                         )
-                    } else {
-                        snapshot.agents.forEachIndexed { index, agent ->
-                            AgentRow(agent, onOpen = {
-                                val connection = current.connection
-                                screen.generation += 1
-                                val generation = screen.generation
-                                val sessionUi = screen.sessions.getOrPut(agent.paneId) { SessionUi() }
-                                screen.ui = UiState.Session(connection, agent)
-                                pollPane(screen, sessionUi, connection, agent.paneId, generation)
-                                pollSurface(screen, sessionUi, connection, agent.paneId, generation)
-                            })
-                            if (index != snapshot.agents.lastIndex) {
-                                Spacer(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .height(1.dp)
-                                        .background(LocalPalette.current.line),
-                                )
+                        else -> {
+                            // `unknown` is not on the board; it keeps its own
+                            // honest group last rather than lying as idle.
+                            listOf(
+                                Triple("needs you", snapshot.agents.filter { it.status == AgentStatusDto.BLOCKED }, true),
+                                Triple("done", snapshot.agents.filter { it.status == AgentStatusDto.DONE }, false),
+                                Triple("working", snapshot.agents.filter { it.status == AgentStatusDto.WORKING }, false),
+                                Triple("idle", snapshot.agents.filter { it.status == AgentStatusDto.IDLE }, false),
+                                Triple("unknown", snapshot.agents.filter { it.status == AgentStatusDto.UNKNOWN }, false),
+                            ).forEach { (label, agents, needsYou) ->
+                                if (agents.isNotEmpty()) {
+                                    GroupLabel("$label · ${agents.size}")
+                                    agents.forEach { agent ->
+                                        InboxRow(agent, needsYou = needsYou, onOpen = {
+                                            val connection = current.connection
+                                            screen.generation += 1
+                                            val generation = screen.generation
+                                            val sessionUi = screen.sessions.getOrPut(agent.paneId) { SessionUi() }
+                                            screen.ui = UiState.Session(connection, agent)
+                                            pollPane(screen, sessionUi, connection, agent.paneId, generation)
+                                            pollSurface(screen, sessionUi, connection, agent.paneId, generation)
+                                        })
+                                    }
+                                }
                             }
                         }
+                    }
+                } else {
+                    // --- 02-nodes.html: hosts as hairline rows on one ---
+                    // --- surface, state as a plain word, agents count ---
+                    // --- for context, the row is the entry point into ---
+                    // --- the agent list.                              ---
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = "Connected · $session",
+                            color = LocalPalette.current.accent,
+                            fontSize = 11.sp,
+                            letterSpacing = 0.8.sp,
+                        )
+                        Text(
+                            text = "Disconnect",
+                            color = LocalPalette.current.muted,
+                            fontSize = 11.sp,
+                            modifier = Modifier.clickable { disconnectLive() },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    val snapshot = current.snapshot
+                    if (snapshot == null) {
+                        Text(
+                            text = "Waiting for the first snapshot…",
+                            color = LocalPalette.current.muted,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    } else {
+                        Text(
+                            text = "Your hosts",
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 22.sp,
+                            lineHeight = 26.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        GroupLabel("$user@$host")
+                        NodeRow(
+                            name = host,
+                            state = "connected",
+                            meta = "$user@$host · port $port · protocol 22 · ${snapshot.agents.size} agents",
+                            onOpen = { screen.inboxOpen = true },
+                        )
+                        Spacer(Modifier.height(24.dp))
+                        // Honest empty space, not a dead accent button: a
+                        // second host cannot be added in this build.
+                        Text(
+                            text = "One host per install for now — adding a second host needs a later build.",
+                            color = LocalPalette.current.muted,
+                            fontSize = 13.sp,
+                        )
+                        // Search stays out on purpose: with one host there is
+                        // nothing real for it to filter, so the field would be
+                        // dead chrome (design/system.md redundancy rule).
                     }
                 }
             }
@@ -925,7 +987,15 @@ private fun poll(screen: ScreenState, connection: CompanionConnection, generatio
         val snapshot = try {
             connection.snapshot()
         } catch (error: Exception) {
-            mainHandler.post { screen.ui = UiState.Failed(describe(error)) }
+            // The connection dropped mid-session: keep the last snapshot on
+            // screen behind the interrupted notice (board 03) instead of
+            // throwing the user back to a failure form. Retry re-connects.
+            mainHandler.post {
+                val current = screen.ui
+                if (screen.generation == generation && current is UiState.Connected) {
+                    screen.ui = current.copy(interrupted = true)
+                }
+            }
             return@execute
         }
         val ended = try {
@@ -940,7 +1010,7 @@ private fun poll(screen: ScreenState, connection: CompanionConnection, generatio
                 current.connection === connection
             ) {
                 screen.ui = if (ended) {
-                    UiState.Failed("The connection ended.")
+                    current.copy(interrupted = true)
                 } else {
                     current.copy(snapshot = snapshot ?: current.snapshot)
                 }
@@ -1334,6 +1404,11 @@ private fun SessionScreen(
             }
         }
 
+        // Extra keys (board 04): the designed strip between the terminal
+        // and the composer. Keys render disabled — see ExtraKeyRow.
+        Spacer(Modifier.height(8.dp))
+        ExtraKeyRow()
+
         // Composer: a prompt, sent through the daemon's own agent.prompt.
         // One row — the field with the send action beside it — so the
         // composer stays inside the one-thumb zone on a phone: a full-width
@@ -1474,38 +1549,39 @@ private fun Notice(message: String, color: androidx.compose.ui.graphics.Color) {
     }
 }
 
+/** One agent row in the grouped inbox: name, working dir, kind — the
+ * status lives in the group label, so the row carries no chip (board 03).
+ * Elapsed time is not in the snapshot's AgentDto, so it is omitted rather
+ * than invented. */
 @Composable
-private fun AgentRow(agent: AgentDto, onOpen: () -> Unit) {
+private fun InboxRow(agent: AgentDto, needsYou: Boolean, onOpen: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clickable(onClick = onOpen),
+            .clickable(onClick = onOpen)
+            .then(if (needsYou) Modifier.background(LocalPalette.current.selection) else Modifier),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
+        // The needs-you left rule is the only colour on the list (board 03).
+        Spacer(
+            Modifier
+                .width(2.dp)
+                .heightIn(min = 56.dp)
+                .background(if (needsYou) LocalPalette.current.accentEdge else Color.Transparent),
+        )
+        Spacer(Modifier.width(if (needsYou) 10.dp else 12.dp))
         Column(Modifier.weight(1f)) {
-            Row {
-                Text(
-                    text = agent.name,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = statusWord(agent.status),
-                    color = when (agent.status) {
-                        AgentStatusDto.WORKING -> LocalPalette.current.accent
-                        AgentStatusDto.BLOCKED -> LocalPalette.current.error
-                        else -> LocalPalette.current.muted
-                    },
-                    fontSize = 11.sp,
-                    letterSpacing = 0.5.sp,
-                    maxLines = 1,
-                )
-            }
             Text(
-                text = listOfNotNull(agent.kind, agent.cwd).joinToString(" · "),
+                text = agent.name,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = listOfNotNull(agent.cwd, agent.kind).joinToString(" · "),
                 color = LocalPalette.current.muted,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -1517,10 +1593,162 @@ private fun AgentRow(agent: AgentDto, onOpen: () -> Unit) {
     }
 }
 
+/** One host row on the Nodes screen (board 02): state is a plain word in
+ * secondary text — no chip, no row fill — and the row opens the agent list. */
+@Composable
+private fun NodeRow(name: String, state: String, meta: String, onOpen: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clickable(onClick = onOpen),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Row {
+                Text(
+                    text = name,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = state,
+                    color = LocalPalette.current.muted,
+                    fontSize = 11.sp,
+                    letterSpacing = 0.5.sp,
+                )
+            }
+            Text(
+                text = meta,
+                color = LocalPalette.current.muted,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(text = "›", color = LocalPalette.current.muted, fontSize = 15.sp)
+    }
+}
+
+/** The group header: the word and the count, uppercase, quiet (board 03). */
+@Composable
+private fun GroupLabel(text: String) {
+    Text(
+        text = text.uppercase(),
+        color = LocalPalette.current.muted,
+        fontSize = 11.sp,
+        letterSpacing = 1.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
+    )
+}
+
+/**
+ * The interrupted-connection notice (board 03): a 2px error left rule with
+ * quiet text — never a card and never a modal — and Retry now always visible
+ * as accent text.
+ */
+@Composable
+private fun InterruptedNotice(onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Spacer(
+            Modifier
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(LocalPalette.current.error),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "Connection interrupted.",
+                color = LocalPalette.current.error,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "The host socket closed — the lists below are the last snapshot.",
+                color = LocalPalette.current.muted,
+                fontSize = 13.sp,
+            )
+        }
+        Text(
+            text = "Retry now",
+            color = LocalPalette.current.accentEdge,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .heightIn(min = 44.dp)
+                .clickable(onClick = onRetry)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+        )
+    }
+}
+
+/**
+ * The extra-key row (board 04): Esc, Tab, Ctrl, Alt, arrows, Enter, sitting
+ * above the composer. The core's request path offers only `pane.read` and
+ * `agent.prompt` — there is no `pane.send_keys`-style method in this build —
+ * so every key renders in its honest disabled state instead of faking a
+ * press. The row still shows the designed shape so the layout matches the
+ * board; the note under it says why the keys do not send.
+ */
+@Composable
+private fun ExtraKeyRow() {
+    Column {
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            listOf("Esc", "Tab", "Ctrl", "Alt", "↑", "↓", "Enter").forEach { label ->
+                ExtraKeyChip(label)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Key sending is not in this core build yet — the request path has pane.read and agent.prompt, no key method — so the keys stay disabled rather than fake a press.",
+            color = LocalPalette.current.textDisabled,
+            fontSize = 11.sp,
+        )
+    }
+}
+
+/** One key chip: a ~30px visual inside a 44dp touch target (board 04). */
+@Composable
+private fun ExtraKeyChip(label: String) {
+    Box(
+        modifier = Modifier
+            .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
+            .padding(horizontal = 3.dp, vertical = 8.dp),
+        contentAlignment = androidx.compose.ui.Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .widthIn(min = 30.dp)
+                .height(30.dp)
+                .border(1.dp, LocalPalette.current.line, RoundedCornerShape(8.dp))
+                .background(LocalPalette.current.surfaceRaised, RoundedCornerShape(8.dp))
+                .padding(horizontal = 4.dp),
+            contentAlignment = androidx.compose.ui.Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                color = LocalPalette.current.textDisabled,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+    }
+}
+
 private fun statusWord(status: AgentStatusDto): String = when (status) {
     AgentStatusDto.IDLE -> "idle"
     AgentStatusDto.WORKING -> "working"
-    AgentStatusDto.BLOCKED -> "blocked"
+    AgentStatusDto.BLOCKED -> "needs you"
     AgentStatusDto.DONE -> "done"
     AgentStatusDto.UNKNOWN -> "unknown"
 }
