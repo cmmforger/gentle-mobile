@@ -72,4 +72,11 @@ dependencies {
     // The AAR carries the Android libjnidispatch.so natives; the plain jar
     // does not, and JNA fails with UnsatisfiedLinkError on device.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
+    // Ed25519 keypair generation for the device identity key (the key must be
+    // exportable in OpenSSH format, so AndroidKeyStore is not usable here).
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    // QR pairing: CameraX preview + ML Kit barcode scanning behind the
+    // design's Pair screen. Only used while the scanner is open.
+    val camerax = "1.3.4"
+    testImplementation("junit:junit:4.13.2")
 }

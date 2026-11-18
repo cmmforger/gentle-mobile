@@ -59,6 +59,16 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.gentlemanprogramming.gentlecompanion.core.SurfaceDto
 import com.gentlemanprogramming.gentlecompanion.core.acceptHostKey
 import com.gentlemanprogramming.gentlecompanion.core.AgentDto
@@ -70,6 +80,9 @@ import com.gentlemanprogramming.gentlecompanion.core.HostProfileDto
 import com.gentlemanprogramming.gentlecompanion.core.PaneReadDto
 import com.gentlemanprogramming.gentlecompanion.core.SnapshotDto
 import com.gentlemanprogramming.gentlecompanion.core.connect as coreConnect
+import com.gentlemanprogramming.gentlecompanion.identity.DeviceIdentity
+import com.gentlemanprogramming.gentlecompanion.pair.PairLink
+import com.gentlemanprogramming.gentlecompanion.pair.PairLinkResult
 import com.gentlemanprogramming.gentlecompanion.ui.theme.GentleCompanionTheme
 import com.gentlemanprogramming.gentlecompanion.ui.theme.Tokens
 import com.gentlemanprogramming.gentlecompanion.ui.terminal.SurfaceStats
@@ -91,6 +104,11 @@ import java.util.concurrent.Executors
  * pane's visible text over `pane.read` until the first surface arrives, and
  * a composer that submits the daemon's own `agent.prompt` — never raw
  * keystrokes.
+ *
+ * Pairing (T9): the identity key is generated on this phone at first launch
+ * and stays in app-private storage; the screen shows the public line to run
+ * `--add-key` with, a paste field for the host's `gc://` link, and a camera
+ * scanner behind the design's Pair screen.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,7 +130,11 @@ class MainActivity : ComponentActivity() {
                 if (showFixture) {
                     com.gentlemanprogramming.gentlecompanion.ui.terminal.FixtureTerminal()
                 } else {
-                    val keyPath = File(getExternalFilesDir(null), "client_ed25519").absolutePath
+                    // The identity key lives in app-private storage now. The
+                    // legacy external copy (the old adb-push path) is migrated
+                    // once by DeviceIdentity.ensure, which also generates the
+                    // keypair on first launch — no files are pushed any more.
+                    val keyPath = File(filesDir, DeviceIdentity.KEY_FILE).absolutePath
                     val knownHostsPath = File(filesDir, "known_hosts").absolutePath
                     ConnectScreen(keyPath = keyPath, knownHostsPath = knownHostsPath)
                 }
@@ -129,6 +151,7 @@ private val mainHandler = Handler(Looper.getMainLooper())
 private sealed interface UiState {
     data object Form : UiState
     data object Connecting : UiState
+    data object Scanning : UiState
     data class Challenge(val fingerprint: String, val pinned: String?, val keyBlob: String) : UiState
     data class Connected(val connection: CompanionConnection, val snapshot: SnapshotDto?) : UiState
     data class Session(val connection: CompanionConnection, val agent: AgentDto) : UiState
@@ -169,6 +192,8 @@ private class SessionUi {
 @Composable
 fun ConnectScreen(keyPath: String, knownHostsPath: String) {
     val screen = remember { ScreenState() }
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
 
     var host by remember { mutableStateOf("10.0.2.2") }
     var port by remember { mutableStateOf("2222") }
@@ -176,6 +201,51 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
     var session by remember { mutableStateOf("default") }
     /** User-chosen terminal font size in px, `0f` = fit the grid to the width. */
     var terminalFontPx by remember { mutableStateOf(0f) }
+
+    // Device identity: generated on first launch, migrated from the old
+    // external path once, shown so the user never copies files around.
+    var identity by remember { mutableStateOf<DeviceIdentity.Identity?>(null) }
+    var identityError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        try {
+            identity = withContext(Dispatchers.IO) { DeviceIdentity.ensure(context) }
+        } catch (error: Exception) {
+            identityError = describe(error)
+        }
+    }
+
+    // Pairing link paste + QR scan.
+    var pairLink by remember { mutableStateOf("") }
+    var pairError by remember { mutableStateOf<String?>(null) }
+    var cameraMessage by remember { mutableStateOf<String?>(null) }
+    var copied by remember { mutableStateOf(false) }
+    val cameraPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            cameraMessage = null
+            screen.ui = UiState.Scanning
+        } else {
+            cameraMessage = "Camera permission denied — paste the link instead."
+        }
+    }
+
+    fun applyPairLink(raw: String): Boolean {
+        return when (val parsed = PairLink.parse(raw)) {
+            is PairLinkResult.Parsed -> {
+                host = parsed.host
+                port = parsed.port
+                user = parsed.user
+                pairLink = ""
+                pairError = null
+                true
+            }
+            is PairLinkResult.Invalid -> {
+                pairError = parsed.reason
+                false
+            }
+        }
+    }
 
     fun connect(acceptChallenge: UiState.Challenge?) {
         screen.generation += 1
@@ -197,7 +267,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                 if (!File(keyPath).exists()) {
                     mainHandler.post {
                         screen.ui = UiState.Failed(
-                            "No client key at $keyPath — push it with adb push first.",
+                            "No client key at $keyPath — the identity could not be prepared on this phone.",
                         )
                     }
                     return@execute
@@ -269,7 +339,171 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
         }
 
         when (val current = screen.ui) {
+            is UiState.Scanning -> {
+                Text(
+                    text = "Paste the gc:// link from the host: camera scanning is not wired yet.",
+                    color = Tokens.muted,
+                    fontSize = 12.sp,
+                )
+            }
             UiState.Form, UiState.Connecting, is UiState.Failed -> {
+                // --- Pair with a host: paste the gc:// link or scan its QR ---
+                Text(
+                    text = "Pair with a host",
+                    color = Tokens.muted,
+                    fontSize = 11.sp,
+                    letterSpacing = 0.8.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = pairLink,
+                    onValueChange = {
+                        pairLink = it
+                        pairError = null
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(
+                            "gc://host:port?user=…",
+                            color = Tokens.muted,
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    },
+                    textStyle = TextStyle(
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Tokens.accent,
+                        unfocusedBorderColor = Tokens.line,
+                        focusedContainerColor = Tokens.surface,
+                        unfocusedContainerColor = Tokens.surface,
+                        cursorColor = Tokens.accent,
+                    ),
+                )
+                pairError?.let { error ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(text = error, color = Tokens.error, fontSize = 12.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                Row {
+                    OutlinedButton(
+                        onClick = { applyPairLink(pairLink) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onBackground,
+                        ),
+                    ) {
+                        Text("Use this link", fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            cameraMessage = null
+                            cameraPermission.launch(android.Manifest.permission.CAMERA)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onBackground,
+                        ),
+                    ) {
+                        Text("Scan QR", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                cameraMessage?.let { message ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(text = message, color = Tokens.muted, fontSize = 12.sp)
+                }
+
+                // --- This phone's identity: the public line --add-key trusts ---
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "This phone's key",
+                    color = Tokens.muted,
+                    fontSize = 11.sp,
+                    letterSpacing = 0.8.sp,
+                )
+                val identity = identity
+                val identityFailure = identityError
+                val identityReady = identity
+                when {
+                    identityFailure != null -> {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = identityFailure,
+                            color = Tokens.error,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                    identityReady == null -> {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Preparing the key on this phone…",
+                            color = Tokens.muted,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                    else -> {
+                        Spacer(Modifier.height(4.dp))
+                        SelectionContainer {
+                            Text(
+                                text = identityReady.publicKeyLine,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Tokens.surfaceRaised, RoundedCornerShape(8.dp))
+                                    .padding(12.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            OutlinedButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(identity.publicKeyLine))
+                                    copied = true
+                                },
+                                modifier = Modifier.height(44.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onBackground,
+                                ),
+                            ) {
+                                Text("Copy")
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = when {
+                                    copied -> "Copied — run --add-key with it on the host"
+                                    identity.migratedFromLegacy ->
+                                        "Migrated from shared storage into this app’s private space"
+                                    identity.generated ->
+                                        "Generated on this phone — run --add-key with it on the host"
+                                    else -> "Run --add-key with it on the host"
+                                },
+                                color = if (copied) Tokens.accent else Tokens.muted,
+                                fontSize = 11.sp,
+                                maxLines = 2,
+                            )
+                        }
+                    }
+                }
+
+                // --- Manual connect (still works on its own) ---
+                Spacer(Modifier.height(16.dp))
                 Text(
                     text = "Connect over SSH",
                     color = Tokens.muted,
