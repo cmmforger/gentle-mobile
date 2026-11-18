@@ -71,12 +71,12 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   | Board | State |
   |---|---|
   | `01-pair` | done — identity, host command, `gc://` link, camera scanner |
-  | splash (in `01`) | in progress — mark, wordmark, progress line, hides when ready |
-  | `07-settings` | in progress — security, connection selector, theme, about, revoke |
-  | `06-themes` | in progress — three palettes, live preview, persisted choice |
-  | `03-inbox` | missing — grouped `needs you` → `done` → `working` → `idle` with group labels |
-  | `02-nodes` | missing — hosts with group and state before the agent list |
-  | `04-session` | partial — terminal and composer exist; the extra-key row does not |
+  | splash (in `01`) | done — mark, wordmark, accent line, hides when the app is ready |
+  | `07-settings` | done — every unsupported row carries its reason on screen |
+  | `06-themes` | done — three palettes, immediate application, persisted choice |
+  | `03-inbox` | done — grouped `needs you` → `done` → `working` → `idle`, word and count in the group label |
+  | `02-nodes` | done — the connected host with group and state before the agent list |
+  | `04-session` | done — terminal, composer and the extra-key row sending real events |
   | `05-compose` | missing — attachments and dictation are later features (T13/T14) |
   An element the core cannot support yet is rendered in its honest unavailable state, never faked.
 
@@ -385,3 +385,13 @@ two options mean: **Herdr TUI vs Gentle Shell, both over SSH** — Tailscale is 
 transport (their `ts status` shows the same host reachable as a tailnet address, and Termius connects that
 way). The device-key error they hit on the phone ("No client key at …/client_ed25519") was exactly the gap
 this task closes: the app now generates its own key. Recorded as S20; the alignment work is in flight.
+
+**L14 (design fidelity reached, APK delivered):** Every board is implemented except the `05-compose`
+features (attachments and dictation, which are T13/T14, not design work). The last gap closed here was the
+extra-key row: the daemon's `pane.send_keys` accepts `esc/tab/enter/arrows/backspace/space/f*` and composes
+modifiers with `+`, so the core gained `pane_send_keys` over the same streamlocal request path and UniFFI
+exposes `sendKeys`; the row sends real events with one-shot sticky Ctrl/Alt, verified on a throwaway pane
+(`clea` + Tab completing to `clear`, Ctrl+C clearing the line). Bindings now generate directly into the app's
+package instead of being rewritten by hand, and the stale pre-rename source tree is gone. 56 core tests.
+Release APK 57,953,496 bytes signed and copied to `~/Downloads/gentle-mobile-0.1.0.apk`; the emulator's test key
+was revoked from `authorized_keys` with `gentle-companion-pair --revoke`, leaving other keys untouched.
