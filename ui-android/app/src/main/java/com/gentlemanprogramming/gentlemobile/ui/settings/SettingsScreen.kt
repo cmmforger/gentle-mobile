@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,8 +48,10 @@ import com.gentlemanprogramming.gentlemobile.notifications.notificationsRowWord
 import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
 import com.gentlemanprogramming.gentlemobile.identity.OpenSshKey
 import com.gentlemanprogramming.gentlemobile.security.BiometricDecision
+import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
+import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import java.security.MessageDigest
 
 /**
@@ -193,6 +197,61 @@ fun SettingsScreen(
             }
             UnavailableNote(
                 "Forgetting a host clears only its pin — the next connection asks you to confirm the host's fingerprint again.",
+            )
+        }
+
+        // Sessions directory (T17a): where the Sessions screen lists from.
+        // Blank = the core's default (the Gentle Shell agent home). The
+        // override is how a test build points the app at a fixture
+        // directory instead of the real sessions.
+        val context = LocalContext.current
+        val sessionsStore = remember { SharedPreferencesStore(context) }
+        var editingSessionsDir by remember { mutableStateOf(false) }
+        var sessionsDirDraft by remember { mutableStateOf("") }
+        var sessionsDirOverride by remember {
+            mutableStateOf(sessionsStore.getString(SessionsConfig.OVERRIDE_KEY))
+        }
+        SectionLabel("Sessions (Gentle Shell)")
+        SettingRow(
+            name = "Sessions directory",
+            sub = sessionsDirOverride?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "default · ~/.gentle-shell/agent/sessions",
+            isMono = true,
+            trailing = {
+                MiniButton(label = "Edit", enabled = true) {
+                    sessionsDirDraft = sessionsDirOverride?.trim().orEmpty()
+                    editingSessionsDir = true
+                }
+            },
+        )
+        UnavailableNote("T17a lists the host's sessions; resume lands in a later build.")
+        if (editingSessionsDir) {
+            AlertDialog(
+                onDismissRequest = { editingSessionsDir = false },
+                title = { Text("Sessions directory") },
+                text = {
+                    OutlinedTextField(
+                        value = sessionsDirDraft,
+                        onValueChange = { sessionsDirDraft = it },
+                        placeholder = { Text("blank = the host default") },
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        sessionsStore.putString(SessionsConfig.OVERRIDE_KEY, sessionsDirDraft)
+                        sessionsDirOverride = sessionsDirDraft
+                        editingSessionsDir = false
+                    }) { Text("Save", color = p.accent) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editingSessionsDir = false }) {
+                        Text("Cancel", color = p.muted)
+                    }
+                },
+                containerColor = p.surfaceRaised,
+                titleContentColor = MaterialTheme.colorScheme.onBackground,
+                textContentColor = p.muted,
             )
         }
 

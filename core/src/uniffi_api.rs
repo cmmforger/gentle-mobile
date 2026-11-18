@@ -256,6 +256,176 @@ pub fn compose_prompt(text: String, image_suffixes: Vec<String>) -> String {
     crate::uploads::compose_prompt(&text, &image_suffixes)
 }
 
+/// One listed Gentle Shell session, in the words the UI shows.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct SessionDto {
+    /// The session file's name on the host (`<timestamp>_<id>.jsonl`).
+    pub file_name: String,
+    pub session_id: String,
+    pub cwd: Option<String>,
+    /// The file's last-write time on the host (SFTP mtime), epoch ms.
+    pub last_modified_epoch_ms: u64,
+    /// `None` when the file was too big to count cheaply.
+    pub message_count: Option<u64>,
+    pub lease: LeaseViewDto,
+}
+
+/// The advisory-lease view of one session (S18: Pi provides no lock, so
+/// the guard is ours).
+#[derive(uniffi::Enum, Debug, Clone, PartialEq, Eq)]
+pub enum LeaseViewDto {
+    /// No lease file: free to open.
+    Open,
+    /// A live lease held by this device.
+    HeldHere,
+    /// A live lease held by another device — the row must not offer to open.
+    InUseElsewhere,
+    /// Stale or malformed claim — reclaimable, with a visible note.
+    Stale,
+}
+
+impl From<crate::sessions::LeaseView> for LeaseViewDto {
+    fn from(view: crate::sessions::LeaseView) -> Self {
+        match view {
+            crate::sessions::LeaseView::Open => LeaseViewDto::Open,
+            crate::sessions::LeaseView::HeldHere => LeaseViewDto::HeldHere,
+            crate::sessions::LeaseView::InUseElsewhere => LeaseViewDto::InUseElsewhere,
+            crate::sessions::LeaseView::Stale => LeaseViewDto::Stale,
+        }
+    }
+}
+
+/// The outcome of acquiring a lease: `Reclaimed` means a stale (or
+/// malformed) claim was replaced, which the UI must show, never silently.
+#[derive(uniffi::Enum, Debug, Clone)]
+pub enum LeaseTakeOutcomeDto {
+    Taken,
+    Reclaimed,
+}
+
+/// The sessions directory the app lists when the user picks no override:
+/// the Gentle Shell agent home (the harness runs with
+/// `PI_CODING_AGENT_DIR=~/.gentle-shell/agent`); the listing itself falls
+/// back to the plain Pi default when this one does not exist on the host.
+#[uniffi::export]
+pub fn default_sessions_dir(user: String) -> String {
+    crate::sessions::default_sessions_dir(&user)
+}
+
+/// List the host's Gentle Shell sessions over the SFTP lane, each with its
+/// lease view decided against the host's own clock. Files that are not
+/// sessions are skipped; the call fails only when the transport fails.
+#[uniffi::export]
+pub fn list_sessions(
+    profile: HostProfileDto,
+    sessions_dir: String,
+    device_id: String,
+) -> Result<Vec<SessionDto>, CompanionError> {
+    let profile = profile.into_core();
+    let host_sessions = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| CompanionError::Transport {
+            detail: format!("the listing runtime could not start: {error}"),
+        })?
+        .block_on(crate::sessions::list_sessions_over_sftp(
+            &profile,
+            &sessions_dir,
+            &device_id,
+        ))?;
+    Ok(host_sessions
+        .into_iter()
+        .map(|session| SessionDto {
+            file_name: session.file_name,
+            session_id: session.summary.session_id,
+            cwd: session.summary.cwd,
+            last_modified_epoch_ms: session.summary.last_modified_epoch_ms,
+            message_count: session.summary.message_count,
+            lease: LeaseViewDto::from(session.lease),
+        })
+        .collect())
+}
+
+/// Acquire (or reclaim) the advisory lease for one session. A live lease
+/// held by another device is refused typed. `Ok(Reclaimed)` obliges the UI
+/// to show the stale-lease note.
+#[uniffi::export]
+pub fn acquire_lease(
+    profile: HostProfileDto,
+    session_id: String,
+    device_id: String,
+    token: String,
+) -> Result<LeaseTakeOutcomeDto, CompanionError> {
+    let profile = profile.into_core();
+    let outcome = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| CompanionError::Transport {
+            detail: format!("the lease runtime could not start: {error}"),
+        })?
+        .block_on(crate::sessions::acquire_lease_over_sftp(
+            &profile,
+            &session_id,
+            &device_id,
+            &token,
+        ))?;
+    Ok(match outcome {
+        crate::sessions::LeaseTakeOutcome::Taken => LeaseTakeOutcomeDto::Taken,
+        crate::sessions::LeaseTakeOutcome::Reclaimed => LeaseTakeOutcomeDto::Reclaimed,
+    })
+}
+
+/// Refresh our heartbeat on the host. `Ok(false)` means the lease is no
+/// longer ours — the UI must surface the loss, never keep claiming.
+#[uniffi::export]
+pub fn refresh_lease(
+    profile: HostProfileDto,
+    session_id: String,
+    device_id: String,
+    token: String,
+) -> Result<bool, CompanionError> {
+    let profile = profile.into_core();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| CompanionError::Transport {
+            detail: format!("the lease runtime could not start: {error}"),
+        })?
+        .block_on(crate::sessions::refresh_lease_over_sftp(
+            &profile,
+            &session_id,
+            &device_id,
+            &token,
+        ))
+        .map_err(CompanionError::from)
+}
+
+/// Release our lease. `Ok(true)` when the file was absent or was ours and
+/// is now removed; `Ok(false)` when another device holds it — we never
+/// delete somebody else's claim.
+#[uniffi::export]
+pub fn release_lease(
+    profile: HostProfileDto,
+    session_id: String,
+    device_id: String,
+    token: String,
+) -> Result<bool, CompanionError> {
+    let profile = profile.into_core();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| CompanionError::Transport {
+            detail: format!("the lease runtime could not start: {error}"),
+        })?
+        .block_on(crate::sessions::release_lease_over_sftp(
+            &profile,
+            &session_id,
+            &device_id,
+            &token,
+        ))
+        .map_err(CompanionError::from)
+}
+
 impl std::fmt::Debug for CompanionConnection {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter

@@ -26,6 +26,7 @@ pub mod error;
 pub mod pin;
 pub mod profile;
 pub mod requests;
+pub mod sessions;
 pub mod supervise;
 pub mod surface;
 pub mod uniffi_api;

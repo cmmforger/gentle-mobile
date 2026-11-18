@@ -699,15 +699,25 @@ internal object IntegrityCheckingUniffiLib {
     internal fun ensureInitialized() = Unit
     external fun uniffi_gentlecompanion_core_checksum_func_accept_host_key(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_acquire_lease(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_compose_prompt(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_connect(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_default_sessions_dir(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_forget_host(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_list_known_hosts(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_list_sessions(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_plan_upload(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_refresh_lease(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_release_lease(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect(
     ): Int
@@ -776,16 +786,26 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_func_accept_host_key(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_gentlecompanion_core_fn_func_acquire_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_compose_prompt(`text`: RustBuffer.ByValue,`imageSuffixes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_connect(`profile`: RustBuffer.ByValue,`session`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_func_default_sessions_dir(`user`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_forget_host(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_gentlecompanion_core_fn_func_list_known_hosts(`knownHostsPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_func_list_sessions(`profile`: RustBuffer.ByValue,`sessionsDir`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_plan_upload(`fileName`: RustBuffer.ByValue,`sizeBytes`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_func_refresh_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_gentlecompanion_core_fn_func_release_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     external fun ffi_gentlecompanion_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_gentlecompanion_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -908,10 +928,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_func_accept_host_key() and 0xFFFF) != 19847) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_acquire_lease() and 0xFFFF) != 59390) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_compose_prompt() and 0xFFFF) != 26788) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_connect() and 0xFFFF) != 42500) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_default_sessions_dir() and 0xFFFF) != 55063) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_forget_host() and 0xFFFF) != 34521) {
@@ -920,7 +946,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_func_list_known_hosts() and 0xFFFF) != 22676) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_list_sessions() and 0xFFFF) != 35191) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_plan_upload() and 0xFFFF) != 37723) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_refresh_lease() and 0xFFFF) != 19545) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_release_lease() and 0xFFFF) != 56322) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect() and 0xFFFF) != 59131) {
@@ -2267,6 +2302,76 @@ public object FfiConverterTypePaneReadDto: FfiConverterRustBuffer<PaneReadDto> {
 
 
 /**
+ * One listed Gentle Shell session, in the words the UI shows.
+ */
+data class SessionDto (
+    /**
+     * The session file's name on the host (`<timestamp>_<id>.jsonl`).
+     */
+    val `fileName`: kotlin.String
+    , 
+    val `sessionId`: kotlin.String
+    , 
+    val `cwd`: kotlin.String?
+    , 
+    /**
+     * The file's last-write time on the host (SFTP mtime), epoch ms.
+     */
+    val `lastModifiedEpochMs`: kotlin.ULong
+    , 
+    /**
+     * `None` when the file was too big to count cheaply.
+     */
+    val `messageCount`: kotlin.ULong?
+    , 
+    val `lease`: LeaseViewDto
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSessionDto: FfiConverterRustBuffer<SessionDto> {
+    override fun read(buf: ByteBuffer): SessionDto {
+        return SessionDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterTypeLeaseViewDto.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SessionDto) = (
+            FfiConverterString.allocationSize(value.`fileName`) +
+            FfiConverterString.allocationSize(value.`sessionId`) +
+            FfiConverterOptionalString.allocationSize(value.`cwd`) +
+            FfiConverterULong.allocationSize(value.`lastModifiedEpochMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`messageCount`) +
+            FfiConverterTypeLeaseViewDto.allocationSize(value.`lease`)
+    )
+
+    override fun write(value: SessionDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`fileName`, buf)
+            FfiConverterString.write(value.`sessionId`, buf)
+            FfiConverterOptionalString.write(value.`cwd`, buf)
+            FfiConverterULong.write(value.`lastModifiedEpochMs`, buf)
+            FfiConverterOptionalULong.write(value.`messageCount`, buf)
+            FfiConverterTypeLeaseViewDto.write(value.`lease`, buf)
+    }
+}
+
+
+
+/**
  * One full snapshot in plain DTOs.
  */
 data class SnapshotDto (
@@ -2991,6 +3096,96 @@ public object FfiConverterTypeConnectOutcome : FfiConverterRustBuffer<ConnectOut
 
 
 
+/**
+ * The outcome of acquiring a lease: `Reclaimed` means a stale (or
+ * malformed) claim was replaced, which the UI must show, never silently.
+ */
+
+enum class LeaseTakeOutcomeDto {
+    
+    TAKEN,
+    RECLAIMED;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLeaseTakeOutcomeDto: FfiConverterRustBuffer<LeaseTakeOutcomeDto> {
+    override fun read(buf: ByteBuffer) = try {
+        LeaseTakeOutcomeDto.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: LeaseTakeOutcomeDto) = 4UL
+
+    override fun write(value: LeaseTakeOutcomeDto, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * The advisory-lease view of one session (S18: Pi provides no lock, so
+ * the guard is ours).
+ */
+
+enum class LeaseViewDto {
+    
+    /**
+     * No lease file: free to open.
+     */
+    OPEN,
+    /**
+     * A live lease held by this device.
+     */
+    HELD_HERE,
+    /**
+     * A live lease held by another device — the row must not offer to open.
+     */
+    IN_USE_ELSEWHERE,
+    /**
+     * Stale or malformed claim — reclaimable, with a visible note.
+     */
+    STALE;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLeaseViewDto: FfiConverterRustBuffer<LeaseViewDto> {
+    override fun read(buf: ByteBuffer) = try {
+        LeaseViewDto.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: LeaseViewDto) = 4UL
+
+    override fun write(value: LeaseViewDto, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
 
 
 /**
@@ -3052,6 +3247,38 @@ internal object uniffiCallbackInterfaceUploadProgressListener {
  * @suppress
  */
 public object FfiConverterTypeUploadProgressListener: FfiConverterCallbackInterface<UploadProgressListener>()
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalULong: FfiConverterRustBuffer<kotlin.ULong?> {
+    override fun read(buf: ByteBuffer): kotlin.ULong? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterULong.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.ULong?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterULong.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.ULong?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterULong.write(value, buf)
+        }
+    }
+}
 
 
 
@@ -3327,6 +3554,34 @@ public object FfiConverterSequenceTypePaneDto: FfiConverterRustBuffer<List<PaneD
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeSessionDto: FfiConverterRustBuffer<List<SessionDto>> {
+    override fun read(buf: ByteBuffer): List<SessionDto> {
+        val len = buf.getInt()
+        return List<SessionDto>(len) {
+            FfiConverterTypeSessionDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<SessionDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSessionDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<SessionDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSessionDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeTabDto: FfiConverterRustBuffer<List<TabDto>> {
     override fun read(buf: ByteBuffer): List<TabDto> {
         val len = buf.getInt()
@@ -3396,6 +3651,26 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
     
 
         /**
+         * Acquire (or reclaim) the advisory lease for one session. A live lease
+         * held by another device is refused typed. `Ok(Reclaimed)` obliges the UI
+         * to show the stale-lease note.
+         */
+    @Throws(CompanionException::class) fun `acquireLease`(`profile`: HostProfileDto, `sessionId`: kotlin.String, `deviceId`: kotlin.String, `token`: kotlin.String): LeaseTakeOutcomeDto {
+            return FfiConverterTypeLeaseTakeOutcomeDto.lift(
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_acquire_lease(
+    
+        
+        FfiConverterTypeHostProfileDto.lower(`profile`),
+        FfiConverterString.lower(`sessionId`),
+        FfiConverterString.lower(`deviceId`),
+        FfiConverterString.lower(`token`),_status)
+}
+    )
+    }
+    
+
+        /**
          * The final prompt text for a send with uploads: the draft plus one
          * `[attached image: <path>]` line per uploaded file. The UI passes only
          * suffixes handed back by confirmed uploads, so a failed upload can never
@@ -3428,6 +3703,23 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
         FfiConverterString.lower(`session`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The sessions directory the app lists when the user picks no override:
+         * the Gentle Shell agent home (the harness runs with
+         * `PI_CODING_AGENT_DIR=~/.gentle-shell/agent`); the listing itself falls
+         * back to the plain Pi default when this one does not exist on the host.
+         */ fun `defaultSessionsDir`(`user`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_default_sessions_dir(
+    
+        
+        FfiConverterString.lower(`user`),_status)
 }
     )
     }
@@ -3469,6 +3761,25 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
     
 
         /**
+         * List the host's Gentle Shell sessions over the SFTP lane, each with its
+         * lease view decided against the host's own clock. Files that are not
+         * sessions are skipped; the call fails only when the transport fails.
+         */
+    @Throws(CompanionException::class) fun `listSessions`(`profile`: HostProfileDto, `sessionsDir`: kotlin.String, `deviceId`: kotlin.String): List<SessionDto> {
+            return FfiConverterSequenceTypeSessionDto.lift(
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_list_sessions(
+    
+        
+        FfiConverterTypeHostProfileDto.lower(`profile`),
+        FfiConverterString.lower(`sessionsDir`),
+        FfiConverterString.lower(`deviceId`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Plan one attachment before any byte moves: sanitise the name, prefix the
          * compact UTC timestamp, and refuse oversize files instantly.
          */
@@ -3480,6 +3791,45 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
         
         FfiConverterString.lower(`fileName`),
         FfiConverterULong.lower(`sizeBytes`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Refresh our heartbeat on the host. `Ok(false)` means the lease is no
+         * longer ours — the UI must surface the loss, never keep claiming.
+         */
+    @Throws(CompanionException::class) fun `refreshLease`(`profile`: HostProfileDto, `sessionId`: kotlin.String, `deviceId`: kotlin.String, `token`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_refresh_lease(
+    
+        
+        FfiConverterTypeHostProfileDto.lower(`profile`),
+        FfiConverterString.lower(`sessionId`),
+        FfiConverterString.lower(`deviceId`),
+        FfiConverterString.lower(`token`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Release our lease. `Ok(true)` when the file was absent or was ours and
+         * is now removed; `Ok(false)` when another device holds it — we never
+         * delete somebody else's claim.
+         */
+    @Throws(CompanionException::class) fun `releaseLease`(`profile`: HostProfileDto, `sessionId`: kotlin.String, `deviceId`: kotlin.String, `token`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_release_lease(
+    
+        
+        FfiConverterTypeHostProfileDto.lower(`profile`),
+        FfiConverterString.lower(`sessionId`),
+        FfiConverterString.lower(`deviceId`),
+        FfiConverterString.lower(`token`),_status)
 }
     )
     }

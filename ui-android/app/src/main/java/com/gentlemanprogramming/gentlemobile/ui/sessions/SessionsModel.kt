@@ -1,0 +1,102 @@
+package com.gentlemanprogramming.gentlemobile.ui.sessions
+
+import com.gentlemanprogramming.gentlemobile.core.LeaseViewDto
+import com.gentlemanprogramming.gentlemobile.core.SessionDto
+import com.gentlemanprogramming.gentlemobile.ui.theme.KeyValueStore
+import java.security.MessageDigest
+
+/**
+ * The pure rendering contract for the Sessions screen (T17a, S15/S18).
+ * The lease *semantics* — liveness threshold, reclaim, JSON format — live
+ * in the Rust core (`core/src/sessions.rs`); this file only turns the
+ * core's lease view and session summary into the words and rows the boards
+ * prescribe: state as a word, cwd plus a relative last-used time as the
+ * mono meta, and a resume action that stays honestly disabled until the
+ * RPC lane exists (T17b).
+ */
+object SessionsModel {
+
+    /** The device id the advisory lease carries: pid-less, derived from the
+     *  identity key so reinstalling the app keeps the same claim holder.
+     *  The id hashes the key *blob* — the second token of the OpenSSH line
+     *  — so the key comment never changes the identity. */
+    fun deviceLeaseId(publicKeyLine: String): String {
+        val blob = publicKeyLine.split(" ").getOrNull(1) ?: publicKeyLine
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(blob.toByteArray(Charsets.UTF_8))
+        val hex = digest.joinToString("") { "%02x".format(it) }
+        return "dm-" + hex.take(16)
+    }
+
+    /** The row's state word, per the boards: a plain word in secondary
+     *  text, never a chip. A reclaimed session keeps the visible word so a
+     *  takeover is never silent. */
+    fun stateWord(view: LeaseViewDto, reclaimed: Boolean = false): String = when (view) {
+        LeaseViewDto.OPEN -> "open"
+        LeaseViewDto.HELD_HERE -> if (reclaimed) "stale lease reclaimed" else "held by this device"
+        LeaseViewDto.IN_USE_ELSEWHERE -> "in use elsewhere"
+        LeaseViewDto.STALE -> "stale lease"
+    }
+
+    /** Why Resume is disabled for this row, or `null` when the session is
+     *  openable in principle (the lease allows it) — in which case the
+     *  action is still disabled, by [RESUME_UNAVAILABLE], until T17b. */
+    fun resumeReason(view: LeaseViewDto): String? = when (view) {
+        LeaseViewDto.OPEN, LeaseViewDto.HELD_HERE -> null
+        LeaseViewDto.IN_USE_ELSEWHERE ->
+            "In use elsewhere — another device holds a live lease, so this session must not be opened."
+        LeaseViewDto.STALE ->
+            "The lease on the host is stale (older than 90 s). Reclaim it before this session can be opened."
+    }
+
+    /** The honest note the Resume action always carries in this build: the
+     *  RPC lane is the next task, never faked. */
+    const val RESUME_UNAVAILABLE =
+        "Resume is not implemented yet — the RPC lane lands in the next build."
+
+    /** Relative last-used time for the row meta; a host clock slightly
+     *  ahead of the phone's is "just now", never a negative duration. */
+    fun relativeTime(epochMs: Long, nowMs: Long): String {
+        val delta = (nowMs - epochMs).coerceAtLeast(0)
+        val minutes = delta / 60_000
+        val hours = delta / 3_600_000
+        val days = delta / 86_400_000
+        return when {
+            minutes < 1 -> "just now"
+            hours < 1 -> "$minutes min ago"
+            days < 1 -> "$hours h ago"
+            else -> "$days d ago"
+        }
+    }
+
+    /** The row's mono meta line: cwd · message count · relative time, each
+     *  part only when the host actually gave it. */
+    fun rowMeta(session: SessionDto, relative: String): String =
+        listOfNotNull(
+            session.cwd,
+            session.messageCount?.let { "${it.toLong()} messages" },
+            relative,
+        ).joinToString(" · ")
+
+    /** The visible note after reclaiming a stale lease (S18: never
+     *  silently). */
+    const val RECLAIM_NOTE =
+        "Stale lease reclaimed — the previous holder's heartbeat was older than 90 s."
+
+    /** The note when a lease take was refused because another device is
+     *  live on it. */
+    const val LEASE_LIVE_ELSEWHERE_NOTE =
+        "Another device holds a live lease on this session — it was not taken."
+}
+
+/** Where the Sessions screen lists from. The default is the core's
+ *  preference (Gentle Shell agent home); a non-blank persisted override
+ *  wins — that is how a test build points the app at a fixture directory
+ *  instead of the real sessions. */
+object SessionsConfig {
+
+    const val OVERRIDE_KEY = "sessions_dir_override"
+
+    fun sessionsDir(store: KeyValueStore, defaultDir: String): String =
+        store.getString(OVERRIDE_KEY)?.trim()?.takeIf { it.isNotEmpty() } ?: defaultDir
+}

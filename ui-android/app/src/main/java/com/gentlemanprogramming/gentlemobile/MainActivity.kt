@@ -121,8 +121,15 @@ import com.gentlemanprogramming.gentlemobile.core.UploadProgressListener
 import com.gentlemanprogramming.gentlemobile.core.composePrompt as coreComposePrompt
 import com.gentlemanprogramming.gentlemobile.core.planUpload as corePlanUpload
 import com.gentlemanprogramming.gentlemobile.core.connect as coreConnect
+import com.gentlemanprogramming.gentlemobile.core.defaultSessionsDir
 import com.gentlemanprogramming.gentlemobile.core.forgetHost
 import com.gentlemanprogramming.gentlemobile.core.listKnownHosts
+import com.gentlemanprogramming.gentlemobile.core.refreshLease
+import com.gentlemanprogramming.gentlemobile.core.releaseLease
+import com.gentlemanprogramming.gentlemobile.ui.sessions.HeldLease
+import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
+import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
+import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsScreen
 import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
 import com.gentlemanprogramming.gentlemobile.pair.PairClient
 import com.gentlemanprogramming.gentlemobile.pair.PairCommand
@@ -255,9 +262,11 @@ class MainActivity : FragmentActivity() {
 }
 
 // Background workers: read polling and user actions run off the UI thread
-// on separate threads, so a stalled read never blocks a send.
-private val executor = Executors.newFixedThreadPool(2)
-private val mainHandler = Handler(Looper.getMainLooper())
+// on separate threads, so a stalled read never blocks a send. Internal:
+// the Sessions screen (T17a) shares the same workers for its SFTP list and
+// lease calls.
+internal val executor = Executors.newFixedThreadPool(2)
+internal val mainHandler = Handler(Looper.getMainLooper())
 
 /** Log tag for supervision evidence: poller registration and stop lines. */
 private const val TAG = "Supervision"
@@ -285,6 +294,17 @@ private class ScreenState {
     /** Connected splits into the Nodes screen and the agent Inbox; this
      * flag is the entry point from the host row into the agent list. */
     var inboxOpen by mutableStateOf(false)
+
+    /** T17a (S15/S18): the profile and device lease id of the live
+     * connection — the Sessions screen opens its own pinned SSH session
+     * per call, and the advisory lease carries the device id. */
+    var profile by mutableStateOf<HostProfileDto?>(null)
+    var deviceLeaseId by mutableStateOf<String?>(null)
+
+    /** The advisory lease this device holds on a host session, and the
+     * generation counter that stops its heartbeat loop. */
+    var heldLease by mutableStateOf<HeldLease?>(null)
+    var leaseHeartbeatGeneration: Int = 0
 
     /** T8c supervision: the four words (connecting, connected, interrupted,
      * failed) and the liveness rule, in one tested place. Screens read this
@@ -406,7 +426,7 @@ private class SessionUi {
 }
 
 /** The screens reachable from the Pair flow; the design shows back buttons. */
-private enum class Route { Main, Settings, Themes }
+private enum class Route { Main, Settings, Themes, Sessions }
 
 @Composable
 fun ConnectScreen(
@@ -527,6 +547,55 @@ fun ConnectScreen(
         return
     }
 
+    /** Release the advisory lease this device holds (S18): clear the local
+     *  state, stop the heartbeat, and ask the host to remove the file — only
+     *  the core knows whether it was still ours. */
+    fun releaseHeldLease(state: ScreenState) {
+        val held = state.heldLease ?: return
+        state.heldLease = null
+        state.leaseHeartbeatGeneration += 1
+        val profile = state.profile ?: return
+        val deviceId = state.deviceLeaseId ?: return
+        executor.execute {
+            try {
+                releaseLease(profile, held.sessionId, deviceId, held.token)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** The heartbeat loop (S18): while the app holds a lease, refresh it
+     *  every heartbeat interval so it stays live on the host's clock. A
+     *  failed refresh — lease lost, replaced, or the link gone — clears the
+     *  hold honestly instead of claiming a session we no longer own. */
+    fun scheduleLeaseHeartbeat(state: ScreenState) {
+        state.leaseHeartbeatGeneration += 1
+        val generation = state.leaseHeartbeatGeneration
+        mainHandler.postDelayed({
+            if (generation != state.leaseHeartbeatGeneration) return@postDelayed
+            val held = state.heldLease ?: return@postDelayed
+            val profile = state.profile ?: return@postDelayed
+            val deviceId = state.deviceLeaseId ?: return@postDelayed
+            executor.execute {
+                val alive = try {
+                    refreshLease(profile, held.sessionId, deviceId, held.token)
+                } catch (_: Exception) {
+                    false
+                }
+                mainHandler.post {
+                    if (generation != state.leaseHeartbeatGeneration) return@post
+                    if (!alive) {
+                        // The lease is gone; the screen reloads its list on
+                        // its own actions, and the row honestly returns to
+                        // whatever the host says.
+                        state.heldLease = null
+                    }
+                    scheduleLeaseHeartbeat(state)
+                }
+            }
+        }, LEASE_HEARTBEAT_MS)
+    }
+
     fun disconnectLive() {
         // T15 (S11): the notification's Disconnect action can land while a
         // session screen is up; the user is disconnecting the connection,
@@ -547,6 +616,16 @@ fun ConnectScreen(
             screen.ui = UiState.Form
             screen.machine.reset()
         }
+        // S18: disconnecting releases any advisory lease this device holds —
+        // a dead link must not keep a session claimed.
+        releaseHeldLease(screen)
+    }
+
+    // S18: app teardown releases the advisory lease — the composition is
+    // the app's lifetime for the connect flow, so disposing it is the
+    // last chance to hand the claim back.
+    DisposableEffect(Unit) {
+        onDispose { releaseHeldLease(screen) }
     }
 
     if (route == Route.Settings) {
@@ -648,6 +727,40 @@ fun ConnectScreen(
         return
     }
 
+    // T17a (S15/S18): the host's Gentle Shell sessions, listed over SFTP
+    // and guarded by the advisory lease. Reached from the Nodes screen.
+    if (route == Route.Sessions) {
+        val sessionsProfile = screen.profile
+        val sessionsDeviceId = screen.deviceLeaseId
+        if (sessionsProfile != null && sessionsDeviceId != null) {
+            SessionsScreen(
+                profile = sessionsProfile,
+                deviceLeaseId = sessionsDeviceId,
+                sessionsDir = SessionsConfig.sessionsDir(
+                    SharedPreferencesStore(context),
+                    defaultSessionsDir(sessionsProfile.user),
+                ),
+                heldLease = screen.heldLease,
+                onLeaseTaken = { sessionId, token ->
+                    screen.heldLease = HeldLease(sessionId, token)
+                    scheduleLeaseHeartbeat(screen)
+                },
+                onLeaseReleased = {
+                    screen.heldLease = null
+                    screen.leaseHeartbeatGeneration += 1
+                },
+                onBack = {
+                    releaseHeldLease(screen)
+                    route = Route.Main
+                },
+            )
+            return
+        }
+        // No live profile behind the route (the connection was reset): fall
+        // back to the Nodes screen instead of rendering a dead screen.
+        route = Route.Main
+    }
+
     // Pairing link paste + QR scan.
     var pairLink by remember { mutableStateOf("") }
     var pairError by remember { mutableStateOf<String?>(null) }
@@ -711,6 +824,9 @@ fun ConnectScreen(
             identityPath = keyPath,
             knownHostsPath = knownHostsPath,
         )
+        // T17a: the Sessions screen rides this profile and this device id.
+        screen.profile = profile
+        screen.deviceLeaseId = identity?.publicKeyLine?.let { SessionsModel.deviceLeaseId(it) }
         val challenge = acceptChallenge
         val keyLine = identity?.publicKeyLine
         executor.execute {
@@ -1483,6 +1599,16 @@ fun ConnectScreen(
                             meta = "$user@$host · port $port · protocol 22 · ${snapshot.agents.size} agents",
                             onOpen = { screen.inboxOpen = true },
                         )
+                        // T17a (S15): the host's Gentle Shell sessions, listed
+                        // over SFTP and lease-guarded — the entry point the
+                        // continuity flow starts from.
+                        GroupLabel("gentle shell sessions")
+                        NodeRow(
+                            name = "Sessions",
+                            state = "list · lease-guarded",
+                            meta = "cwd · last used · $user@$host",
+                            onOpen = { route = Route.Sessions },
+                        )
                         Spacer(Modifier.height(24.dp))
                         // Honest empty space, not a dead accent button: a
                         // second host cannot be added in this build.
@@ -1596,6 +1722,11 @@ fun ConnectScreen(
  * connect path.
  */
 private const val POLL_INTERVAL_MS = 500L
+
+/** The advisory lease heartbeat cadence: matches the core's
+ * LEASE_HEARTBEAT_INTERVAL_SECS, so a refresh always lands well before the
+ * 90 s staleness threshold (S18). */
+private const val LEASE_HEARTBEAT_MS = 30_000L
 
 private fun poll(screen: ScreenState, connection: CompanionConnection, generation: Int) {
     val slot = screen.pollers.register()
