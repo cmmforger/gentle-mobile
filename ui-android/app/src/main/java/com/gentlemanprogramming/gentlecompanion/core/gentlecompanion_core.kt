@@ -683,6 +683,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_latest_surface(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_prompt_agent(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane(
@@ -717,6 +719,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_is_disconnected(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_latest_surface(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_prompt_agent(`ptr`: Long,`target`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_read_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -856,6 +860,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected() and 0xFFFF) != 51113) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_latest_surface() and 0xFFFF) != 1162) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_prompt_agent() and 0xFFFF) != 55635) {
@@ -1027,6 +1034,33 @@ private class JavaLangRefCleanable(
 /**
  * @suppress
  */
+public object FfiConverterUByte: FfiConverter<UByte, Byte> {
+    override fun lift(value: Byte): UByte {
+        return value.toUByte()
+    }
+
+    fun lift(value: Int): UByte {
+        return value.toUByte()
+    }
+
+    override fun read(buf: ByteBuffer): UByte {
+        return lift(buf.get())
+    }
+
+    override fun lower(value: UByte): Byte {
+        return value.toByte()
+    }
+
+    override fun allocationSize(value: UByte) = 1UL
+
+    override fun write(value: UByte, buf: ByteBuffer) {
+        buf.put(value.toByte())
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterUShort: FfiConverter<UShort, Short> {
     override fun lift(value: Short): UShort {
         return value.toUShort()
@@ -1048,6 +1082,29 @@ public object FfiConverterUShort: FfiConverter<UShort, Short> {
 
     override fun write(value: UShort, buf: ByteBuffer) {
         buf.putShort(value.toShort())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterUInt: FfiConverter<UInt, Int> {
+    override fun lift(value: Int): UInt {
+        return value.toUInt()
+    }
+
+    override fun read(buf: ByteBuffer): UInt {
+        return lift(buf.getInt())
+    }
+
+    override fun lower(value: UInt): Int {
+        return value.toInt()
+    }
+
+    override fun allocationSize(value: UInt) = 4UL
+
+    override fun write(value: UInt, buf: ByteBuffer) {
+        buf.putInt(value.toInt())
     }
 }
 
@@ -1266,6 +1323,15 @@ public interface CompanionConnectionInterface {
     fun `isDisconnected`(): kotlin.Boolean
     
     /**
+     * The latest surface frame, decoded into UI DTOs, or `None` until the
+     * host has rendered one. Latest-wins at the source: a burst of frames
+     * between two polls collapses into the newest one, and a fresh
+     * connection starts from an empty store, so the grid is always the new
+     * connection's own baseline.
+     */
+    fun `latestSurface`(): SurfaceDto?
+    
+    /**
      * Submit one prompt to an agent, addressed by its pane id. `Ok(())`
      * means the daemon confirmed the submission (`agent_prompted`); a
      * failure names why, so the UI never claims "sent" without a reply.
@@ -1416,6 +1482,26 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
     callWithHandle {
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_is_disconnected(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The latest surface frame, decoded into UI DTOs, or `None` until the
+     * host has rendered one. Latest-wins at the source: a burst of frames
+     * between two polls collapses into the newest one, and a fresh
+     * connection starts from an empty store, so the grid is always the new
+     * connection's own baseline.
+     */override fun `latestSurface`(): SurfaceDto? {
+            return FfiConverterOptionalTypeSurfaceDto.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_latest_surface(
         it,
         _status)
 }
@@ -1579,6 +1665,125 @@ public object FfiConverterTypeAgentDto: FfiConverterRustBuffer<AgentDto> {
             FfiConverterOptionalString.write(value.`cwd`, buf)
             FfiConverterBoolean.write(value.`focused`, buf)
             FfiConverterString.write(value.`paneId`, buf)
+    }
+}
+
+
+
+/**
+ * One decoded cell. `fg`/`bg` are packed `0xRRGGBB`, already resolved.
+ * `symbol` is `""` for a blank or skipped cell: blank cells still paint
+ * their background, skipped cells (the follower of a wide glyph) do not
+ * even own their column — the wide glyph spans both.
+ */
+data class CellDto (
+    val `symbol`: kotlin.String
+    , 
+    val `fg`: kotlin.UInt
+    , 
+    val `bg`: kotlin.UInt
+    , 
+    val `flags`: kotlin.UInt
+    , 
+    val `wide`: kotlin.Boolean
+    , 
+    val `skip`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCellDto: FfiConverterRustBuffer<CellDto> {
+    override fun read(buf: ByteBuffer): CellDto {
+        return CellDto(
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CellDto) = (
+            FfiConverterString.allocationSize(value.`symbol`) +
+            FfiConverterUInt.allocationSize(value.`fg`) +
+            FfiConverterUInt.allocationSize(value.`bg`) +
+            FfiConverterUInt.allocationSize(value.`flags`) +
+            FfiConverterBoolean.allocationSize(value.`wide`) +
+            FfiConverterBoolean.allocationSize(value.`skip`)
+    )
+
+    override fun write(value: CellDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`symbol`, buf)
+            FfiConverterUInt.write(value.`fg`, buf)
+            FfiConverterUInt.write(value.`bg`, buf)
+            FfiConverterUInt.write(value.`flags`, buf)
+            FfiConverterBoolean.write(value.`wide`, buf)
+            FfiConverterBoolean.write(value.`skip`, buf)
+    }
+}
+
+
+
+/**
+ * The terminal cursor, in grid coordinates.
+ */
+data class CursorDto (
+    val `x`: kotlin.UInt
+    , 
+    val `y`: kotlin.UInt
+    , 
+    val `visible`: kotlin.Boolean
+    , 
+    /**
+     * The wire's cursor shape code: 1/2 block, 3/4 underline, 5/6 bar,
+     * 0 terminal default (drawn as a block).
+     */
+    val `shape`: kotlin.UByte
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCursorDto: FfiConverterRustBuffer<CursorDto> {
+    override fun read(buf: ByteBuffer): CursorDto {
+        return CursorDto(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUByte.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CursorDto) = (
+            FfiConverterUInt.allocationSize(value.`x`) +
+            FfiConverterUInt.allocationSize(value.`y`) +
+            FfiConverterBoolean.allocationSize(value.`visible`) +
+            FfiConverterUByte.allocationSize(value.`shape`)
+    )
+
+    override fun write(value: CursorDto, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`x`, buf)
+            FfiConverterUInt.write(value.`y`, buf)
+            FfiConverterBoolean.write(value.`visible`, buf)
+            FfiConverterUByte.write(value.`shape`, buf)
     }
 }
 
@@ -1843,6 +2048,73 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterSequenceTypeTabDto.write(value.`tabs`, buf)
             FfiConverterSequenceTypePaneDto.write(value.`panes`, buf)
             FfiConverterSequenceTypeAgentDto.write(value.`agents`, buf)
+    }
+}
+
+
+
+/**
+ * One full surface frame in plain DTOs. `revision` is the daemon's
+ * `surface_revision`: the UI renders only when it changes, so an idle pane
+ * costs no redraws.
+ */
+data class SurfaceDto (
+    val `width`: kotlin.UInt
+    , 
+    val `height`: kotlin.UInt
+    , 
+    val `revision`: kotlin.ULong
+    , 
+    val `cells`: List<CellDto>
+    , 
+    val `cursor`: CursorDto?
+    , 
+    /**
+     * A popup overlays the grid but is not decoded here; the UI says so
+     * rather than silently drawing a grid the daemon has covered.
+     */
+    val `popupPresent`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSurfaceDto: FfiConverterRustBuffer<SurfaceDto> {
+    override fun read(buf: ByteBuffer): SurfaceDto {
+        return SurfaceDto(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceTypeCellDto.read(buf),
+            FfiConverterOptionalTypeCursorDto.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SurfaceDto) = (
+            FfiConverterUInt.allocationSize(value.`width`) +
+            FfiConverterUInt.allocationSize(value.`height`) +
+            FfiConverterULong.allocationSize(value.`revision`) +
+            FfiConverterSequenceTypeCellDto.allocationSize(value.`cells`) +
+            FfiConverterOptionalTypeCursorDto.allocationSize(value.`cursor`) +
+            FfiConverterBoolean.allocationSize(value.`popupPresent`)
+    )
+
+    override fun write(value: SurfaceDto, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`width`, buf)
+            FfiConverterUInt.write(value.`height`, buf)
+            FfiConverterULong.write(value.`revision`, buf)
+            FfiConverterSequenceTypeCellDto.write(value.`cells`, buf)
+            FfiConverterOptionalTypeCursorDto.write(value.`cursor`, buf)
+            FfiConverterBoolean.write(value.`popupPresent`, buf)
     }
 }
 
@@ -2359,6 +2631,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeCursorDto: FfiConverterRustBuffer<CursorDto?> {
+    override fun read(buf: ByteBuffer): CursorDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeCursorDto.read(buf)
+    }
+
+    override fun allocationSize(value: CursorDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeCursorDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: CursorDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeCursorDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto?> {
     override fun read(buf: ByteBuffer): SnapshotDto? {
         if (buf.get().toInt() == 0) {
@@ -2391,6 +2695,38 @@ public object FfiConverterOptionalTypeSnapshotDto: FfiConverterRustBuffer<Snapsh
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeSurfaceDto: FfiConverterRustBuffer<SurfaceDto?> {
+    override fun read(buf: ByteBuffer): SurfaceDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeSurfaceDto.read(buf)
+    }
+
+    override fun allocationSize(value: SurfaceDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeSurfaceDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: SurfaceDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeSurfaceDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeAgentDto: FfiConverterRustBuffer<List<AgentDto>> {
     override fun read(buf: ByteBuffer): List<AgentDto> {
         val len = buf.getInt()
@@ -2409,6 +2745,34 @@ public object FfiConverterSequenceTypeAgentDto: FfiConverterRustBuffer<List<Agen
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeAgentDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeCellDto: FfiConverterRustBuffer<List<CellDto>> {
+    override fun read(buf: ByteBuffer): List<CellDto> {
+        val len = buf.getInt()
+        return List<CellDto>(len) {
+            FfiConverterTypeCellDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<CellDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeCellDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<CellDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeCellDto.write(it, buf)
         }
     }
 }

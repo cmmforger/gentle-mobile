@@ -27,6 +27,9 @@ tokio                  = { features = ["io-util", "net", "rt", "sync"], version 
 # feature that `src/bin/uniffi-bindgen.rs` needs — the bindgen binary lives in
 # this crate, so the generator version always matches the scaffolding version.
 uniffi                 = { version = "0.32", features = ["cli"] }
+# Renderer-only width classification for surface cells (same crate the T4
+# spike used); the version is pinned by the existing Cargo.lock entry.
+unicode-width          = "0.2"
 
 [lib]
 crate-type = ["cdylib", "lib"]

@@ -7,7 +7,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +37,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gentlemanprogramming.gentlecompanion.core.SurfaceDto
 import com.gentlemanprogramming.gentlecompanion.core.acceptHostKey
 import com.gentlemanprogramming.gentlecompanion.core.AgentDto
 import com.gentlemanprogramming.gentlecompanion.core.AgentStatusDto
@@ -54,6 +62,10 @@ import com.gentlemanprogramming.gentlecompanion.core.SnapshotDto
 import com.gentlemanprogramming.gentlecompanion.core.connect as coreConnect
 import com.gentlemanprogramming.gentlecompanion.ui.theme.GentleCompanionTheme
 import com.gentlemanprogramming.gentlecompanion.ui.theme.Tokens
+import com.gentlemanprogramming.gentlecompanion.ui.terminal.SurfaceStats
+import com.gentlemanprogramming.gentlecompanion.ui.terminal.TERMINAL_FONT_RATIO
+import com.gentlemanprogramming.gentlecompanion.ui.terminal.TerminalSurface
+import com.gentlemanprogramming.gentlecompanion.ui.terminal.surfaceStats
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -61,9 +73,12 @@ import java.util.concurrent.Executors
  * The real lane-A read path: one screen, plus the host-key challenge state.
  * No fake rows — everything shown comes from a snapshot of a live host over
  * SSH, through the Rust core. An empty snapshot says so instead of inventing
- * hosts. Tapping an agent opens its session screen: the pane's visible text
- * over `pane.read`, and a composer that submits the daemon's own
- * `agent.prompt` — never raw keystrokes.
+ * hosts. Tapping an agent opens its session screen: the agent's pane drawn
+ * as a real cell grid from the surface stream (latest-wins in the core,
+ * polled at ~12 fps — never a queue of stale frames), falling back to the
+ * pane's visible text over `pane.read` until the first surface arrives, and
+ * a composer that submits the daemon's own `agent.prompt` — never raw
+ * keystrokes.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -104,11 +119,23 @@ private class ScreenState {
 private class SessionUi {
     var pane by mutableStateOf<PaneReadDto?>(null)
     var readError by mutableStateOf<String?>(null)
+    /** The latest grid from the surface stream; `null` until the host rendered one. */
+    var surface by mutableStateOf<SurfaceDto?>(null)
+    var surfaceStats by mutableStateOf<SurfaceStats?>(null)
     var draft by mutableStateOf("")
     var sending by mutableStateOf(false)
     var sendError by mutableStateOf<String?>(null)
     var sent by mutableStateOf(false)
     var refreshNonce by mutableStateOf(0)
+
+    /** Full re-baseline: a new connection owns a fresh core store, so the
+     * drawn grid and the fallback read start empty again. Drafts survive. */
+    fun resetBaseline() {
+        pane = null
+        readError = null
+        surface = null
+        surfaceStats = null
+    }
 }
 
 @Composable
@@ -119,6 +146,8 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
     var port by remember { mutableStateOf("2222") }
     var user by remember { mutableStateOf("erickfm") }
     var session by remember { mutableStateOf("default") }
+    /** User-chosen terminal font size in px, `0f` = fit the grid to the width. */
+    var terminalFontPx by remember { mutableStateOf(0f) }
 
     fun connect(acceptChallenge: UiState.Challenge?) {
         screen.generation += 1
@@ -159,6 +188,9 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                         val connection = outcome.v1
                         mainHandler.post {
                             if (screen.generation == generation) {
+                                // A new connection is a fresh baseline: every
+                                // session's grid and read start empty again.
+                                screen.sessions.values.forEach { it.resetBaseline() }
                                 screen.ui = UiState.Connected(connection, snapshot = null)
                             }
                         }
@@ -397,6 +429,7 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                                 val sessionUi = screen.sessions.getOrPut(agent.paneId) { SessionUi() }
                                 screen.ui = UiState.Session(connection, agent)
                                 pollPane(screen, sessionUi, connection, agent.paneId, generation)
+                                pollSurface(screen, sessionUi, connection, agent.paneId, generation)
                             })
                             if (index != snapshot.agents.lastIndex) {
                                 Spacer(
@@ -417,6 +450,8 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
                     connection = current.connection,
                     agent = current.agent,
                     sessionUi = sessionUi,
+                    terminalFontPx = terminalFontPx,
+                    onFontPxChange = { terminalFontPx = it },
                     onBack = {
                         screen.generation += 1
                         screen.ui = UiState.Connected(current.connection, snapshot = null)
@@ -538,6 +573,53 @@ private fun sessionStillCurrent(
         screen.sessions[paneId] === sessionUi
 }
 
+/**
+ * Surface polling: about twelve times a second, read the core's latest-wins
+ * slot. The throttle lives in the core (one slot, overwritten in place), so
+ * a burst of frames between two polls has already collapsed into the newest
+ * one — this loop can never queue a stale frame, it can only read the
+ * current grid. Stops when the screen changes or the connection ended.
+ */
+private const val SURFACE_POLL_MS = 80L
+
+private fun pollSurface(
+    screen: ScreenState,
+    sessionUi: SessionUi,
+    connection: CompanionConnection,
+    paneId: String,
+    generation: Int,
+) {
+    executor.execute {
+        val surface = try {
+            connection.latestSurface()
+        } catch (_: Exception) {
+            null
+        }
+        mainHandler.post {
+            val previous = sessionUi.surface
+            if (sessionStillCurrent(screen, sessionUi, paneId, generation) &&
+                surface != null &&
+                (previous == null || surface.revision != previous.revision)
+            ) {
+                sessionUi.surface = surface
+                sessionUi.surfaceStats = surfaceStats(surface)
+            }
+        }
+        val ended = try {
+            connection.isDisconnected()
+        } catch (_: Exception) {
+            true
+        }
+        if (!ended) {
+            mainHandler.postDelayed({
+                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                    pollSurface(screen, sessionUi, connection, paneId, generation)
+                }
+            }, SURFACE_POLL_MS)
+        }
+    }
+}
+
 /** One immediate read, off the poll cadence — the manual refresh button. */
 private fun requestPaneRead(
     screen: ScreenState,
@@ -567,8 +649,9 @@ private fun requestPaneRead(
 
 /**
  * Pane polling: about twice per second, read the pane's visible text over
- * the request channel. Stops when the screen changes or the connection
- * ended. A failed read is shown inline, never as an empty pane.
+ * the request channel — the fallback while the surface stream has not
+ * produced its first frame. Once a grid is flowing this stops: the surface
+ * is the live view, and polling text beside it would be dead weight.
  */
 private fun pollPane(
     screen: ScreenState,
@@ -598,7 +681,7 @@ private fun pollPane(
         } catch (_: Exception) {
             true
         }
-        if (!ended) {
+        if (!ended && sessionUi.surface == null) {
             mainHandler.postDelayed({
                 if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
                     pollPane(screen, sessionUi, connection, paneId, generation)
@@ -608,12 +691,14 @@ private fun pollPane(
     }
 }
 
-/** The agent session screen: header, pane text, composer. */
+/** The agent session screen: header, terminal grid (or text fallback), composer. */
 @Composable
 private fun SessionScreen(
     connection: CompanionConnection,
     agent: AgentDto,
     sessionUi: SessionUi,
+    terminalFontPx: Float,
+    onFontPxChange: (Float) -> Unit,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onSend: (String) -> Unit,
@@ -664,33 +749,82 @@ private fun SessionScreen(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "The pane's visible text, refreshed about twice a second",
+            text = "The agent's pane, drawn live from the surface stream",
             color = Tokens.muted,
             fontSize = 11.sp,
             letterSpacing = 0.8.sp,
         )
 
-        // Pane text: a monospace block. A failed read shows the error here,
-        // never an empty pane pretending all is well.
+        // Terminal area: the cell grid from the surface stream. Before the
+        // first surface arrives (or if the host never sends one) the pane's
+        // visible text shows here instead — never a silently empty view.
         Spacer(Modifier.height(8.dp))
+        val surface = sessionUi.surface
+        val surfaceStats = sessionUi.surfaceStats
         val readError = sessionUi.readError
-        val pane = sessionUi.pane
-        when {
+        if (surface != null) {
+            // Fit the grid to the width at the bundled font's advance ratio
+            // (JetBrains Mono: 0.6em per column), then let a pinch shrink it.
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val density = LocalDensity.current
+                val fitPx = with(density) {
+                    (maxWidth / (surface.width.toInt().toFloat() * TERMINAL_FONT_RATIO)).toPx()
+                }
+                val effectivePx = if (terminalFontPx > 0f) minOf(terminalFontPx, fitPx) else fitPx
+                val statsLine = surfaceStats?.let {
+                    "${it.cols}×${it.rows} · ${it.drawnCells} non-blank · " +
+                        "${it.distinctColours} colours" +
+                        (it.wideSymbol?.let { w -> " · wide \"$w\"" } ?: "") +
+                        (if (it.cursorVisible) " · cursor" else "")
+                } ?: ""
+                Column(Modifier.fillMaxSize()) {
+                    if (statsLine.isNotEmpty()) {
+                        Text(
+                            text = statsLine,
+                            color = Tokens.muted,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, _, zoom, _ ->
+                                    if (zoom != 1f) {
+                                        val current = if (terminalFontPx > 0f) terminalFontPx else effectivePx
+                                        onFontPxChange(current * zoom)
+                                    }
+                                }
+                            },
+                    ) {
+                        TerminalSurface(
+                            surface = surface,
+                            fontSizePx = effectivePx,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        } else when {
             readError != null -> Text(
                 text = readError,
                 color = Tokens.error,
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
             )
-            pane == null -> Text(
-                text = "Reading the pane…",
-                color = Tokens.muted,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-            )
             else -> {
+                val pane = sessionUi.pane
                 Text(
-                    text = pane.text.ifEmpty { "(the pane shows no text right now)" },
+                    text = when {
+                        pane == null -> "Reading the pane…"
+                        pane.text.isEmpty() -> "(the pane shows no text right now)"
+                        else -> pane.text
+                    },
                     color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
@@ -701,7 +835,7 @@ private fun SessionScreen(
                         .background(Tokens.surface, RoundedCornerShape(8.dp))
                         .padding(12.dp),
                 )
-                if (pane.truncated) {
+                if (pane?.truncated == true) {
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = "The host left out older rows.",

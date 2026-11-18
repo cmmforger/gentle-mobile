@@ -253,6 +253,17 @@ impl CompanionConnection {
         connection.snapshot().map(|snapshot| snapshot_to_dto(&snapshot))
     }
 
+    /// The latest surface frame, decoded into UI DTOs, or `None` until the
+    /// host has rendered one. Latest-wins at the source: a burst of frames
+    /// between two polls collapses into the newest one, and a fresh
+    /// connection starts from an empty store, so the grid is always the new
+    /// connection's own baseline.
+    pub fn latest_surface(&self) -> Option<crate::surface::SurfaceDto> {
+        let inner = self.inner.lock().ok()?;
+        let connection = inner.as_ref()?;
+        connection.latest_surface()
+    }
+
     /// True once the connection is over, however it ended.
     pub fn is_disconnected(&self) -> bool {
         self.inner

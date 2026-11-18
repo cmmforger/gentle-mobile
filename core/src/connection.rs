@@ -36,6 +36,7 @@ use crate::{
     error::{Error, Result},
     pin::{HostPin, PinDecision, refusal_error},
     profile::HostProfile,
+    surface::SurfaceStore,
 };
 
 /// Russh keepalive probe interval. This is the signal that notices a dead TCP
@@ -78,6 +79,11 @@ pub struct Connection {
     client: Option<Client>,
     events: Option<crossbeam_channel::Receiver<Event>>,
     latest: Arc<Mutex<Option<Arc<ClientShellSnapshot>>>>,
+    /// The surface throttle: one latest-wins slot, overwritten in place, so
+    /// the UI can never queue a stale frame. A fresh connection constructs
+    /// its own empty store — the reconnect baseline is the first full frame
+    /// the new session delivers.
+    surfaces: Arc<SurfaceStore>,
     stop: Arc<AtomicBool>,
     threads: Vec<JoinHandle<()>>,
     /// The request-only channel for `pane.read` / `agent.prompt`; connects
@@ -282,11 +288,13 @@ impl Connection {
 
         let (events_tx, events_rx) = crossbeam_channel::bounded::<Event>(64);
         let latest = Arc::new(Mutex::new(None::<Arc<ClientShellSnapshot>>));
+        let surfaces = Arc::new(SurfaceStore::new());
         let last_event = Arc::new(Mutex::new(Instant::now()));
         let forwarder = spawn_forwarder(
             client.events.clone(),
             events_tx,
             latest.clone(),
+            surfaces.clone(),
             last_event.clone(),
             stop.clone(),
         )?;
@@ -296,6 +304,7 @@ impl Connection {
             client: Some(client),
             events: Some(events_rx),
             latest,
+            surfaces,
             stop,
             threads: vec![ssh_thread, forwarder, watchdog],
             requests: Some(requests),
@@ -306,6 +315,14 @@ impl Connection {
     /// starts a fresh baseline, so this is never a stale delta source.
     pub fn snapshot(&self) -> Option<Arc<ClientShellSnapshot>> {
         self.latest.lock().ok().and_then(|guarded| guarded.clone())
+    }
+
+    /// The latest surface frame, decoded into UI DTOs. Latest-wins: the store
+    /// holds exactly one slot, so a burst between polls collapses into the
+    /// newest frame and nothing stale is ever handed to the UI. Decoded fresh
+    /// on each call — cheap, and it keeps the DTO cache-free.
+    pub fn latest_surface(&self) -> Option<crate::surface::SurfaceDto> {
+        self.surfaces.latest().as_deref().map(crate::surface::decode_surface)
     }
 
     /// The product event stream, until the connection is torn down. Single
@@ -409,10 +426,13 @@ impl Drop for Connection {
 }
 
 /// Map vendored events to the product enum and track the latest snapshot.
+/// Surfaces additionally land in the latest-wins [`SurfaceStore`]: the
+/// throttle lives here, at the source, not in the UI.
 fn spawn_forwarder(
     events: crossbeam_channel::Receiver<ClientEvent>,
     out: crossbeam_channel::Sender<Event>,
     latest: Arc<Mutex<Option<Arc<ClientShellSnapshot>>>>,
+    surfaces: Arc<SurfaceStore>,
     last_event: Arc<Mutex<Instant>>,
     stop: Arc<AtomicBool>,
 ) -> Result<JoinHandle<()>> {
@@ -434,7 +454,17 @@ fn spawn_forwarder(
                                 ended = deliver(&out, Event::Snapshot(snapshot));
                             }
                             ClientEvent::Surface(surface) => {
-                                ended = deliver(&out, Event::Surface(surface));
+                                surfaces.store(surface.clone());
+                                // Non-blocking on purpose: surfaces arrive at
+                                // the daemon's redraw rate, far faster than a
+                                // channel consumer may drain, and a full
+                                // product queue must never pause the vendored
+                                // pump (liveness included). The UI reads the
+                                // store, not the channel.
+                                ended = matches!(
+                                    out.try_send(Event::Surface(surface)),
+                                    Err(crossbeam_channel::TrySendError::Disconnected(_)),
+                                );
                             }
                             ClientEvent::Message(message) => {
                                 ended = deliver(&out, Event::Message(message));

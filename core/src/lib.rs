@@ -27,6 +27,7 @@ pub mod pin;
 pub mod profile;
 pub mod requests;
 pub mod supervise;
+pub mod surface;
 pub mod uniffi_api;
 
 // One scaffolding setup for the crate: the FFI entry points the generated
