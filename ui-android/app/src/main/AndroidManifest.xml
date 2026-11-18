@@ -8,10 +8,11 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
-        android:label="Gentle Companion"
+        android:label="Gentle Mobile"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.GentleCompanion">
+        android:theme="@style/Theme.GentleMobile.Launch">
         <activity
             android:name=".MainActivity"
             android:exported="true"

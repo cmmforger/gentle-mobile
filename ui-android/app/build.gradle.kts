@@ -29,15 +29,21 @@ android {
 }
 
 android {
-    namespace = "com.gentlemanprogramming.gentlecompanion"
+    namespace = "com.gentlemanprogramming.gentlemobile"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.gentlemanprogramming.gentlecompanion"
+        applicationId = "com.gentlemanprogramming.gentlemobile"
         minSdk = 29
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
+
+        // Ship only the ABIs the core is built for: a real phone is arm64-v8a,
+        // the emulator is x86_64. Everything else only adds bytes.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -75,8 +81,14 @@ dependencies {
     // Ed25519 keypair generation for the device identity key (the key must be
     // exportable in OpenSSH format, so AndroidKeyStore is not usable here).
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
-    // QR pairing: CameraX preview + ML Kit barcode scanning behind the
-    // design's Pair screen. Only used while the scanner is open.
+    // QR pairing: CameraX preview + the bundled ML Kit barcode model behind
+    // the design's Pair screen. Only used while the scanner is open; the
+    // paste field stays the fallback when the camera is missing or denied.
     val camerax = "1.3.4"
+    implementation("androidx.camera:camera-core:$camerax")
+    implementation("androidx.camera:camera-camera2:$camerax")
+    implementation("androidx.camera:camera-lifecycle:$camerax")
+    implementation("androidx.camera:camera-view:$camerax")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     testImplementation("junit:junit:4.13.2")
 }
