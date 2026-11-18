@@ -80,6 +80,20 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   | `05-compose` | missing — attachments and dictation are later features (T13/T14) |
   An element the core cannot support yet is rendered in its honest unavailable state, never faked.
 
+- **S22 — Pairing must be one step, because the user is an average user.**
+  "prueba que debe ser con facil instalacion o mejor dicho conexion remota que haga a la app … ya que para
+  un usuario promedio, es mas dificil conectarse con tantos pasos."
+  The current flow (copy the key, run a command with the key, paste a link) is too many steps. Target flow:
+  **the machine prints a QR, the phone scans it, done.**
+  Design: a host-side helper (same script, new subcommand) starts a **single-use** pairing listener with a
+  short TTL, prints a QR containing the address plus a one-time token, and accepts exactly one phone key,
+  appending it to `authorized_keys` and exiting. No password crosses the app, no key is copied by hand, no
+  link is pasted. The existing `--add-key` paste path stays as the manual fallback, and `--revoke` keeps
+  working for both.
+  Bind: loopback forbidden, tailnet or LAN only, one attempt per token, token burned on use, and the helper
+  prints what it wrote so the user can see it.
+  This replaces the "many steps" complaint as the last blocker before the human tests the app.
+
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
 
