@@ -2,14 +2,25 @@ package com.gentlemanprogramming.gentlemobile.pair
 
 /**
  * The pairing link `scripts/gentle-mobile-pair` prints on the host and the
- * QR encodes: `gc://host:port?user=name`. Parsing is pure Kotlin (no
- * android.net.Uri) so it is unit-testable on the JVM and refuses anything
- * else with a readable reason — never a silent no-op.
+ * QR encodes. The one-scan form carries the pairing listener and its
+ * one-time token: `gc://host:port?user=name&pair=pairHost:pairPort&t=token`.
+ * Without `pair`/`t` it is the legacy paste form. Parsing is pure Kotlin
+ * (no android.net.Uri) so it is unit-testable on the JVM and refuses
+ * anything else with a readable reason — never a silent no-op.
  */
 sealed interface PairLinkResult {
-    data class Parsed(val host: String, val port: String, val user: String) : PairLinkResult
+    data class Parsed(
+        val host: String,
+        val port: String,
+        val user: String,
+        /** Present only on a one-scan link: where to POST the key, and the token. */
+        val pair: PairParams? = null,
+    ) : PairLinkResult
     data class Invalid(val reason: String) : PairLinkResult
 }
+
+/** The single-use pairing listener endpoint plus its one-time token. */
+data class PairParams(val host: String, val port: String, val token: String)
 
 object PairLink {
 
@@ -34,6 +45,52 @@ object PairLink {
         }
         val authority = rest.substring(0, queryStart)
         val query = rest.substring(queryStart + 1)
+
+        // The one-scan parameters: pair endpoint and one-time token. Either
+        // both must be present or neither — a half link is refused, never
+        // silently downgraded to the legacy paste form.
+        var pairParam: String? = null
+        var tokenParam: String? = null
+        for (part in query.split('&')) {
+            val eq = part.indexOf('=')
+            if (eq <= 0) continue
+            when (part.substring(0, eq)) {
+                "pair" -> pairParam = part.substring(eq + 1)
+                "t" -> tokenParam = part.substring(eq + 1)
+            }
+        }
+        val pair = if (pairParam == null && tokenParam == null) {
+            null
+        } else {
+            val pairHostPort = pairParam
+                ?: return PairLinkResult.Invalid(
+                    "The link carries a pairing token but no &pair=host:port — copy the full link.",
+                )
+            val token = tokenParam
+                ?: return PairLinkResult.Invalid(
+                    "The link carries a pairing endpoint but no &t=token — copy the full link.",
+                )
+            if (token.isEmpty()) {
+                return PairLinkResult.Invalid(
+                    "The link's pairing token looks malformed.",
+                )
+            }
+            val colon = pairHostPort.lastIndexOf(':')
+            if (colon <= 0) {
+                return PairLinkResult.Invalid(
+                    "The link's pair endpoint needs host:port, like &pair=192.168.1.24:8787.",
+                )
+            }
+            val pairHost = pairHostPort.substring(0, colon)
+            val pairPort = pairHostPort.substring(colon + 1)
+            val pairPortNumber = pairPort.toIntOrNull()
+            if (pairHost.isEmpty() || pairPortNumber == null || pairPortNumber !in 1..65535) {
+                return PairLinkResult.Invalid(
+                    "The link's pair endpoint needs host:port, like &pair=192.168.1.24:8787.",
+                )
+            }
+            PairParams(pairHost, pairPort, token)
+        }
 
         val portStart = authority.lastIndexOf(':')
         if (portStart <= 0) {
@@ -61,6 +118,6 @@ object PairLink {
             return PairLinkResult.Invalid("The link's user name looks malformed.")
         }
 
-        return PairLinkResult.Parsed(host = host, port = port, user = decodedUser)
+        return PairLinkResult.Parsed(host = host, port = port, user = decodedUser, pair = pair)
     }
 }

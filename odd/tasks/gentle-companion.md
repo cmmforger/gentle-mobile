@@ -412,3 +412,13 @@ Release APK 57,953,496 bytes signed and copied to `~/Downloads/gentle-mobile-0.1
 was revoked from `authorized_keys` with `gentle-companion-pair --revoke`, leaving other keys untouched.
 
 **L15 (auto-update noted, stack unchanged):** A reader proposed Expo + Rust core + EAS Update with a host daemon and an on-device local mode. Checked against what exists: their security model (phone-generated ed25519, one-time token, host fingerprint against MITM) is already implemented and verified here, so it validates S22 rather than replacing it. Recorded decision: **stack unchanged** — React Native would still need the Rust module for SSH, adds a JS hop to the most latency-sensitive screen, and does not unblock iOS, which needs macOS and Xcode regardless. Two ideas taken: the single-use token (already S22) and **auto-update of the APK**, logged as T19b, the cheap part of OTA without re-platforming. The host daemon and the on-device agent are product changes, not implementation choices, and stay out of scope.
+
+**L16 (S22 done — pairing is one scan):** `gentle-mobile-pair` now runs a single-use listener bound to the
+LAN or tailnet address (loopback refused), TTL 180 s, ephemeral port, and accepts exactly one phone key before
+exiting. The QR/link carries `gc://<host>:<sshPort>?user=…&pair=<host>:<port>&t=<token>`, never a private key.
+Verified two ways: hand-run `curl` proved the happy path (200, key written and listed) and every refusal —
+reuse 409, wrong token 401, malformed key 400, expiry 403 — and the app pasted the same link, posted its key,
+pinned the host fingerprint and reached the real agent list. 42 JVM tests green; release APK signed with
+`CN=Gentle Mobile`. Accepted risk to revisit: `usesCleartextTraffic="true"` is app-wide because the pairing POST
+is plain HTTP to a host unknown in advance; the token is single-use, short-lived and reachable only on the local
+network, and the flag should be narrowed once pairing can use HTTPS.

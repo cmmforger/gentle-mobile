@@ -7,11 +7,15 @@
          paste field, so the app must still install on camera-less devices. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- The one-scan pairing POST (S22) is plain HTTP on purpose: it
+         carries only the device's public key and the one-time token —
+         never a secret. Everything else (the transport) is SSH. -->
     <application
         android:label="Gentle Mobile"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.GentleMobile.Launch">
         <activity
             android:name=".MainActivity"

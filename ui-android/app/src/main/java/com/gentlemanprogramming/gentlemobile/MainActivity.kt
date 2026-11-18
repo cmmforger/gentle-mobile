@@ -89,9 +89,11 @@ import com.gentlemanprogramming.gentlemobile.core.PaneReadDto
 import com.gentlemanprogramming.gentlemobile.core.SnapshotDto
 import com.gentlemanprogramming.gentlemobile.core.connect as coreConnect
 import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
+import com.gentlemanprogramming.gentlemobile.pair.PairClient
 import com.gentlemanprogramming.gentlemobile.pair.PairCommand
 import com.gentlemanprogramming.gentlemobile.pair.PairLink
 import com.gentlemanprogramming.gentlemobile.pair.PairLinkResult
+import com.gentlemanprogramming.gentlemobile.pair.PairParams
 import com.gentlemanprogramming.gentlemobile.pair.QrScannerScreen
 import com.gentlemanprogramming.gentlemobile.ui.settings.SettingsScreen
 import com.gentlemanprogramming.gentlemobile.ui.session.SessionComposer
@@ -335,6 +337,11 @@ fun ConnectScreen(
     var copiedKey by remember { mutableStateOf(false) }
     var copiedCommand by remember { mutableStateOf(false) }
     var pasted by remember { mutableStateOf(false) }
+    // One-scan pairing (S22): when the applied link carries a pairing
+    // endpoint + token, Connect first POSTs this phone's key to the
+    // listener, then opens SSH. The paste field runs the same flow.
+    var pairParams by remember { mutableStateOf<PairParams?>(null) }
+    var pairStatus by remember { mutableStateOf<String?>(null) }
     val cameraPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -354,6 +361,7 @@ fun ConnectScreen(
                 host = parsed.host
                 port = parsed.port
                 user = parsed.user
+                pairParams = parsed.pair
                 pairLink = ""
                 pairError = null
                 true
@@ -365,10 +373,13 @@ fun ConnectScreen(
         }
     }
 
-    fun connect(acceptChallenge: UiState.Challenge?) {
+    fun connect(acceptChallenge: UiState.Challenge?, pair: PairParams?) {
         screen.generation += 1
         val generation = screen.generation
         screen.ui = UiState.Connecting
+        pairStatus = pair?.let {
+            "Pairing — sending this phone's key to ${it.host}:${it.port}…"
+        }
         val profile = HostProfileDto(
             host = host,
             port = port.toUShortOrNull() ?: 0u,
@@ -377,8 +388,40 @@ fun ConnectScreen(
             knownHostsPath = knownHostsPath,
         )
         val challenge = acceptChallenge
+        val keyLine = identity?.publicKeyLine
         executor.execute {
             try {
+                if (pair != null) {
+                    if (keyLine == null) {
+                        mainHandler.post {
+                            screen.ui = UiState.Failed(
+                                "No client key on this phone yet — the identity must exist before pairing.",
+                            )
+                        }
+                        return@execute
+                    }
+                    when (val reply = PairClient.sendKey(pair.host, pair.port, pair.token, keyLine)) {
+                        is PairClient.Result.Refused -> {
+                            mainHandler.post {
+                                if (screen.generation == generation) {
+                                    screen.ui = UiState.Failed(reply.message)
+                                }
+                            }
+                            // Never fall through to SSH: the key was not
+                            // trusted, the connect would fail with a second
+                            // error that hides the pairing reason.
+                            return@execute
+                        }
+                        is PairClient.Result.Accepted -> mainHandler.post {
+                            if (screen.generation == generation) {
+                                // The token burned on use: the key is trusted
+                                // now, later connects go straight to SSH.
+                                pairParams = null
+                                pairStatus = "Key accepted — connecting…"
+                            }
+                        }
+                    }
+                }
                 if (challenge != null) {
                     acceptHostKey(knownHostsPath, profile.host, profile.port, challenge.keyBlob)
                 }
@@ -476,9 +519,13 @@ fun ConnectScreen(
                 QrScannerScreen(
                     onQr = { link ->
                         screen.ui = UiState.Form
-                        // The QR encodes the same gc:// link the host prints:
-                        // one parser and one error path for paste and scan.
-                        applyPairLink(link)
+                        val applied = applyPairLink(link)
+                        // One scan runs the whole flow: post the key, then
+                        // connect over SSH — the host-key challenge still
+                        // shows after.
+                        if (applied && pairParams != null) {
+                            connect(acceptChallenge = null, pair = pairParams)
+                        }
                     },
                     onCancel = { screen.ui = UiState.Form },
                 )
@@ -495,7 +542,7 @@ fun ConnectScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Run gentle-mobile-pair on the host, then paste its link — or scan the QR. Works over Tailscale or plain SSH.",
+                    text = "Run gentle-mobile-pair on the host, scan its QR — or paste the link — and the key is trusted in one step. The host key is confirmed once after.",
                     color = LocalPalette.current.muted,
                     fontSize = 13.sp,
                 )
@@ -660,7 +707,9 @@ fun ConnectScreen(
                 if (pasted) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Will connect to $host \u00B7 $port \u00B7 $user",
+                        text = pairParams?.let {
+                            "Will pair with ${it.host}:${it.port} \u00B7 ssh $host:$port \u00B7 $user"
+                        } ?: "Will connect to $host \u00B7 $port \u00B7 $user",
                         color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
@@ -671,11 +720,12 @@ fun ConnectScreen(
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
-                        // Typed links work too: the field is applied first, so
-                        // paste and typing share one Connect action.
-                        if (applyPairLink(pairLink)) connect(acceptChallenge = null)
+                        // A typed link is applied first; a pasted or scanned
+                        // one was already applied, so Connect reuses it.
+                        if (pairLink.isNotBlank()) applyPairLink(pairLink)
+                        if (pasted) connect(acceptChallenge = null, pair = pairParams)
                     },
-                    enabled = pairLink.isNotBlank() && current !is UiState.Connecting,
+                    enabled = (pairLink.isNotBlank() || pasted) && current !is UiState.Connecting,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(44.dp),
@@ -690,14 +740,18 @@ fun ConnectScreen(
                     ),
                 ) {
                     Text(
-                        text = if (current is UiState.Connecting) "Connecting\u2026" else "Connect",
+                        text = when {
+                            current is UiState.Connecting && pairParams != null -> "Pairing\u2026"
+                            current is UiState.Connecting -> "Connecting\u2026"
+                            else -> "Connect"
+                        },
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
                 if (current is UiState.Connecting) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Probing the host key, then opening the bridge\u2026",
+                        text = pairStatus ?: "Probing the host key, then opening the bridge\u2026",
                         color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
@@ -771,7 +825,7 @@ fun ConnectScreen(
                 }
                 Spacer(Modifier.height(16.dp))
                 Button(
-                    onClick = { connect(acceptChallenge = current) },
+                    onClick = { connect(acceptChallenge = current, pair = pairParams) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(44.dp),
@@ -804,7 +858,7 @@ fun ConnectScreen(
 
             is UiState.Connected -> {
                 if (current.interrupted) {
-                    InterruptedNotice(onRetry = { connect(acceptChallenge = null) })
+                    InterruptedNotice(onRetry = { connect(acceptChallenge = null, pair = pairParams) })
                     Spacer(Modifier.height(8.dp))
                 }
                 if (screen.inboxOpen) {

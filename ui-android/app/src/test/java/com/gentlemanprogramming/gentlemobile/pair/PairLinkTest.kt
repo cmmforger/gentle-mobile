@@ -78,4 +78,47 @@ class PairLinkTest {
         val result = PairLink.parse("gc://10.0.2.2:2222?user=")
         assertTrue(result is PairLinkResult.Invalid)
     }
+
+    // --- S22 one-scan pairing: the link also carries the pair endpoint and ---
+    // --- the one-time token.                                              ---
+
+    @Test
+    fun `parses the one-scan link with pair endpoint and token`() {
+        val result = PairLink.parse(
+            "gc://100.96.18.28:22?user=erickfm&pair=192.168.1.24:8787&t=abc123",
+        )
+        assertEquals(
+            PairLinkResult.Parsed(
+                "100.96.18.28",
+                "22",
+                "erickfm",
+                PairParams("192.168.1.24", "8787", "abc123"),
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun `pair endpoint without a token is refused`() {
+        val result = PairLink.parse("gc://h:22?user=u&pair=192.168.1.24:8787")
+        assertTrue(result is PairLinkResult.Invalid)
+    }
+
+    @Test
+    fun `token without a pair endpoint is refused`() {
+        val result = PairLink.parse("gc://h:22?user=u&t=abc123")
+        assertTrue(result is PairLinkResult.Invalid)
+    }
+
+    @Test
+    fun `a malformed pair port is refused`() {
+        assertTrue(PairLink.parse("gc://h:22?user=u&pair=192.168.1.24:0&t=t") is PairLinkResult.Invalid)
+        assertTrue(PairLink.parse("gc://h:22?user=u&pair=192.168.1.24&t=t") is PairLinkResult.Invalid)
+        assertTrue(PairLink.parse("gc://h:22?user=u&pair=192.168.1.24:70000&t=t") is PairLinkResult.Invalid)
+    }
+
+    @Test
+    fun `an empty token is refused`() {
+        assertTrue(PairLink.parse("gc://h:22?user=u&pair=192.168.1.24:8787&t=") is PairLinkResult.Invalid)
+    }
 }
