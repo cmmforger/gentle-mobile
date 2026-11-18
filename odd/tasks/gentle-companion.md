@@ -58,6 +58,14 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   requests — and every request opens a fresh channel. Envelope shapes (`agent_prompted`, `result.read`
   nesting, `pane_not_found`/`agent_not_found`) were measured live, never assumed.
 
+- **S20 — Name and identity: `gentle-mobile`.**
+  "1. el nombre se llama gentle-mobile como te dije". The Android app is **Gentle Mobile**:
+  applicationId and namespace `com.gentlemanprogramming.gentlemobile`, label `Gentle Mobile`. "Gentle
+  Companion" was a default taken from the first message and never confirmed; the repository name was always
+  the decision. The icon and splash come from the human's own logo asset, never from a generated mark.
+  Also stated in this decision: the Pair screen must match `design/gentle-companion/01-pair.html`, not a
+  developer form — the design is the contract for what gets built.
+
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
 
@@ -353,3 +361,13 @@ openai-codex … invalid_refresh_token (401)`), which is a machine issue, not an
 pane were closed and herdr is back to 21 panes / 2 agents. The `agent_not_found` refusal for non-agent panes is
 surfaced inline, verbatim. Recorded as S19: read and prompt live on the daemon API socket via SSH
 `direct-streamlocal`, not on the client-shell bridge.
+
+**L13 (name, icon and design fidelity):** The human rejected three things at once and was right on all
+three: the product was called "Gentle Companion" — a default I took from L1 and never confirmed, while the
+repository has always been `gentle-mobile`; the launcher icon was a generated placeholder instead of their
+own logo, which existed only inside the design artboard; and the first screen was a developer form
+(host/port/user/session) instead of the Pair screen the design specifies. They also clarified what the design's
+two options mean: **Herdr TUI vs Gentle Shell, both over SSH** — Tailscale is the network, not a second
+transport (their `ts status` shows the same host reachable as a tailnet address, and Termius connects that
+way). The device-key error they hit on the phone ("No client key at …/client_ed25519") was exactly the gap
+this task closes: the app now generates its own key. Recorded as S20; the alignment work is in flight.
