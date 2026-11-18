@@ -15,7 +15,7 @@ class OpenSshKeyTest {
 
     private val seed = ByteArray(32) { it.toByte() }
     private val pub = Ed25519Identity.publicFromSeed(seed)
-    private val comment = "gentle-companion@sdk_gphone64_x86_64"
+    private val comment = "gentle-mobile@sdk_gphone64_x86_64"
 
     @Test
     fun `private pem round-trips to the same public key and comment`() {
@@ -43,7 +43,7 @@ class OpenSshKeyTest {
     fun `a comment length that forces non zero padding round-trips`() {
         // Comments make the private section land on any residue mod 16; a
         // 30-char comment exercises a non-zero padding run.
-        val longComment = "gentle-companion@pixel-six-abc"
+        val longComment = "gentle-mobile@pixel-six-abc"
         assertTrue(longComment.length % 16 != 0 || true)
         val pem = OpenSshKey.privatePem(pub, seed, longComment)
         val decoded = OpenSshKey.decodePrivatePem(pem)!!

@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
-# gentle-companion-pair — set up a phone to reach this machine.
+# gentle-mobile-pair — set up a phone to reach this machine.
 #
-#   gentle-companion-pair                 print the connection details and a QR
-#   gentle-companion-pair --add-key KEY   trust one phone key (paste what the app shows)
-#   gentle-companion-pair --list          list the keys this tool added
-#   gentle-companion-pair --revoke        remove every key this tool added
+#   gentle-mobile-pair                 print the connection details and a QR
+#   gentle-mobile-pair --add-key KEY   trust one phone key (paste what the app shows)
+#   gentle-mobile-pair --list          list the keys this tool added
+#   gentle-mobile-pair --revoke        remove every key this tool added
 #
 # It never touches keys it did not add: everything carries the marker comment
-# below, so --revoke is exact and leaves other authorized keys alone.
+# below, so --revoke is exact and leaves other authorized keys alone. The
+# marker was renamed from gentle-companion to gentle-mobile before anything
+# shipped, so --revoke also cleans keys carrying the old marker — nothing is
+# orphaned.
 set -euo pipefail
 
-MARKER="gentle-companion"
+MARKER="gentle-mobile"
+# The pre-rename marker; --list still shows those keys and --revoke removes
+# them so nothing added under the old name is orphaned.
+LEGACY_MARKER="gentle-companion"
 AUTHORIZED="${AUTHORIZED_KEYS:-$HOME/.ssh/authorized_keys}"
 PORT="${GENTLE_COMPANION_PORT:-22}"
 
@@ -40,7 +46,7 @@ usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
 case "${1:-}" in
 --add-key)
     key="${2:-}"
-    [ -n "$key" ] || die "usage: gentle-companion-pair --add-key 'ssh-ed25519 AAAA... comment'"
+    [ -n "$key" ] || die "usage: gentle-mobile-pair --add-key 'ssh-ed25519 AAAA... comment'"
     case "$key" in
         ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*\ *) ;;
         *) die "that does not look like an SSH public key" ;;
@@ -58,15 +64,24 @@ case "${1:-}" in
     printf 'key added to %s\n' "$AUTHORIZED"
     ;;
 --list)
-    grep -F "$MARKER-" "$AUTHORIZED" 2>/dev/null | awk '{print $1, $2, $NF}' || printf 'no phone keys yet\n'
+    found=0
+    while IFS= read -r line; do
+        case "$line" in
+            *"$MARKER-"*|*"$LEGACY_MARKER-"*)
+                printf '%s\n' "$line" | awk '{print $1, $2, $NF}'
+                found=1
+                ;;
+        esac
+    done < "$AUTHORIZED" 2>/dev/null
+    [ "$found" -eq 1 ] || printf 'no phone keys yet\n'
     ;;
 --revoke)
     [ -f "$AUTHORIZED" ] || die "no $AUTHORIZED"
     tmp=$(mktemp)
-    grep -vF "$MARKER-" "$AUTHORIZED" > "$tmp" || true
+    grep -vF -e "$MARKER-" -e "$LEGACY_MARKER-" "$AUTHORIZED" > "$tmp" || true
     cat "$tmp" > "$AUTHORIZED"
     rm -f "$tmp"
-    printf 'removed every key this tool added; other keys untouched\n'
+    printf 'removed every key this tool added (including old gentle-companion markers); other keys untouched\n'
     ;;
 -h|--help|help)
     usage

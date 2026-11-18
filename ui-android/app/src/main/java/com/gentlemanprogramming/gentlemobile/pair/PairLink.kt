@@ -1,7 +1,7 @@
 package com.gentlemanprogramming.gentlemobile.pair
 
 /**
- * The pairing link `scripts/gentle-companion-pair` prints on the host and the
+ * The pairing link `scripts/gentle-mobile-pair` prints on the host and the
  * QR encodes: `gc://host:port?user=name`. Parsing is pure Kotlin (no
  * android.net.Uri) so it is unit-testable on the JVM and refuses anything
  * else with a readable reason — never a silent no-op.
@@ -17,7 +17,7 @@ object PairLink {
         val text = raw.trim()
         if (text.isEmpty()) {
             return PairLinkResult.Invalid(
-                "Paste the link printed by gentle-companion-pair (gc://host:port?user=…).",
+                "Paste the link printed by gentle-mobile-pair (gc://host:port?user=…).",
             )
         }
         if (!text.startsWith("gc://")) {

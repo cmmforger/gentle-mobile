@@ -2,21 +2,29 @@ package com.gentlemanprogramming.gentlemobile.ui.terminal
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gentlemanprogramming.gentlemobile.core.CellDto
 import com.gentlemanprogramming.gentlemobile.core.CursorDto
 import com.gentlemanprogramming.gentlemobile.core.SurfaceDto
+import com.gentlemanprogramming.gentlemobile.ui.session.SessionComposer
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 
 /**
@@ -57,7 +65,7 @@ fun fixtureSurface(): SurfaceDto {
         }
     }
 
-    put(0, 0, "❯ gentle-companion · fixture 80×24", FG_ACCENT)
+    put(0, 0, "❯ gentle-mobile · fixture 80×24", FG_ACCENT)
     put(1, 0, "This frame is generated in the app: no SSH, no host, no agent.", FG_MUTED)
     put(2, 0, "It exists so layout changes cost one build, not a full connect flow.", FG_MUTED)
     put(4, 0, "╭──────────────────────────────────────────────────────────────╮", FG_MUTED)
@@ -119,7 +127,24 @@ fun FixtureTerminal(modifier: Modifier = Modifier) {
             TerminalSurface(
                 surface = fixtureSurface(),
                 fontSizePx = fontSizePx,
-                modifier = Modifier.fillMaxSize().then(scroll),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .then(scroll),
+            )
+            Spacer(Modifier.height(8.dp))
+            // The real session composer, not a lookalike: the fixture exists
+            // so composer/terminal layout can be iterated without an SSH
+            // host, so it hosts the same composable the live session uses.
+            // Typing enables the send triangle; send itself is a no-op here.
+            var fixtureDraft by remember { mutableStateOf("") }
+            SessionComposer(
+                draft = fixtureDraft,
+                onDraftChange = { fixtureDraft = it },
+                sending = false,
+                sendError = null,
+                sent = false,
+                onSend = { fixtureDraft = "" },
             )
         }
     }

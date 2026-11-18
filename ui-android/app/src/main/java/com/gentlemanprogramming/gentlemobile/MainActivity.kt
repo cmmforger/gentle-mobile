@@ -94,6 +94,7 @@ import com.gentlemanprogramming.gentlemobile.pair.PairLink
 import com.gentlemanprogramming.gentlemobile.pair.PairLinkResult
 import com.gentlemanprogramming.gentlemobile.pair.QrScannerScreen
 import com.gentlemanprogramming.gentlemobile.ui.settings.SettingsScreen
+import com.gentlemanprogramming.gentlemobile.ui.session.SessionComposer
 import com.gentlemanprogramming.gentlemobile.ui.settings.ThemePickerScreen
 import com.gentlemanprogramming.gentlemobile.ui.splash.SplashScreen
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
@@ -494,7 +495,7 @@ fun ConnectScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Run gentle-companion-pair on the host, then paste its link — or scan the QR. Works over Tailscale or plain SSH.",
+                    text = "Run gentle-mobile-pair on the host, then paste its link — or scan the QR. Works over Tailscale or plain SSH.",
                     color = LocalPalette.current.muted,
                     fontSize = 13.sp,
                 )
@@ -708,9 +709,10 @@ fun ConnectScreen(
                 Spacer(Modifier.height(12.dp))
                 Hairline()
 
-                // Block 4: the QR affordance. A missing or denied camera never
-                // blocks pairing — the paste field above is the fallback.
-                BlockLabel("QR")
+                // Block 4: the scan affordance, per 01-pair.html — the button
+                // stands alone (no QR label above it). A missing or denied
+                // camera never blocks pairing — the paste field above is the
+                // fallback.
                 Row {
                     GhostButton(
                         label = "Scan QR",
@@ -1452,70 +1454,16 @@ private fun SessionScreen(
         // composer stays inside the one-thumb zone on a phone: a full-width
         // button row pushes it off the bottom.
         Spacer(Modifier.height(8.dp))
-        sessionUi.sendError?.let { error ->
-            Text(
-                text = error,
-                color = LocalPalette.current.error,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-            )
-            Spacer(Modifier.height(4.dp))
-        }
-        if (sessionUi.sent) {
-            Text(
-                text = "Sent — the host confirmed the submission.",
-                color = LocalPalette.current.accent,
-                fontSize = 12.sp,
-            )
-            Spacer(Modifier.height(4.dp))
-        }
-        Row(
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            OutlinedTextField(
-                value = sessionUi.draft,
-                onValueChange = { sessionUi.draft = it },
-                modifier = Modifier.weight(1f),
-                singleLine = false,
-                maxLines = 3,
-                placeholder = {
-                    Text("Prompt ${agent.name}…", color = LocalPalette.current.muted, fontSize = 13.sp)
-                },
-                textStyle = TextStyle(
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace,
-                ),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = LocalPalette.current.accent,
-                    unfocusedBorderColor = LocalPalette.current.line,
-                    focusedContainerColor = LocalPalette.current.surface,
-                    unfocusedContainerColor = LocalPalette.current.surface,
-                    cursorColor = LocalPalette.current.accent,
-                ),
-            )
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = { onSend(sessionUi.draft) },
-                enabled = !sessionUi.sending && sessionUi.draft.isNotBlank(),
-                modifier = Modifier
-                    .height(44.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = LocalPalette.current.accent,
-                    contentColor = LocalPalette.current.bg,
-                    disabledContainerColor = LocalPalette.current.accentPressed,
-                    disabledContentColor = LocalPalette.current.bg,
-                ),
-            ) {
-                Text(
-                    text = if (sessionUi.sending) "…" else "Send",
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
+        // Composer: a prompt, sent through the daemon's own agent.prompt.
+        // One designed row per 04-session.html — see ui/session/SessionComposer.
+        SessionComposer(
+            draft = sessionUi.draft,
+            onDraftChange = { sessionUi.draft = it },
+            sending = sessionUi.sending,
+            sendError = sessionUi.sendError,
+            sent = sessionUi.sent,
+            onSend = { onSend(sessionUi.draft) },
+        )
     }
 }
 

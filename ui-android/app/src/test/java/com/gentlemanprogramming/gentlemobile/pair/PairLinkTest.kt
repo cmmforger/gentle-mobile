@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The gc:// link is what `scripts/gentle-companion-pair` prints on the host
+ * The gc:// link is what `scripts/gentle-mobile-pair` prints on the host
  * and what the QR encodes: `gc://host:port?user=name`. Parsing must fill the
  * connect form or refuse with a readable reason — never a silent no-op.
  */

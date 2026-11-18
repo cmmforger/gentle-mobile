@@ -229,7 +229,7 @@ fun SettingsScreen(
         ) {
             Text(text = "Revoke this device on all hosts", fontWeight = FontWeight.SemiBold)
         }
-        UnavailableNote("The core has no revoke call yet — run gentle-companion-pair --revoke on each host.")
+        UnavailableNote("The core has no revoke call yet — run gentle-mobile-pair --revoke on each host.")
         Spacer(Modifier.height(24.dp))
     }
 }

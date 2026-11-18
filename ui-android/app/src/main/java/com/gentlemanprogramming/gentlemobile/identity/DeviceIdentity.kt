@@ -9,7 +9,7 @@ import java.io.File
  * app-private storage (`filesDir`, mode 600), never in shared/external
  * storage. A legacy key found at the old external path is migrated once and
  * the external copy is deleted. The public line is what the user pastes into
- * `gentle-companion-pair --add-key` on the host — no key ever leaves the
+ * `gentle-mobile-pair --add-key` on the host — no key ever leaves the
  * phone through files or adb pushes.
  */
 object DeviceIdentity {
@@ -74,10 +74,10 @@ object DeviceIdentity {
         return Identity(key.absolutePath, line, migratedFromLegacy = false, generated = true)
     }
 
-    /** `gentle-companion@<device>` — the comment the host's --list shows. */
+    /** `gentle-mobile@<device>` — the comment the host's --list shows. */
     fun deviceComment(): String {
         val model = Build.MODEL?.trim()?.replace(Regex("\\s+"), "-").orEmpty()
-        return if (model.isEmpty()) "gentle-companion@android" else "gentle-companion@$model"
+        return if (model.isEmpty()) "gentle-mobile@android" else "gentle-mobile@$model"
     }
 
     private fun restrictivePermissions(file: File) {

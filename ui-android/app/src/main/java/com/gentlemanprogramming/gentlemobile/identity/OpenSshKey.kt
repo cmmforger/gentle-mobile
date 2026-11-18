@@ -41,7 +41,7 @@ object OpenSshKey {
     fun publicBlob(pub: ByteArray): ByteArray =
         sshString("ssh-ed25519".toByteArray(Charsets.UTF_8)) + sshString(pub)
 
-    /** `ssh-ed25519 AAAA… gentle-companion@<device>` — what --add-key trusts. */
+    /** `ssh-ed25519 AAAA… gentle-mobile@<device>` — what --add-key trusts. */
     fun publicKeyLine(pub: ByteArray, comment: String): String =
         "ssh-ed25519 " +
             Base64.getEncoder().encodeToString(publicBlob(pub)) +

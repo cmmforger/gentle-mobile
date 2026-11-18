@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "gentle-companion"
+rootProject.name = "gentle-mobile"
 include(":app")

@@ -8,9 +8,9 @@ plugins {
 
 
 // Release signing reads a properties file kept OUTSIDE the repository
-// (~/.config/gentle-companion/signing.properties, mode 600). When the file is
+// (~/.config/gentle-mobile/signing.properties, mode 600). When the file is
 // absent the release build is unsigned, so the project still builds anywhere.
-val signingPropsFile = file("${System.getProperty("user.home")}/.config/gentle-companion/signing.properties")
+val signingPropsFile = file("${System.getProperty("user.home")}/.config/gentle-mobile/signing.properties")
 val signingProps = Properties().apply {
     if (signingPropsFile.exists()) signingPropsFile.inputStream().use { load(it) }
 }
