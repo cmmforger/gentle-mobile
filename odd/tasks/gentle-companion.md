@@ -113,7 +113,14 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   7. Chrome noise: "Gentle Mobile" and "Settings" in the header are unnecessary, and `Hosts` with the back chevron explains itself.
   8. Show the **project name**, not the full path, and stop repeating `pi` beside it.
   9. **Dictation does not work** on the phone.
-  Rounds: the labelling/visual items (3, 6, 7, 8) and the Settings structure (2) are immediate; naming hosts and multi-host (4), starting a session (5), languages (1) and dictation (9) need their own decisions and work.
+  Rounds: the labelling/visual items (3, 6, 7, 8) and the Settings structure (2) are immediate; naming hosts and
+  multi-host (4), starting a session (5), languages (1) and dictation (9) need their own decisions and work.
+  **Decisions taken:** (1) only **Spanish and English**, **English by default**, switchable in the app;
+  (4) host names are **written by the user** (any label they want, so they know which machine is which);
+  (5) start a session from the **list of repositories that already have history**;
+  (9) on the phone **the permission dialog never appeared** and the message read like a `send` hint — the fix
+  must ask for `RECORD_AUDIO` before creating the recogniser and say "permission was refused" in plain words,
+  localised.
 
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
