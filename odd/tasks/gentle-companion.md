@@ -103,6 +103,18 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   T17b close, the release APK is produced for that test; the human's test is the approval step, not a
   substitute for it. No release builds before T17 closes.
 
+- **S24 — Corrections from the first real test on the phone (verbatim list).**
+  1. Settings needs a **language selector** (Spanish/English/French/Italian and the usual set).
+  2. Settings needs **sections/tabs** so it stops being one long list (Security, About, …).
+  3. "GENTLE SHELL SESSIONS" is not understood, and entering it shows `listing sessions…` forever with no explanation.
+  4. Hosts need **names** (100.96.18.28 → "Desktop") and **more than one host** (Desktop + Notebook).
+  5. From the phone one should be able to **open a new session in a repo** when none is running, not only resume existing ones.
+  6. `IDLE · 2` reads badly; use a human word, and drop the redundant repetition.
+  7. Chrome noise: "Gentle Mobile" and "Settings" in the header are unnecessary, and `Hosts` with the back chevron explains itself.
+  8. Show the **project name**, not the full path, and stop repeating `pi` beside it.
+  9. **Dictation does not work** on the phone.
+  Rounds: the labelling/visual items (3, 6, 7, 8) and the Settings structure (2) are immediate; naming hosts and multi-host (4), starting a session (5), languages (1) and dictation (9) need their own decisions and work.
+
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
 
