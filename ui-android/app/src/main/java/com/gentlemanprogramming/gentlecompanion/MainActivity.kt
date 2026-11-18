@@ -4,10 +4,14 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,6 +23,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,14 +38,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -47,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gentlemanprogramming.gentlecompanion.core.SurfaceDto
@@ -63,8 +72,10 @@ import com.gentlemanprogramming.gentlecompanion.core.connect as coreConnect
 import com.gentlemanprogramming.gentlecompanion.ui.theme.GentleCompanionTheme
 import com.gentlemanprogramming.gentlecompanion.ui.theme.Tokens
 import com.gentlemanprogramming.gentlecompanion.ui.terminal.SurfaceStats
-import com.gentlemanprogramming.gentlecompanion.ui.terminal.TERMINAL_FONT_RATIO
+import com.gentlemanprogramming.gentlecompanion.ui.terminal.TerminalFontMaxSp
+import com.gentlemanprogramming.gentlecompanion.ui.terminal.TerminalFontMinSp
 import com.gentlemanprogramming.gentlecompanion.ui.terminal.TerminalSurface
+import com.gentlemanprogramming.gentlecompanion.ui.terminal.rememberTerminalCellMetrics
 import com.gentlemanprogramming.gentlecompanion.ui.terminal.surfaceStats
 import java.io.File
 import java.util.concurrent.Executors
@@ -83,11 +94,27 @@ import java.util.concurrent.Executors
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Edge-to-edge with real insets: the session composer must stay above
+        // the keyboard and the navigation bar, which only works when the app
+        // receives IME/nav-bar insets instead of the decor consuming them.
+        // The app is always dark, so force light (white) status-bar icons.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
+        // Development shortcut: `--ez fixture true` draws a deterministic 80x24
+        // surface so terminal geometry can be iterated without an SSH host, a
+        // host-key challenge or a live agent.
+        val showFixture = intent?.getBooleanExtra("fixture", false) == true
         setContent {
             GentleCompanionTheme {
-                val keyPath = File(getExternalFilesDir(null), "client_ed25519").absolutePath
-                val knownHostsPath = File(filesDir, "known_hosts").absolutePath
-                ConnectScreen(keyPath = keyPath, knownHostsPath = knownHostsPath)
+                if (showFixture) {
+                    com.gentlemanprogramming.gentlecompanion.ui.terminal.FixtureTerminal()
+                } else {
+                    val keyPath = File(getExternalFilesDir(null), "client_ed25519").absolutePath
+                    val knownHostsPath = File(filesDir, "known_hosts").absolutePath
+                    ConnectScreen(keyPath = keyPath, knownHostsPath = knownHostsPath)
+                }
             }
         }
     }
@@ -215,6 +242,9 @@ fun ConnectScreen(keyPath: String, knownHostsPath: String) {
         })
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            // Real window insets: status bar at the top, IME + navigation bar
+            // at the bottom, so the composer always sits above both.
+            .safeDrawingPadding()
             .then(
                 if (screen.ui is UiState.Session) {
                     Modifier
@@ -692,6 +722,7 @@ private fun pollPane(
 }
 
 /** The agent session screen: header, terminal grid (or text fallback), composer. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun SessionScreen(
     connection: CompanionConnection,
@@ -763,14 +794,55 @@ private fun SessionScreen(
         val surfaceStats = sessionUi.surfaceStats
         val readError = sessionUi.readError
         if (surface != null) {
-            // Fit the grid to the width at the bundled font's advance ratio
-            // (JetBrains Mono: 0.6em per column), then let a pinch shrink it.
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val metrics = rememberTerminalCellMetrics()
+            // The terminal area owns the leftover height (weight(1f)); the
+            // composer below it is measured first at its own intrinsic
+            // height, so the grid can never run beneath the composer and
+            // the composer can never be pushed off the screen.
+            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
                 val density = LocalDensity.current
-                val fitPx = with(density) {
-                    (maxWidth / (surface.width.toInt().toFloat() * TERMINAL_FONT_RATIO)).toPx()
+                val cols = surface.width.toInt().coerceAtLeast(1)
+                val rows = surface.height.toInt().coerceAtLeast(1)
+                // Fit rule: shrink the font until ALL columns fit the
+                // measured box, using the advance ratio measured from the
+                // bundled font (the same measurement the renderer slots
+                // cells with). Below the readability floor the font stops
+                // shrinking and the grid scrolls horizontally instead —
+                // the right edge is never silently clipped.
+                val fitPx = constraints.maxWidth / (cols * metrics.advanceRatio)
+                val minPx = with(density) { TerminalFontMinSp.toPx() }
+                val maxPx = with(density) { TerminalFontMaxSp.toPx() }
+                val effectivePx = (if (terminalFontPx > 0f) terminalFontPx else fitPx)
+                    .coerceIn(minPx, maxPx)
+                val gridWidthPx = cols * metrics.advanceRatio * effectivePx
+                val gridHeightPx = rows * metrics.lineHeightRatio * effectivePx
+
+                var viewSize by remember { mutableStateOf(IntSize.Zero) }
+                val hScroll = rememberScrollState()
+                val vScroll = rememberScrollState()
+                val cellHalfPx = (metrics.lineHeightRatio * effectivePx / 2f).toInt().coerceAtLeast(1)
+                // Pinned to the bottom while the user is there: new frames
+                // follow only when pinned, so reading history is not yanked.
+                val pinnedToBottom = remember { mutableStateOf(true) }
+                LaunchedEffect(vScroll, cellHalfPx) {
+                    snapshotFlow { vScroll.value }.collect {
+                        pinnedToBottom.value = vScroll.maxValue == 0 ||
+                            vScroll.value >= vScroll.maxValue - cellHalfPx
+                    }
                 }
-                val effectivePx = if (terminalFontPx > 0f) minOf(terminalFontPx, fitPx) else fitPx
+                LaunchedEffect(surface.revision, effectivePx, gridHeightPx, viewSize) {
+                    if (pinnedToBottom.value) vScroll.scrollTo(vScroll.maxValue)
+                }
+                val atBottom = vScroll.maxValue == 0 ||
+                    vScroll.value >= vScroll.maxValue - cellHalfPx
+
+                // Pinch only changes the font size; one-finger drags belong
+                // to the scroll (canPan = false keeps the transform detector
+                // out of the drag gesture's way).
+                val transformState = rememberTransformableState { zoomChange, _, _ ->
+                    val current = if (terminalFontPx > 0f) terminalFontPx else effectivePx
+                    onFontPxChange((current * zoomChange).coerceIn(minPx, maxPx))
+                }
                 val statsLine = surfaceStats?.let {
                     "${it.cols}×${it.rows} · ${it.drawnCells} non-blank · " +
                         "${it.distinctColours} colours" +
@@ -793,21 +865,49 @@ private fun SessionScreen(
                             .weight(1f)
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .pointerInput(Unit) {
-                                detectTransformGestures { _, _, zoom, _ ->
-                                    if (zoom != 1f) {
-                                        val current = if (terminalFontPx > 0f) terminalFontPx else effectivePx
-                                        onFontPxChange(current * zoom)
-                                    }
-                                }
-                            },
+                            .onSizeChanged { viewSize = it }
+                            .verticalScroll(vScroll)
+                            .horizontalScroll(hScroll)
+                            .transformable(transformState, canPan = { false }),
                     ) {
+                        // The canvas covers the whole viewport when the grid
+                        // fits (background everywhere) and the grid's own size
+                        // when it overflows: scrolling then reveals the rest —
+                        // nothing is clipped.
+                        val canvasWidthPx = maxOf(gridWidthPx, viewSize.width.toFloat())
+                        val canvasHeightPx = maxOf(gridHeightPx, viewSize.height.toFloat())
                         TerminalSurface(
                             surface = surface,
                             fontSizePx = effectivePx,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.size(
+                                with(density) { canvasWidthPx.toDp() },
+                                with(density) { canvasHeightPx.toDp() },
+                            ),
                         )
                     }
+                    Spacer(Modifier.height(4.dp))
+                    // Footer: the fit is checkable at a glance — grid size,
+                    // live font size, and which scroll paths are active.
+                    val fontSp = with(density) { effectivePx.toSp() }.value
+                    Text(
+                        text = buildString {
+                            append(cols)
+                            append("×")
+                            append(rows)
+                            append(" · ")
+                            append("%.1f".format(fontSp))
+                            append("sp")
+                            if (gridWidthPx > viewSize.width + 0.5f) append(" · scroll ↔")
+                            if (gridHeightPx > viewSize.height + 0.5f) {
+                                append(if (atBottom) " · at bottom" else " · scrolled")
+                            }
+                        },
+                        color = Tokens.muted,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         } else when {
@@ -868,7 +968,10 @@ private fun SessionScreen(
             )
             Spacer(Modifier.height(4.dp))
         }
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             OutlinedTextField(
                 value = sessionUi.draft,
                 onValueChange = { sessionUi.draft = it },

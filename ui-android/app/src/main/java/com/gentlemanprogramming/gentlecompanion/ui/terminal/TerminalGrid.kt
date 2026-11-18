@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -63,6 +64,39 @@ val TerminalDefaultBackground = Color(0xFF0A0609)
  * arithmetic exact without measuring a paint first.
  */
 const val TERMINAL_FONT_RATIO = 0.6f
+
+/** Readability floor for the terminal font, in sp: when fitting all the
+ * grid's columns would shrink the font below this, the font stops
+ * shrinking and the grid scrolls horizontally instead — the right edge is
+ * never silently clipped. */
+val TerminalFontMinSp = 7.sp
+
+/** Pinch zoom ceiling, in sp. */
+val TerminalFontMaxSp = 28.sp
+
+/**
+ * Slot metrics of the bundled font as fractions of the font size, measured
+ * with the bundled regular face — never the system fallback. The fit rule
+ * and the renderer must agree on these, or slots and glyphs drift apart
+ * (the renderer measures its own paint per frame, with the same typeface).
+ */
+class TerminalCellMetrics(val advanceRatio: Float, val lineHeightRatio: Float)
+
+/** Measure the bundled font once. */
+@Composable
+fun rememberTerminalCellMetrics(): TerminalCellMetrics {
+    val typefaces = rememberTypefaces()
+    return remember {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.typeface = typefaces.regular ?: paint.typeface
+        paint.textSize = 100f
+        val fm = paint.fontMetrics
+        TerminalCellMetrics(
+            advanceRatio = paint.measureText("M") / 100f,
+            lineHeightRatio = (fm.descent - fm.ascent) / 100f,
+        )
+    }
+}
 /** The core's `DEFAULT_FG`, used when a cursor cell has no cell data. */
 private const val TERMINAL_DEFAULT_FG: Int = 0xFFF6EFF3.toInt()
 
@@ -173,7 +207,12 @@ private fun DrawScope.drawGrid(
     val rows = surface.height.toInt()
 
     // Cell metrics from the bundled font: the "M" advance IS the column
-    // width; the cell height is the full ascent+descent span.
+    // width; the cell height is the full ascent+descent span. Measure with
+    // the typeface the regular glyph pass will use — measuring before the
+    // first typeface assignment left whatever the paint carried (the system
+    // Roboto on the first frame), whose advance is not the bundled font's
+    // 0.6em, so slots and glyphs disagreed.
+    paint.typeface = painter.typefaceFor(0)
     val metrics = paint.fontMetrics
     val cellWidth = paint.measureText("M")
     val cellHeight = metrics.descent - metrics.ascent
