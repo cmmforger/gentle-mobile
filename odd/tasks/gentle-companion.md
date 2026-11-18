@@ -99,6 +99,9 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   Until that approval, verification uses **debug** builds installed on the emulator or a test device. Do not
   produce, copy or hand over a release APK, and do not touch the keystore, in any intermediate step. The
   release build is the last phase and it happens once, after the human says the app is right.
+  **Amended:** "con eso crearemos un apk en Downloads como lo hicimos antes y hare una prueba" — once T17a and
+  T17b close, the release APK is produced for that test; the human's test is the approval step, not a
+  substitute for it. No release builds before T17 closes.
 
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
