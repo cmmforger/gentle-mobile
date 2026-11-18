@@ -64,22 +64,58 @@ class SessionsModelTest {
         )
     }
 
-    // --- resume gate ---------------------------------------------------------------
+    // --- resume gate (T17b: the RPC lane exists; the lease still gates) ---------
 
     @Test
     fun resume_is_blocked_with_a_reason_on_foreign_and_stale_leases() {
-        val elsewhere = SessionsModel.resumeReason(LeaseViewDto.IN_USE_ELSEWHERE)
+        val elsewhere = SessionsModel.resumeReason(LeaseViewDto.IN_USE_ELSEWHERE, isHeldHere = false)
         assertTrue(elsewhere?.contains("in use elsewhere", ignoreCase = true) == true)
-        val stale = SessionsModel.resumeReason(LeaseViewDto.STALE)
+        val stale = SessionsModel.resumeReason(LeaseViewDto.STALE, isHeldHere = false)
         assertTrue(stale?.contains("stale", ignoreCase = true) == true)
     }
 
     @Test
-    fun resume_never_claims_to_work_before_the_rpc_lane_exists() {
-        // T17a ships listing + lease only: even an openable session stays
-        // disabled with the honest reason, never a fake resume.
-        assertNull(SessionsModel.resumeReason(LeaseViewDto.OPEN))
-        assertTrue(SessionsModel.RESUME_UNAVAILABLE.contains("not implemented"))
+    fun an_open_session_is_blocked_until_this_device_takes_the_lease() {
+        // The lease is taken before any child exists (S18): an open session
+        // never resumes straight away — the user takes the lease first.
+        val reason = SessionsModel.resumeReason(LeaseViewDto.OPEN, isHeldHere = false)
+        assertTrue(reason?.contains("lease", ignoreCase = true) == true)
+    }
+
+    @Test
+    fun resume_is_enabled_only_when_this_device_holds_the_lease() {
+        assertNull(SessionsModel.resumeReason(LeaseViewDto.HELD_HERE, isHeldHere = true))
+        // A row the host shows as held-here but the app is not holding (the
+        // list can be older than the hold) must still say why it is blocked.
+        assertTrue(
+            SessionsModel.resumeReason(LeaseViewDto.HELD_HERE, isHeldHere = false)?.contains("lease", ignoreCase = true)
+            == true,
+        )
+    }
+
+    // --- the resumed screen's words ----------------------------------------------
+
+    @Test
+    fun the_resumed_header_names_the_session() {
+        assertEquals(
+            "resumed · 9f1c2f61-8a5e-4f6a-9f6b-3c1d2e4f5a6b",
+            SessionsModel.resumedHeader("9f1c2f61-8a5e-4f6a-9f6b-3c1d2e4f5a6b"),
+        )
+    }
+
+    @Test
+    fun the_resumed_meta_counts_the_childs_own_messages() {
+        assertEquals("7 messages", SessionsModel.resumedMeta(7u))
+        assertEquals("1 message", SessionsModel.resumedMeta(1u))
+        assertEquals("0 messages", SessionsModel.resumedMeta(0u))
+    }
+
+    @Test
+    fun transcript_roles_render_as_words_not_styling() {
+        assertEquals("you", SessionsModel.roleLabel("user"))
+        assertEquals("agent", SessionsModel.roleLabel("assistant"))
+        // Anything else renders as itself — nothing is invented.
+        assertEquals("systemMessage", SessionsModel.roleLabel("systemMessage"))
     }
 
     // --- relative time ----------------------------------------------------------------

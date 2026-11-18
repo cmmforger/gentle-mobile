@@ -371,7 +371,7 @@ async fn host_now_epoch_ms(
 }
 
 /// One pinned SSH session with the SFTP subsystem open.
-async fn connect_sftp(
+pub(crate) async fn connect_sftp(
     profile: &HostProfile,
 ) -> Result<
     (
@@ -454,10 +454,30 @@ async fn write_lease(
         let _ = sftp.create_dir(&format!("{home}/{partial}")).await;
     }
     let path = lease_path_under_home(home, session_id);
-    sftp.write(&path, lease_to_json(lease).as_bytes())
+    // Create (not open-for-write): a fresh session has no lease file yet,
+    // and an open-without-create fails with No such file (found by the
+    // T17b fixture verification).
+    let mut file = sftp
+        .create(&path)
+        .await
+        .map_err(|error| HubError::Request(RequestError::Transport {
+            detail: format!("the lease file could not be created: {error}"),
+        }))?;
+    use tokio::io::AsyncWriteExt as _;
+    file.write_all(lease_to_json(lease).as_bytes())
         .await
         .map_err(|error| HubError::Request(RequestError::Transport {
             detail: format!("the lease could not be written: {error}"),
+        }))?;
+    file.sync_all()
+        .await
+        .map_err(|error| HubError::Request(RequestError::Transport {
+            detail: format!("the lease could not be flushed: {error}"),
+        }))?;
+    file.shutdown()
+        .await
+        .map_err(|error| HubError::Request(RequestError::Transport {
+            detail: format!("the lease file could not be closed: {error}"),
         }))
 }
 

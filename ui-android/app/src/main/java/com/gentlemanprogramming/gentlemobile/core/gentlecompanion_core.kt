@@ -719,6 +719,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_release_lease(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_resume_session(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected(
@@ -736,6 +738,26 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_upload_file(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_answer_dialog(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_close_session(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_is_closed(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_last_error(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_message_count(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_pending_dialog(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_reclaimed(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_send_prompt(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_session_id(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_transcript(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_uploadprogresslistener_on_progress(
     ): Int
@@ -782,6 +804,30 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_upload_file(`ptr`: Long,`storedName`: RustBuffer.ByValue,`data`: RustBuffer.ByValue,`listener`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_clone_rpcresumedsession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_gentlecompanion_core_fn_free_rpcresumedsession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_answer_dialog(`ptr`: Long,`dialogId`: RustBuffer.ByValue,`cancelled`: Byte,`value`: RustBuffer.ByValue,`confirmed`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_close_session(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_is_closed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_last_error(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_message_count(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_pending_dialog(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_reclaimed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_send_prompt(`ptr`: Long,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_session_id(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_transcript(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_init_callback_vtable_uploadprogresslistener(`vtable`: UniffiVTableCallbackInterfaceUploadProgressListener,
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_func_accept_host_key(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -806,6 +852,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_gentlecompanion_core_fn_func_release_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_gentlecompanion_core_fn_func_resume_session(`profile`: RustBuffer.ByValue,`sessionPath`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun ffi_gentlecompanion_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_gentlecompanion_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -958,6 +1006,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_func_release_lease() and 0xFFFF) != 56322) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_resume_session() and 0xFFFF) != 33995) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect() and 0xFFFF) != 59131) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -983,6 +1034,36 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_upload_file() and 0xFFFF) != 32479) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_answer_dialog() and 0xFFFF) != 30380) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_close_session() and 0xFFFF) != 40662) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_is_closed() and 0xFFFF) != 36393) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_last_error() and 0xFFFF) != 9992) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_message_count() and 0xFFFF) != 3564) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_pending_dialog() and 0xFFFF) != 23006) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_reclaimed() and 0xFFFF) != 3912) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_send_prompt() and 0xFFFF) != 33444) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_session_id() and 0xFFFF) != 45096) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_transcript() and 0xFFFF) != 63838) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_uploadprogresslistener_on_progress() and 0xFFFF) != 43093) {
@@ -1863,6 +1944,492 @@ public object FfiConverterTypeCompanionConnection: FfiConverter<CompanionConnect
 }
 
 
+// This template implements a class for working with a Rust struct via a handle
+// to the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque handle to the underlying Rust struct.
+//     Method calls need to read this handle from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its handle should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the handle, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the handle, but is interrupted
+//      before it can pass the handle over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read handle value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+/**
+ * One resumed Gentle Shell session: the child process behind the pinned
+ * SSH channel, driven from its own thread. `close` releases the advisory
+ * lease (S18); so does any unexpected end of the pump, and so does losing
+ * the object without closing it.
+ */
+public interface RpcResumedSessionInterface {
+    
+    /**
+     * Answer one blocking dialog. `cancelled` answers with the documented
+     * default; otherwise `value` answers select/input/editor and
+     * `confirmed` answers confirm.
+     */
+    fun `answerDialog`(`dialogId`: kotlin.String, `cancelled`: kotlin.Boolean, `value`: kotlin.String?, `confirmed`: kotlin.Boolean?)
+    
+    /**
+     * Orderly shutdown (S17b): unanswered blocking dialogs are cancelled,
+     * stdin gets EOF, stdout is drained to EOF, and the advisory lease is
+     * released (S18). Idempotent. Named `close_session` because the
+     * generated binding already implements `AutoCloseable.close`.
+     */
+    fun `closeSession`()
+    
+    /**
+     * True once the pump ended — orderly close, EOF, or transport death.
+     * The lease is released by then in every case (S18).
+     */
+    fun `isClosed`(): kotlin.Boolean
+    
+    /**
+     * The reason the pump ended, once it has.
+     */
+    fun `lastError`(): kotlin.String?
+    
+    /**
+     * The child's own message count at resume time.
+     */
+    fun `messageCount`(): kotlin.ULong
+    
+    /**
+     * The blocking dialog waiting for an answer, if any (S17d).
+     */
+    fun `pendingDialog`(): DialogRequestDto?
+    
+    /**
+     * Whether the resume reclaimed a stale lease — the visible note.
+     */
+    fun `reclaimed`(): kotlin.Boolean
+    
+    /**
+     * Append one prompt through the RPC lane and wait for the turn to
+     * settle. Returns the refreshed transcript — the caller replaces what
+     * it renders with this, so the reply is exactly what the child has.
+     */
+    fun `sendPrompt`(`text`: kotlin.String): List<TranscriptEntryDto>
+    
+    /**
+     * The session id the child itself reported (T5: the same one the list
+     * showed).
+     */
+    fun `sessionId`(): kotlin.String
+    
+    /**
+     * The transcript as the driver last saw it.
+     */
+    fun `transcript`(): List<TranscriptEntryDto>
+    
+    companion object
+}
+
+/**
+ * One resumed Gentle Shell session: the child process behind the pinned
+ * SSH channel, driven from its own thread. `close` releases the advisory
+ * lease (S18); so does any unexpected end of the pump, and so does losing
+ * the object without closing it.
+ */
+open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterface
+{
+
+    @Suppress("UNUSED_PARAMETER")
+    /**
+     * @suppress
+     */
+    constructor(withHandle: UniffiWithHandle, handle: Long) {
+        this.handle = handle
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(handle))
+    }
+
+    /**
+     * @suppress
+     *
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noHandle: NoHandle) {
+        this.handle = 0
+        this.cleanable = null
+    }
+
+    protected val handle: Long
+    protected val cleanable: UniffiCleaner.Cleanable?
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    /**
+     * Whether the current object has been destroyed and its reference is gone in the Rust side.
+     */
+    val uniffiIsDestroyed: Boolean get() = wasDestroyed.get()
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithHandle(block: (handle: Long) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the handle being freed concurrently.
+        try {
+            return block(this.uniffiCloneHandle())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val handle: Long) : Runnable {
+        override fun run() {
+            if (handle == 0.toLong()) {
+                // Fake object created with `NoHandle`, don't try to free.
+                return;
+            }
+            uniffiRustCall { status ->
+                UniffiLib.uniffi_gentlecompanion_core_fn_free_rpcresumedsession(handle, status)
+            }
+        }
+    }
+
+    /**
+     * @suppress
+     */
+    fun uniffiCloneHandle(): Long {
+        if (handle == 0.toLong()) {
+            throw InternalException("uniffiCloneHandle() called on NoHandle object");
+        }
+        return uniffiRustCall() { status ->
+            UniffiLib.uniffi_gentlecompanion_core_fn_clone_rpcresumedsession(handle, status)
+        }
+    }
+
+    
+    /**
+     * Answer one blocking dialog. `cancelled` answers with the documented
+     * default; otherwise `value` answers select/input/editor and
+     * `confirmed` answers confirm.
+     */
+    @Throws(CompanionException::class)override fun `answerDialog`(`dialogId`: kotlin.String, `cancelled`: kotlin.Boolean, `value`: kotlin.String?, `confirmed`: kotlin.Boolean?)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_answer_dialog(
+        it,
+        
+        FfiConverterString.lower(`dialogId`),
+        FfiConverterBoolean.lower(`cancelled`),
+        FfiConverterOptionalString.lower(`value`),
+        FfiConverterOptionalBoolean.lower(`confirmed`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Orderly shutdown (S17b): unanswered blocking dialogs are cancelled,
+     * stdin gets EOF, stdout is drained to EOF, and the advisory lease is
+     * released (S18). Idempotent. Named `close_session` because the
+     * generated binding already implements `AutoCloseable.close`.
+     */
+    @Throws(CompanionException::class)override fun `closeSession`()
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_close_session(
+        it,
+        _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * True once the pump ended — orderly close, EOF, or transport death.
+     * The lease is released by then in every case (S18).
+     */override fun `isClosed`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_is_closed(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The reason the pump ended, once it has.
+     */override fun `lastError`(): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_last_error(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The child's own message count at resume time.
+     */override fun `messageCount`(): kotlin.ULong {
+            return FfiConverterULong.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_message_count(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The blocking dialog waiting for an answer, if any (S17d).
+     */override fun `pendingDialog`(): DialogRequestDto? {
+            return FfiConverterOptionalTypeDialogRequestDto.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_pending_dialog(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Whether the resume reclaimed a stale lease — the visible note.
+     */override fun `reclaimed`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_reclaimed(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Append one prompt through the RPC lane and wait for the turn to
+     * settle. Returns the refreshed transcript — the caller replaces what
+     * it renders with this, so the reply is exactly what the child has.
+     */
+    @Throws(CompanionException::class)override fun `sendPrompt`(`text`: kotlin.String): List<TranscriptEntryDto> {
+            return FfiConverterSequenceTypeTranscriptEntryDto.lift(
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_send_prompt(
+        it,
+        
+        FfiConverterString.lower(`text`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The session id the child itself reported (T5: the same one the list
+     * showed).
+     */override fun `sessionId`(): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_session_id(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The transcript as the driver last saw it.
+     */override fun `transcript`(): List<TranscriptEntryDto> {
+            return FfiConverterSequenceTypeTranscriptEntryDto.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_transcript(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    
+
+    
+
+
+    
+    
+    /**
+     * @suppress
+     */
+    companion object
+    
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeRpcResumedSession: FfiConverter<RpcResumedSession, Long> {
+    override fun lower(value: RpcResumedSession): Long {
+        return value.uniffiCloneHandle()
+    }
+
+    override fun lift(value: Long): RpcResumedSession {
+        return RpcResumedSession(UniffiWithHandle, value)
+    }
+
+    override fun read(buf: ByteBuffer): RpcResumedSession {
+        return lift(buf.getLong())
+    }
+
+    override fun allocationSize(value: RpcResumedSession) = 8UL
+
+    override fun write(value: RpcResumedSession, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+
 
 data class AgentDto (
     val `name`: kotlin.String
@@ -2040,6 +2607,67 @@ public object FfiConverterTypeCursorDto: FfiConverterRustBuffer<CursorDto> {
             FfiConverterUInt.write(value.`y`, buf)
             FfiConverterBoolean.write(value.`visible`, buf)
             FfiConverterUByte.write(value.`shape`, buf)
+    }
+}
+
+
+
+/**
+ * A blocking dialog (S17d) the UI must answer, or the agent waits.
+ */
+data class DialogRequestDto (
+    val `dialogId`: kotlin.String
+    , 
+    val `method`: kotlin.String
+    , 
+    val `title`: kotlin.String?
+    , 
+    val `message`: kotlin.String?
+    , 
+    val `placeholder`: kotlin.String?
+    , 
+    val `options`: List<kotlin.String>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDialogRequestDto: FfiConverterRustBuffer<DialogRequestDto> {
+    override fun read(buf: ByteBuffer): DialogRequestDto {
+        return DialogRequestDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DialogRequestDto) = (
+            FfiConverterString.allocationSize(value.`dialogId`) +
+            FfiConverterString.allocationSize(value.`method`) +
+            FfiConverterOptionalString.allocationSize(value.`title`) +
+            FfiConverterOptionalString.allocationSize(value.`message`) +
+            FfiConverterOptionalString.allocationSize(value.`placeholder`) +
+            FfiConverterSequenceString.allocationSize(value.`options`)
+    )
+
+    override fun write(value: DialogRequestDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`dialogId`, buf)
+            FfiConverterString.write(value.`method`, buf)
+            FfiConverterOptionalString.write(value.`title`, buf)
+            FfiConverterOptionalString.write(value.`message`, buf)
+            FfiConverterOptionalString.write(value.`placeholder`, buf)
+            FfiConverterSequenceString.write(value.`options`, buf)
     }
 }
 
@@ -2302,6 +2930,64 @@ public object FfiConverterTypePaneReadDto: FfiConverterRustBuffer<PaneReadDto> {
 
 
 /**
+ * The result of a successful resume: the live session, its transcript as
+ * it stands, and whether a stale lease had to be reclaimed (the visible
+ * note, S18).
+ */
+data class RpcResumeOutcome (
+    val `session`: RpcResumedSession
+    , 
+    val `transcript`: List<TranscriptEntryDto>
+    , 
+    val `reclaimed`: kotlin.Boolean
+    
+): Disposable{
+    
+
+    
+
+    
+    @Suppress("UNNECESSARY_SAFE_CALL") // codegen is much simpler if we unconditionally emit safe calls here
+    override fun destroy() {
+        
+    Disposable.destroy(
+        this.`session`,
+        this.`transcript`,
+        this.`reclaimed`
+    )
+    }
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeRpcResumeOutcome: FfiConverterRustBuffer<RpcResumeOutcome> {
+    override fun read(buf: ByteBuffer): RpcResumeOutcome {
+        return RpcResumeOutcome(
+            FfiConverterTypeRpcResumedSession.read(buf),
+            FfiConverterSequenceTypeTranscriptEntryDto.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: RpcResumeOutcome) = (
+            FfiConverterTypeRpcResumedSession.allocationSize(value.`session`) +
+            FfiConverterSequenceTypeTranscriptEntryDto.allocationSize(value.`transcript`) +
+            FfiConverterBoolean.allocationSize(value.`reclaimed`)
+    )
+
+    override fun write(value: RpcResumeOutcome, buf: ByteBuffer) {
+            FfiConverterTypeRpcResumedSession.write(value.`session`, buf)
+            FfiConverterSequenceTypeTranscriptEntryDto.write(value.`transcript`, buf)
+            FfiConverterBoolean.write(value.`reclaimed`, buf)
+    }
+}
+
+
+
+/**
  * One listed Gentle Shell session, in the words the UI shows.
  */
 data class SessionDto (
@@ -2537,6 +3223,48 @@ public object FfiConverterTypeTabDto: FfiConverterRustBuffer<TabDto> {
             FfiConverterULong.write(value.`number`, buf)
             FfiConverterString.write(value.`label`, buf)
             FfiConverterBoolean.write(value.`focused`, buf)
+    }
+}
+
+
+
+/**
+ * One transcript line of a resumed session: role and plain text, nothing
+ * invented. Tool calls, tool results and thinking never render.
+ */
+data class TranscriptEntryDto (
+    val `role`: kotlin.String
+    , 
+    val `text`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTranscriptEntryDto: FfiConverterRustBuffer<TranscriptEntryDto> {
+    override fun read(buf: ByteBuffer): TranscriptEntryDto {
+        return TranscriptEntryDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TranscriptEntryDto) = (
+            FfiConverterString.allocationSize(value.`role`) +
+            FfiConverterString.allocationSize(value.`text`)
+    )
+
+    override fun write(value: TranscriptEntryDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`role`, buf)
+            FfiConverterString.write(value.`text`, buf)
     }
 }
 
@@ -2819,6 +3547,73 @@ sealed class CompanionException: kotlin.Exception() {
             get() = ""
     }
     
+    /**
+     * The resume path is not a regular file on the host (T17b).
+     */
+    class RpcSessionNotAFile(
+        
+        val `path`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "path=${ `path` }"
+    }
+    
+    /**
+     * A live lease held by another device — refused, never opened (S18).
+     */
+    class RpcSessionLeasedElsewhere(
+        
+        val `detail`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "detail=${ `detail` }"
+    }
+    
+    /**
+     * The host could not spawn `gentle-shell --mode rpc`.
+     */
+    class RpcSpawnRefused(
+        
+        val `detail`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "detail=${ `detail` }"
+    }
+    
+    /**
+     * The child did not speak the expected protocol, or reported a
+     * different session id than the list showed.
+     */
+    class RpcProtocolGarbage(
+        
+        val `detail`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "detail=${ `detail` }"
+    }
+    
+    /**
+     * The RPC child answered a command with an error.
+     */
+    class RpcRefused(
+        
+        val `command`: kotlin.String, 
+        
+        val `detail`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "command=${ `command` }, detail=${ `detail` }"
+    }
+    
+    /**
+     * The resumed session has ended (closed, EOF, or transport death).
+     */
+    class RpcSessionClosed(
+        ) : CompanionException() {
+        override val message
+            get() = ""
+    }
+    
 
     
 
@@ -2869,6 +3664,23 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
                 FfiConverterULong.read(buf),
                 )
             9 -> CompanionException.UploadEmptyName()
+            10 -> CompanionException.RpcSessionNotAFile(
+                FfiConverterString.read(buf),
+                )
+            11 -> CompanionException.RpcSessionLeasedElsewhere(
+                FfiConverterString.read(buf),
+                )
+            12 -> CompanionException.RpcSpawnRefused(
+                FfiConverterString.read(buf),
+                )
+            13 -> CompanionException.RpcProtocolGarbage(
+                FfiConverterString.read(buf),
+                )
+            14 -> CompanionException.RpcRefused(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                )
+            15 -> CompanionException.RpcSessionClosed()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -2926,6 +3738,36 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
+            is CompanionException.RpcSessionNotAFile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`path`)
+            )
+            is CompanionException.RpcSessionLeasedElsewhere -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`detail`)
+            )
+            is CompanionException.RpcSpawnRefused -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`detail`)
+            )
+            is CompanionException.RpcProtocolGarbage -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`detail`)
+            )
+            is CompanionException.RpcRefused -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`command`)
+                + FfiConverterString.allocationSize(value.`detail`)
+            )
+            is CompanionException.RpcSessionClosed -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
         }
     }
 
@@ -2980,6 +3822,36 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
             }
             is CompanionException.UploadEmptyName -> {
                 buf.putInt(9)
+                Unit
+            }
+            is CompanionException.RpcSessionNotAFile -> {
+                buf.putInt(10)
+                FfiConverterString.write(value.`path`, buf)
+                Unit
+            }
+            is CompanionException.RpcSessionLeasedElsewhere -> {
+                buf.putInt(11)
+                FfiConverterString.write(value.`detail`, buf)
+                Unit
+            }
+            is CompanionException.RpcSpawnRefused -> {
+                buf.putInt(12)
+                FfiConverterString.write(value.`detail`, buf)
+                Unit
+            }
+            is CompanionException.RpcProtocolGarbage -> {
+                buf.putInt(13)
+                FfiConverterString.write(value.`detail`, buf)
+                Unit
+            }
+            is CompanionException.RpcRefused -> {
+                buf.putInt(14)
+                FfiConverterString.write(value.`command`, buf)
+                FfiConverterString.write(value.`detail`, buf)
+                Unit
+            }
+            is CompanionException.RpcSessionClosed -> {
+                buf.putInt(15)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -3286,6 +4158,38 @@ public object FfiConverterOptionalULong: FfiConverterRustBuffer<kotlin.ULong?> {
 /**
  * @suppress
  */
+public object FfiConverterOptionalBoolean: FfiConverterRustBuffer<kotlin.Boolean?> {
+    override fun read(buf: ByteBuffer): kotlin.Boolean? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterBoolean.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.Boolean?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterBoolean.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.Boolean?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterBoolean.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?> {
     override fun read(buf: ByteBuffer): kotlin.String? {
         if (buf.get().toInt() == 0) {
@@ -3340,6 +4244,38 @@ public object FfiConverterOptionalTypeCursorDto: FfiConverterRustBuffer<CursorDt
         } else {
             buf.put(1)
             FfiConverterTypeCursorDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeDialogRequestDto: FfiConverterRustBuffer<DialogRequestDto?> {
+    override fun read(buf: ByteBuffer): DialogRequestDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeDialogRequestDto.read(buf)
+    }
+
+    override fun allocationSize(value: DialogRequestDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeDialogRequestDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: DialogRequestDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeDialogRequestDto.write(value, buf)
         }
     }
 }
@@ -3610,6 +4546,34 @@ public object FfiConverterSequenceTypeTabDto: FfiConverterRustBuffer<List<TabDto
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeTranscriptEntryDto: FfiConverterRustBuffer<List<TranscriptEntryDto>> {
+    override fun read(buf: ByteBuffer): List<TranscriptEntryDto> {
+        val len = buf.getInt()
+        return List<TranscriptEntryDto>(len) {
+            FfiConverterTypeTranscriptEntryDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<TranscriptEntryDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeTranscriptEntryDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<TranscriptEntryDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeTranscriptEntryDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<WorkspaceDto>> {
     override fun read(buf: ByteBuffer): List<WorkspaceDto> {
         val len = buf.getInt()
@@ -3827,6 +4791,31 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
+        FfiConverterString.lower(`sessionId`),
+        FfiConverterString.lower(`deviceId`),
+        FfiConverterString.lower(`token`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Resume a closed Gentle Shell session over the RPC lane: the advisory
+         * lease is taken **before** any child exists (S18 — a live lease held
+         * elsewhere is refused typed), then `gentle-shell --mode rpc --session
+         * <path>` is spawned over a fresh channel of the pinned transport (no new
+         * host key, no new pin), and the handshake verifies the child reports
+         * **the same session id** the list showed. `Ok(Reclaimed)` means a stale
+         * lease was replaced: the UI owes the user the visible note.
+         */
+    @Throws(CompanionException::class) fun `resumeSession`(`profile`: HostProfileDto, `sessionPath`: kotlin.String, `sessionId`: kotlin.String, `deviceId`: kotlin.String, `token`: kotlin.String): RpcResumeOutcome {
+            return FfiConverterTypeRpcResumeOutcome.lift(
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_resume_session(
+    
+        
+        FfiConverterTypeHostProfileDto.lower(`profile`),
+        FfiConverterString.lower(`sessionPath`),
         FfiConverterString.lower(`sessionId`),
         FfiConverterString.lower(`deviceId`),
         FfiConverterString.lower(`token`),_status)

@@ -56,8 +56,9 @@ import java.util.UUID
  *   offers to open; the take action is refused typed by the core;
  * * a stale lease is reclaimed only through the visible Take action, and
  *   the note says so — never silently;
- * * the Resume action stays disabled with its reason in every state: the
- *   RPC lane is the next task (T17b), never faked.
+ * * the Resume action runs only when this device holds the lease (S18: the
+ *   lease is taken before any RPC child exists); the core repeats the check
+ *   and refuses typed if the world changed underneath the UI.
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 /** The advisory lease this device currently holds (S18). MainActivity owns
@@ -72,6 +73,7 @@ fun SessionsScreen(
     heldLease: HeldLease?,
     onLeaseTaken: (sessionId: String, token: String) -> Unit,
     onLeaseReleased: () -> Unit,
+    onResume: (session: SessionDto, sessionsDirOverride: String) -> Unit,
     onBack: () -> Unit,
 ) {
     val p = LocalPalette.current
@@ -256,6 +258,7 @@ fun SessionsScreen(
             isHeldHere = heldLease?.sessionId == session.sessionId,
             onTake = { takeLease(session) },
             onRelease = { releaseHeld() },
+            onResume = { sheetFor = null; onResume(session, sessionsDir) },
             onDismiss = { sheetFor = null },
         )
     }
@@ -317,11 +320,12 @@ private fun SessionSheet(
     isHeldHere: Boolean,
     onTake: () -> Unit,
     onRelease: () -> Unit,
+    onResume: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val p = LocalPalette.current
     val view = if (isHeldHere) LeaseViewDto.HELD_HERE else session.lease
-    val leaseReason = SessionsModel.resumeReason(view)
+    val leaseReason = SessionsModel.resumeReason(view, isHeldHere)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = p.surface,
@@ -361,11 +365,12 @@ private fun SessionSheet(
                 },
             )
             Spacer(Modifier.height(16.dp))
-            // The resume action: disabled in every state of this build, with
-            // the reason on screen — never a fake resume (S15, T17a).
+            // The resume action (T17b, S15/S18): enabled only while this
+            // device holds the lease. The core re-checks the lease before
+            // spawning, so a stale screen can never open a held session.
             Button(
-                onClick = {},
-                enabled = false,
+                onClick = onResume,
+                enabled = isHeldHere,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(44.dp),
@@ -381,7 +386,7 @@ private fun SessionSheet(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = leaseReason ?: SessionsModel.RESUME_UNAVAILABLE,
+                text = leaseReason ?: "Resuming opens the session over the RPC lane — this device holds the lease.",
                 color = p.muted,
                 fontSize = 12.sp,
             )

@@ -719,7 +719,7 @@ async fn run_bridge(
 /// The SSH host key verifier. It never auto-accepts: an unknown or mismatched
 /// key is refused and recorded so [`refusal_error`] can produce the typed
 /// product error. Shared by the main pump and the request-only channel.
-pub(crate) struct KeyVerifier {
+pub struct KeyVerifier {
     host: String,
     port: u16,
     pins: Vec<HostPin>,
@@ -729,7 +729,7 @@ pub(crate) struct KeyVerifier {
 impl KeyVerifier {
     /// A fresh verifier with its refusal slot: the slot is read after a
     /// failed connect to produce the typed pin error.
-    pub(crate) fn new(
+    pub fn new(
         host: String,
         port: u16,
         pins: Vec<HostPin>,

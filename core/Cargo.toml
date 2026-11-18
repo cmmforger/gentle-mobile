@@ -22,7 +22,7 @@ herdr-protocol.workspace = true
 russh                  = { default-features = false, features = ["flate2", "ring", "rsa"], version = "=0.64.1" }
 serde_json.workspace   = true
 thiserror.workspace    = true
-tokio                  = { features = ["io-util", "net", "rt", "sync"], version = "1" }
+tokio                  = { features = ["io-util", "macros", "net", "rt", "sync", "time"], version = "1" }
 # The UniFFI surface: proc-macro scaffolding in the lib, plus the `cli`
 # feature that `src/bin/uniffi-bindgen.rs` needs — the bindgen binary lives in
 # this crate, so the generator version always matches the scaffolding version.

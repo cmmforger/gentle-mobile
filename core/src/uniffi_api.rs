@@ -8,7 +8,7 @@
 //! [`accept_host_key`] that pins the presented key, and
 //! [`CompanionConnection::snapshot`] returning plain DTOs.
 
-use std::{collections::HashMap, path::Path, sync::{Arc, Mutex}};
+use std::{collections::HashMap, path::Path, sync::{Arc, Mutex as StdMutex, Mutex}};
 
 use herdr_client::{
     ConnectOptions, protocol::{AgentStatus, ClientShellAgent, ClientShellPane, ClientShellSnapshot},
@@ -135,6 +135,25 @@ pub enum CompanionError {
     /// The file name has no usable form once sanitised.
     #[error("the file has no usable name")]
     UploadEmptyName,
+    /// The resume path is not a regular file on the host (T17b).
+    #[error("the session is not a file on the host: {path}")]
+    RpcSessionNotAFile { path: String },
+    /// A live lease held by another device — refused, never opened (S18).
+    #[error("the session is already in use: {detail}")]
+    RpcSessionLeasedElsewhere { detail: String },
+    /// The host could not spawn `gentle-shell --mode rpc`.
+    #[error("the host refused to start the RPC session: {detail}")]
+    RpcSpawnRefused { detail: String },
+    /// The child did not speak the expected protocol, or reported a
+    /// different session id than the list showed.
+    #[error("the RPC session did not speak the expected protocol: {detail}")]
+    RpcProtocolGarbage { detail: String },
+    /// The RPC child answered a command with an error.
+    #[error("the RPC session refused {command}: {detail}")]
+    RpcRefused { command: String, detail: String },
+    /// The resumed session has ended (closed, EOF, or transport death).
+    #[error("the RPC session is closed")]
+    RpcSessionClosed,
 }
 
 impl From<Error> for CompanionError {
@@ -424,6 +443,323 @@ pub fn release_lease(
             &token,
         ))
         .map_err(CompanionError::from)
+}
+
+// --- The RPC lane (T17b, S15/S17/S18) ---------------------------------------
+
+/// One transcript line of a resumed session: role and plain text, nothing
+/// invented. Tool calls, tool results and thinking never render.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct TranscriptEntryDto {
+    pub role: String,
+    pub text: String,
+}
+
+impl From<crate::rpc::TranscriptEntry> for TranscriptEntryDto {
+    fn from(entry: crate::rpc::TranscriptEntry) -> Self {
+        TranscriptEntryDto { role: entry.role, text: entry.text }
+    }
+}
+
+/// A blocking dialog (S17d) the UI must answer, or the agent waits.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct DialogRequestDto {
+    pub dialog_id: String,
+    pub method: String,
+    pub title: Option<String>,
+    pub message: Option<String>,
+    pub placeholder: Option<String>,
+    pub options: Vec<String>,
+}
+
+impl From<crate::rpc::DialogRequest> for DialogRequestDto {
+    fn from(dialog: crate::rpc::DialogRequest) -> Self {
+        DialogRequestDto {
+            dialog_id: dialog.dialog_id,
+            method: dialog.method,
+            title: dialog.title,
+            message: dialog.message,
+            placeholder: dialog.placeholder,
+            options: dialog.options,
+        }
+    }
+}
+
+impl From<crate::rpc::RpcError> for CompanionError {
+    fn from(error: crate::rpc::RpcError) -> Self {
+        match error {
+            crate::rpc::RpcError::NotAFile { path } => CompanionError::RpcSessionNotAFile { path },
+            crate::rpc::RpcError::AlreadyLeased { detail } => {
+                CompanionError::RpcSessionLeasedElsewhere { detail }
+            }
+            crate::rpc::RpcError::SpawnRefused { detail } => CompanionError::RpcSpawnRefused { detail },
+            crate::rpc::RpcError::ProtocolGarbage { detail } => {
+                CompanionError::RpcProtocolGarbage { detail }
+            }
+            crate::rpc::RpcError::CommandRefused { command, detail } => {
+                CompanionError::RpcRefused { command, detail }
+            }
+            crate::rpc::RpcError::Disconnected => CompanionError::RpcSessionClosed,
+            crate::rpc::RpcError::Timeout { detail } => CompanionError::Timeout { detail },
+            crate::rpc::RpcError::Transport { detail } => CompanionError::Transport { detail },
+        }
+    }
+}
+
+/// One resumed Gentle Shell session: the child process behind the pinned
+/// SSH channel, driven from its own thread. `close` releases the advisory
+/// lease (S18); so does any unexpected end of the pump, and so does losing
+/// the object without closing it.
+#[derive(uniffi::Object)]
+pub struct RpcResumedSession {
+    commands: StdMutex<Option<crossbeam_channel::Sender<crate::rpc::RpcCommand>>>,
+    handle: StdMutex<Option<std::thread::JoinHandle<()>>>,
+    shared: Arc<StdMutex<crate::rpc::RpcShared>>,
+    session_id: String,
+    message_count: u64,
+    reclaimed: bool,
+}
+
+impl std::fmt::Debug for RpcResumedSession {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RpcResumedSession")
+            .field("session_id", &self.session_id)
+            .finish()
+    }
+}
+
+/// Resume a closed Gentle Shell session over the RPC lane: the advisory
+/// lease is taken **before** any child exists (S18 — a live lease held
+/// elsewhere is refused typed), then `gentle-shell --mode rpc --session
+/// <path>` is spawned over a fresh channel of the pinned transport (no new
+/// host key, no new pin), and the handshake verifies the child reports
+/// **the same session id** the list showed. `Ok(Reclaimed)` means a stale
+/// lease was replaced: the UI owes the user the visible note.
+#[uniffi::export]
+pub fn resume_session(
+    profile: HostProfileDto,
+    session_path: String,
+    session_id: String,
+    device_id: String,
+    token: String,
+) -> Result<RpcResumeOutcome, CompanionError> {
+    let profile = profile.into_core();
+    let deadlines = crate::rpc::RpcDeadlines::default();
+    // 1. Lease first, one-shot, on this thread (S18).
+    let taken = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| CompanionError::Transport {
+            detail: format!("the resume runtime could not start: {error}"),
+        })?
+        .block_on(crate::rpc::take_lease_for_resume(
+            &profile,
+            &session_path,
+            &session_id,
+            &device_id,
+            &token,
+        ))
+        .map_err(CompanionError::from)?;
+    let reclaimed = matches!(taken, crate::sessions::LeaseTakeOutcome::Reclaimed);
+    // 2. The pump thread owns the pinned connection, the child and the
+    //    handshake; the caller waits for the handshake result.
+    let shared: Arc<StdMutex<crate::rpc::RpcShared>> = Arc::new(StdMutex::new(crate::rpc::RpcShared::default()));
+    let (commands_tx, commands_rx) = crossbeam_channel::bounded::<crate::rpc::RpcCommand>(8);
+    let (announced_tx, announced_rx) = crossbeam_channel::bounded::<Result<crate::rpc::RpcHandshake, crate::rpc::RpcError>>(1);
+    let lease = crate::rpc::LeaseGuard {
+        profile: profile.clone(),
+        session_id: session_id.clone(),
+        device_id,
+        token,
+    };
+    let shared_for_thread = shared.clone();
+    let handle = std::thread::Builder::new()
+        .name("gentle-rpc".to_owned())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            match runtime {
+                Ok(runtime) => runtime.block_on(crate::rpc::run_resumed_session(
+                    profile,
+                    session_path,
+                    session_id.clone(),
+                    lease,
+                    commands_rx,
+                    shared_for_thread,
+                    announced_tx,
+                    deadlines,
+                )),
+                Err(error) => {
+                    let _ = announced_tx.send(Err(crate::rpc::RpcError::Transport {
+                        detail: format!("the RPC pump runtime could not start: {error}"),
+                    }));
+                    // The lease cannot be refreshed by a dead pump: give it
+                    // back via a fresh one-shot runtime.
+                    if let Ok(release_runtime) = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        let _ = release_runtime.block_on(crate::sessions::release_lease_over_sftp(
+                            &lease.profile,
+                            &lease.session_id,
+                            &lease.device_id,
+                            &lease.token,
+                        ));
+                    }
+                }
+            }
+        })
+        .map_err(|error| CompanionError::Transport {
+            detail: format!("the RPC pump thread could not start: {error}"),
+        })?;
+    // 3. The handshake decides the outcome.
+    let handshake = announced_rx
+        .recv_timeout(deadlines.response + deadlines.exit)
+        .map_err(|_| CompanionError::Timeout {
+            detail: "the RPC session never completed its handshake".to_owned(),
+        })?
+        .map_err(CompanionError::from)?;
+    Ok(RpcResumeOutcome {
+        session: Arc::new(RpcResumedSession {
+            commands: StdMutex::new(Some(commands_tx)),
+            handle: StdMutex::new(Some(handle)),
+            shared,
+            session_id: handshake.session_id,
+            message_count: handshake.message_count,
+            reclaimed,
+        }),
+        transcript: handshake.transcript.into_iter().map(TranscriptEntryDto::from).collect(),
+        reclaimed,
+    })
+}
+
+/// The result of a successful resume: the live session, its transcript as
+/// it stands, and whether a stale lease had to be reclaimed (the visible
+/// note, S18).
+#[derive(uniffi::Record)]
+pub struct RpcResumeOutcome {
+    pub session: Arc<RpcResumedSession>,
+    pub transcript: Vec<TranscriptEntryDto>,
+    pub reclaimed: bool,
+}
+
+#[uniffi::export]
+impl RpcResumedSession {
+    /// The session id the child itself reported (T5: the same one the list
+    /// showed).
+    pub fn session_id(&self) -> String {
+        self.session_id.clone()
+    }
+
+    /// The child's own message count at resume time.
+    pub fn message_count(&self) -> u64 {
+        self.message_count
+    }
+
+    /// Whether the resume reclaimed a stale lease — the visible note.
+    pub fn reclaimed(&self) -> bool {
+        self.reclaimed
+    }
+
+    /// The transcript as the driver last saw it.
+    pub fn transcript(&self) -> Vec<TranscriptEntryDto> {
+        self.shared
+            .lock()
+            .map(|guarded| guarded.transcript.iter().cloned().map(TranscriptEntryDto::from).collect())
+            .unwrap_or_default()
+    }
+
+    /// The blocking dialog waiting for an answer, if any (S17d).
+    pub fn pending_dialog(&self) -> Option<DialogRequestDto> {
+        self.shared
+            .lock()
+            .ok()
+            .and_then(|guarded| guarded.pending_dialog.clone())
+            .map(DialogRequestDto::from)
+    }
+
+    /// True once the pump ended — orderly close, EOF, or transport death.
+    /// The lease is released by then in every case (S18).
+    pub fn is_closed(&self) -> bool {
+        self.shared.lock().map(|guarded| guarded.closed).unwrap_or(true)
+    }
+
+    /// The reason the pump ended, once it has.
+    pub fn last_error(&self) -> Option<String> {
+        self.shared.lock().ok().and_then(|guarded| guarded.last_error.clone())
+    }
+
+    /// Append one prompt through the RPC lane and wait for the turn to
+    /// settle. Returns the refreshed transcript — the caller replaces what
+    /// it renders with this, so the reply is exactly what the child has.
+    pub fn send_prompt(&self, text: String) -> Result<Vec<TranscriptEntryDto>, CompanionError> {
+        let sender = self.commands.lock().map_err(|_| CompanionError::RpcSessionClosed)?.clone();
+        let sender = sender.ok_or(CompanionError::RpcSessionClosed)?;
+        let (reply_tx, reply_rx) = crossbeam_channel::bounded(1);
+        sender
+            .send(crate::rpc::RpcCommand::Prompt { text, reply: reply_tx })
+            .map_err(|_| CompanionError::RpcSessionClosed)?;
+        reply_rx
+            .recv()
+            .map_err(|_| CompanionError::RpcSessionClosed)?
+            .map(|entries| entries.into_iter().map(TranscriptEntryDto::from).collect())
+            .map_err(CompanionError::from)
+    }
+
+    /// Answer one blocking dialog. `cancelled` answers with the documented
+    /// default; otherwise `value` answers select/input/editor and
+    /// `confirmed` answers confirm.
+    pub fn answer_dialog(
+        &self,
+        dialog_id: String,
+        cancelled: bool,
+        value: Option<String>,
+        confirmed: Option<bool>,
+    ) -> Result<(), CompanionError> {
+        let sender = self.commands.lock().map_err(|_| CompanionError::RpcSessionClosed)?.clone();
+        let sender = sender.ok_or(CompanionError::RpcSessionClosed)?;
+        let payload = if cancelled {
+            serde_json::json!({ "cancelled": true })
+        } else if let Some(value) = value {
+            serde_json::json!({ "value": value })
+        } else {
+            serde_json::json!({ "confirmed": confirmed.unwrap_or(false) })
+        };
+        let (reply_tx, reply_rx) = crossbeam_channel::bounded(1);
+        sender
+            .send(crate::rpc::RpcCommand::AnswerDialog { dialog_id, payload, reply: reply_tx })
+            .map_err(|_| CompanionError::RpcSessionClosed)?;
+        reply_rx
+            .recv()
+            .map_err(|_| CompanionError::RpcSessionClosed)?
+            .map_err(CompanionError::from)
+    }
+
+    /// Orderly shutdown (S17b): unanswered blocking dialogs are cancelled,
+    /// stdin gets EOF, stdout is drained to EOF, and the advisory lease is
+    /// released (S18). Idempotent. Named `close_session` because the
+    /// generated binding already implements `AutoCloseable.close`.
+    pub fn close_session(&self) -> Result<(), CompanionError> {
+        let sender = self.commands.lock().ok().and_then(|inner| inner.clone());
+        if let Some(sender) = sender {
+            let (reply_tx, reply_rx) = crossbeam_channel::bounded(1);
+            let sent = sender.send(crate::rpc::RpcCommand::Close { reply: reply_tx }).is_ok();
+            let _ = self.commands.lock().map(|mut inner| inner.take());
+            if sent {
+                if let Ok(result) = reply_rx.recv_timeout(std::time::Duration::from_secs(30)) {
+                    result.map_err(CompanionError::from)?;
+                }
+            }
+        }
+        if let Ok(mut handle) = self.handle.lock() {
+            if let Some(handle) = handle.take() {
+                let _ = handle.join();
+            }
+        }
+        Ok(())
+    }
 }
 
 impl std::fmt::Debug for CompanionConnection {

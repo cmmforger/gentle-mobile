@@ -126,7 +126,9 @@ import com.gentlemanprogramming.gentlemobile.core.forgetHost
 import com.gentlemanprogramming.gentlemobile.core.listKnownHosts
 import com.gentlemanprogramming.gentlemobile.core.refreshLease
 import com.gentlemanprogramming.gentlemobile.core.releaseLease
+import com.gentlemanprogramming.gentlemobile.core.resumeSession as coreResumeSession
 import com.gentlemanprogramming.gentlemobile.ui.sessions.HeldLease
+import com.gentlemanprogramming.gentlemobile.ui.sessions.ResumedSessionScreen
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsScreen
@@ -306,6 +308,17 @@ private class ScreenState {
     var heldLease by mutableStateOf<HeldLease?>(null)
     var leaseHeartbeatGeneration: Int = 0
 
+    /** T17b: the RPC lane's live resumed session, plus the words the
+     *  handshake reported. Closed screens keep the reason visible. */
+    var resumedSession by mutableStateOf<com.gentlemanprogramming.gentlemobile.core.RpcResumedSession?>(null)
+    var resumedTranscript by mutableStateOf<List<com.gentlemanprogramming.gentlemobile.core.TranscriptEntryDto>>(emptyList())
+    var resumedMessageCount by mutableStateOf(0UL)
+    var resumedReclaimed by mutableStateOf(false)
+    var resumedDraft by mutableStateOf("")
+    var resumedSending by mutableStateOf(false)
+    var resumedSendError by mutableStateOf<String?>(null)
+    var resumedCloseError by mutableStateOf<String?>(null)
+
     /** T8c supervision: the four words (connecting, connected, interrupted,
      * failed) and the liveness rule, in one tested place. Screens read this
      * machine instead of a separate interrupted flag that can drift from
@@ -426,7 +439,13 @@ private class SessionUi {
 }
 
 /** The screens reachable from the Pair flow; the design shows back buttons. */
-private enum class Route { Main, Settings, Themes, Sessions }
+private enum class Route { Main, Settings, Themes, Sessions, Resumed }
+
+/** The words a resume or a prompt failure shows: typed refusals keep their
+ *  exact message (the core's Display carries the reason), anything else
+ *  falls back to the exception's own words. Never a generic "failed". */
+private fun describeResumeFailure(error: Exception): String =
+    error.message ?: error.toString()
 
 @Composable
 fun ConnectScreen(
@@ -749,6 +768,40 @@ fun ConnectScreen(
                     screen.heldLease = null
                     screen.leaseHeartbeatGeneration += 1
                 },
+                onResume = { session, sessionsDir ->
+                    val profile = sessionsProfile
+                    val deviceId = sessionsDeviceId
+                    executor.execute {
+                        try {
+                            val token = java.util.UUID.randomUUID().toString()
+                            val outcome = coreResumeSession(
+                                profile,
+                                "${sessionsDir.trimEnd('/')}/${session.fileName}",
+                                session.sessionId,
+                                deviceId,
+                                token,
+                            )
+                            mainHandler.post {
+                                screen.heldLease = HeldLease(session.sessionId, token)
+                                scheduleLeaseHeartbeat(screen)
+                                screen.resumedSession = outcome.session
+                                screen.resumedTranscript = outcome.transcript
+                                screen.resumedMessageCount = outcome.session.messageCount()
+                                screen.resumedReclaimed = outcome.reclaimed
+                                screen.resumedDraft = ""
+                                screen.resumedSending = false
+                                screen.resumedSendError = null
+                                screen.resumedCloseError = null
+                                route = Route.Resumed
+                            }
+                        } catch (e: Exception) {
+                            mainHandler.post {
+                                // Typed refusals stay honest, word for word.
+                                screen.resumedSendError = describeResumeFailure(e)
+                            }
+                        }
+                    }
+                },
                 onBack = {
                     releaseHeldLease(screen)
                     route = Route.Main
@@ -759,6 +812,90 @@ fun ConnectScreen(
         // No live profile behind the route (the connection was reset): fall
         // back to the Nodes screen instead of rendering a dead screen.
         route = Route.Main
+    }
+
+    // T17b (S15/S17): the resumed session — transcript read-only, prompts
+    // through the RPC lane, dialogs answered, close releases the lease.
+    if (route == Route.Resumed) {
+        val resumed = screen.resumedSession
+        if (resumed != null) {
+            // Poll the pump's visible state without extra network traffic:
+            // the driver updates its shared store on every record.
+            LaunchedEffect(resumed) {
+                while (true) {
+                    screen.resumedTranscript = resumed.transcript()
+                    kotlinx.coroutines.delay(500)
+                }
+            }
+            ResumedSessionScreen(
+                sessionId = resumed.sessionId(),
+                messageCount = screen.resumedMessageCount,
+                transcript = screen.resumedTranscript,
+                reclaimed = screen.resumedReclaimed,
+                pendingDialog = resumed.pendingDialog(),
+                draft = screen.resumedDraft,
+                onDraftChange = { screen.resumedDraft = it },
+                sending = screen.resumedSending,
+                sendError = screen.resumedSendError,
+                closed = resumed.isClosed(),
+                closeError = screen.resumedCloseError ?: resumed.lastError(),
+                onSend = {
+                    val text = screen.resumedDraft
+                    if (text.isNotBlank() && !screen.resumedSending) {
+                        screen.resumedSending = true
+                        screen.resumedSendError = null
+                        executor.execute {
+                            try {
+                                val transcript = resumed.sendPrompt(text)
+                                mainHandler.post {
+                                    screen.resumedTranscript = transcript
+                                    screen.resumedMessageCount = resumed.messageCount()
+                                    screen.resumedDraft = ""
+                                    screen.resumedSending = false
+                                }
+                            } catch (e: Exception) {
+                                mainHandler.post {
+                                    screen.resumedSendError = describeResumeFailure(e)
+                                    screen.resumedSending = false
+                                }
+                            }
+                        }
+                    }
+                },
+                onAnswerDialog = { dialogId, cancelled, value ->
+                    executor.execute {
+                        try {
+                            resumed.answerDialog(dialogId, cancelled, value, null)
+                        } catch (_: Exception) {
+                        }
+                    }
+                },
+                onClose = {
+                    executor.execute {
+                        var closeError: String? = null
+                        try {
+                            resumed.closeSession()
+                        } catch (e: Exception) {
+                            closeError = e.message ?: e.toString()
+                        }
+                        mainHandler.post {
+                            screen.resumedCloseError = closeError
+                            releaseHeldLease(screen)
+                            route = Route.Sessions
+                        }
+                    }
+                },
+                onBack = {
+                    // Back without closing keeps the pump and the lease —
+                    // the session continues while the app holds it (S18);
+                    // the row still says held by this device.
+                    route = Route.Sessions
+                },
+            )
+            return
+        }
+        // The session is gone (teardown): back to the list.
+        route = Route.Sessions
     }
 
     // Pairing link paste + QR scan.

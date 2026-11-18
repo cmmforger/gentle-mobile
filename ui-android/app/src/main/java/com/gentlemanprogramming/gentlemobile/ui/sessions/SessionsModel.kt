@@ -38,21 +38,27 @@ object SessionsModel {
         LeaseViewDto.STALE -> "stale lease"
     }
 
-    /** Why Resume is disabled for this row, or `null` when the session is
-     *  openable in principle (the lease allows it) — in which case the
-     *  action is still disabled, by [RESUME_UNAVAILABLE], until T17b. */
-    fun resumeReason(view: LeaseViewDto): String? = when (view) {
-        LeaseViewDto.OPEN, LeaseViewDto.HELD_HERE -> null
-        LeaseViewDto.IN_USE_ELSEWHERE ->
-            "In use elsewhere — another device holds a live lease, so this session must not be opened."
-        LeaseViewDto.STALE ->
-            "The lease on the host is stale (older than 90 s). Reclaim it before this session can be opened."
+    /** Why Resume is disabled for this row, or `null` when it may run. The
+     *  gate is the lease (S18): the lease is taken **before** any RPC child
+     *  exists, so only a session this device holds can resume. An open
+     *  session asks for the Take action first; a stale one says reclaim
+     *  first; a foreign one is never offered. */
+    fun resumeReason(view: LeaseViewDto, isHeldHere: Boolean): String? {
+        if (isHeldHere) {
+            return null
+        }
+        return when (view) {
+            LeaseViewDto.OPEN, LeaseViewDto.HELD_HERE -> RESUME_TAKE_LEASE_FIRST
+            LeaseViewDto.IN_USE_ELSEWHERE ->
+                "In use elsewhere — another device holds a live lease, so this session must not be opened."
+            LeaseViewDto.STALE ->
+                "The lease on the host is stale (older than 90 s). Take it to reclaim, then resume."
+        }
     }
 
-    /** The honest note the Resume action always carries in this build: the
-     *  RPC lane is the next task, never faked. */
-    const val RESUME_UNAVAILABLE =
-        "Resume is not implemented yet — the RPC lane lands in the next build."
+    /** Why Resume is disabled on a session the app does not hold yet. */
+    const val RESUME_TAKE_LEASE_FIRST =
+        "Take the lease first — resuming opens this session for this device, and the guard is ours (Pi has no lock)."
 
     /** Relative last-used time for the row meta; a host clock slightly
      *  ahead of the phone's is "just now", never a negative duration. */
@@ -87,6 +93,25 @@ object SessionsModel {
      *  live on it. */
     const val LEASE_LIVE_ELSEWHERE_NOTE =
         "Another device holds a live lease on this session — it was not taken."
+
+    /** The resumed screen's header: `resumed · <sessionId>`, exactly the
+     *  id the child itself reported at handshake (T5). */
+    fun resumedHeader(sessionId: String): String = "resumed · $sessionId"
+
+    /** The resumed screen's meta: the child's own message count. */
+    fun resumedMeta(messageCount: ULong): String =
+        if (messageCount == 1UL) "1 message" else "$messageCount messages"
+
+    /** Transcript role words: user and assistant render as the words the
+     *  boards use; anything else renders as itself — nothing invented. */
+    fun roleLabel(role: String): String = when (role) {
+        "user" -> "you"
+        "assistant" -> "agent"
+        else -> role
+    }
+
+    /** The visible note when a resumed transcript is empty. */
+    const val EMPTY_TRANSCRIPT_NOTE = "This session has no messages yet."
 }
 
 /** Where the Sessions screen lists from. The default is the core's

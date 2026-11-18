@@ -26,6 +26,7 @@ pub mod error;
 pub mod pin;
 pub mod profile;
 pub mod requests;
+pub mod rpc;
 pub mod sessions;
 pub mod supervise;
 pub mod surface;
