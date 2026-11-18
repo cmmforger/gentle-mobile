@@ -122,6 +122,23 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   must ask for `RECORD_AUDIO` before creating the recogniser and say "permission was refused" in plain words,
   localised.
 
+- **S25 — What we take from `Reaan06/Gentle-Movil`, and what we do not.**
+  Reviewed the repository: it is the **pi-extension lineage** (Expo + Rust core, QR with host/port/user/password,
+  SSH tunnel to the Pi bridge on 43721/43722, plus an on-device agent for a "local mode"). Our transport is the
+  herdr daemon socket and the client-shell bridge, so the backend and almost all code are not transferable.
+  What we adopt:
+  1. **A real CLI name with subcommands**: `gentle-mobile pair | status | doctor`, installed on PATH, instead of
+     running a script by path. `doctor` checks sshd, the host key, the LAN/tailnet address and whether herdr is
+     running; `status` reports whether a pairing listener is up and what it trusted.
+  2. **Connection form in the app** like Termius/Moshi: host, port, user and key, as the primary manual path.
+  3. Idea worth keeping from their QR: carry the **host key fingerprint** in the link so the phone can show it
+     before connecting instead of only after the handshake.
+  What we do **not** adopt: password inside the QR (a one-time token is strictly better), the 43721 tunnel
+  (wrong backend for us), and the on-device agent local mode (a different product).
+  Pair screen consequence: the primary surface becomes **Connection form + Scan QR**, and the phone key and the
+  `--add-key` command move into a collapsed **Manual setup** block, since with one-scan pairing they are a
+  fallback, not the default.
+
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
 
