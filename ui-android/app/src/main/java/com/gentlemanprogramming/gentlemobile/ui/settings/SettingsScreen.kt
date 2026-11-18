@@ -20,47 +20,67 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gentlemanprogramming.gentlemobile.core.KnownHostDto
 import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
 import com.gentlemanprogramming.gentlemobile.identity.OpenSshKey
+import com.gentlemanprogramming.gentlemobile.security.BiometricDecision
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
-import java.io.File
 import java.security.MessageDigest
 
 /**
  * The Settings screen (S21, board `07-settings.html`): one surface with
- * hairline-separated rows — never a card per row — one accent (the selected
- * lane) and one error colour (Revoke). Elements the core cannot do yet are
- * rendered in their honest unavailable state with a one-line reason, never a
- * dead switch that pretends to work.
+ * hairline-separated rows — never a card per row — one accent and one error
+ * colour (Revoke). Everything here is real (T18): the key regenerates with a
+ * confirmation, known hosts list and forget per host, the biometric switch
+ * opens a real prompt and only explains itself when the device cannot
+ * enforce it, and revoke wipes this device after its own confirmation. An
+ * element the device cannot support is disabled with its exact reason —
+ * never a dead control that pretends to work.
  */
 @Composable
 fun SettingsScreen(
     identity: DeviceIdentity.Identity?,
     identityError: String?,
-    knownHostsPath: String,
+    knownHosts: List<KnownHostDto>,
+    biometricDecision: BiometricDecision?,
+    biometricEnabled: Boolean,
     theme: AppTheme,
     connected: Boolean,
+    regenerated: Boolean,
+    onCopyKey: () -> Unit,
     onOpenThemes: () -> Unit,
+    onToggleBiometric: (Boolean) -> Unit,
+    onRegenerateKey: () -> Unit,
+    onForgetHost: (KnownHostDto) -> Unit,
+    onRevoke: () -> Unit,
     onDisconnect: () -> Unit,
     onBack: () -> Unit,
 ) {
     val p = LocalPalette.current
+    var confirmRegenerate by remember { mutableStateOf(false) }
+    var confirmRevoke by remember { mutableStateOf(false) }
+    var hostsOpen by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -94,8 +114,8 @@ fun SettingsScreen(
         SectionLabel("Security")
 
         // Device key: the real identity, its type, a short fingerprint and
-        // where it lives. Regeneration does not exist in the core yet — the
-        // row says so instead of offering a button that lies.
+        // where it lives. Regenerate is real (T18): a confirmation first —
+        // it destroys the old key — then a fresh identity and cleared pins.
         SettingRow(
             name = "Device key",
             sub = when {
@@ -105,33 +125,96 @@ fun SettingsScreen(
             },
             isMono = true,
             trailing = {
-                MiniButton(label = "Regenerate", enabled = false)
+                MiniButton(
+                    label = "Regenerate",
+                    enabled = identity != null,
+                    onClick = { confirmRegenerate = true },
+                )
             },
         )
-        UnavailableNote("Key regeneration is not implemented — the identity is created once per device.")
+        if (regenerated) {
+            // The plain promise after a regeneration: new key, new trust.
+            // The copy action hands over the exact line the host needs.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "New key generated — the pinned hosts were cleared. " +
+                        "Each host must trust this key again before it connects.",
+                    color = p.text,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                MiniButton(label = "Copy key", enabled = identity != null, onClick = onCopyKey)
+            }
+        }
 
-        // Known hosts: what the core actually pinned, read from the file it
-        // writes on first connect. Host management UI does not exist yet.
-        val hosts = pinnedHosts(knownHostsPath)
+        // Known hosts: what the core actually pinned, read from its
+        // known_hosts store, with the fingerprint each connect challenge
+        // shows. A forgotten host challenges its fingerprint again.
         SettingRow(
             name = "Known hosts",
-            sub = if (hosts.isEmpty()) {
+            sub = if (knownHosts.isEmpty()) {
                 "No hosts pinned yet — connect once and the host key pins itself."
             } else {
-                "${hosts.joinToString(" · ")} — ${hosts.size} pinned"
+                if (hostsOpen) "${knownHosts.size} pinned — tap to hide" else
+                    "${knownHosts.joinToString(" · ") { it.spec }} — ${knownHosts.size} pinned"
             },
             isMono = true,
+            onClick = if (knownHosts.isEmpty()) null else ({ hostsOpen = !hostsOpen }),
+            trailing = if (knownHosts.isEmpty()) null else {
+                {
+                    MiniButton(label = if (hostsOpen) "Hide" else "Manage", enabled = true) {
+                        hostsOpen = !hostsOpen
+                    }
+                }
+            },
         )
-        UnavailableNote("Host management is not in the app yet — pinning happens on first connect.")
+        if (hostsOpen) {
+            knownHosts.forEach { host ->
+                SettingRow(
+                    name = host.spec,
+                    sub = host.fingerprint,
+                    isMono = true,
+                    trailing = {
+                        MiniButton(label = "Forget", enabled = true) { onForgetHost(host) }
+                    },
+                )
+            }
+            UnavailableNote(
+                "Forgetting a host clears only its pin — the next connection asks you to confirm the host's fingerprint again.",
+            )
+        }
 
-        // Biometric unlock: no fingerprint gate exists in the core, so the
-        // switch is off and disabled with its reason attached.
+        // Biometric unlock: a real switch (T18). On, it stands between the
+        // user and every session open and every connect — a BiometricPrompt
+        // with the device credential as fallback. A device that cannot
+        // enforce it keeps the switch off with the exact reason.
         SettingRow(
             name = "Biometric unlock",
             sub = "fingerprint before opening any session",
-            trailing = { DisabledSwitch(checked = false) },
+            trailing = {
+                GateSwitch(
+                    checked = biometricEnabled,
+                    enabled = biometricDecision == BiometricDecision.AVAILABLE,
+                    onToggle = onToggleBiometric,
+                )
+            },
         )
-        UnavailableNote("Not implemented yet — the key opens without a fingerprint on this build.")
+        when (biometricDecision) {
+            BiometricDecision.NOT_AVAILABLE -> UnavailableNote(
+                "This device has no usable biometric hardware — the switch stays off.",
+            )
+            BiometricDecision.NOT_ENROLLED -> UnavailableNote(
+                "No fingerprint or device credential is enrolled — enrol one in Android settings first.",
+            )
+            null -> UnavailableNote("Checking this device's biometric capability…")
+            else -> {}
+        }
 
         // Host-key pinning is real and locked on: the core refuses a host
         // whose key changed, with no way to turn it off.
@@ -194,7 +277,10 @@ fun SettingsScreen(
         Spacer(Modifier.height(24.dp))
 
         // Actions. Disconnect works only against a live connection; revoke
-        // has no core call yet, so it names the host-side command that does.
+        // wipes this device after its own confirmation — the host side keeps
+        // trusting the old key until `gentle-mobile-pair --revoke` runs
+        // there, which the app cannot do: it holds only this phone's key,
+        // never a shell on the host.
         OutlinedButton(
             onClick = onDisconnect,
             enabled = connected,
@@ -214,8 +300,8 @@ fun SettingsScreen(
         }
         Spacer(Modifier.height(8.dp))
         Button(
-            onClick = {},
-            enabled = false,
+            onClick = { confirmRevoke = true },
+            enabled = true,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(44.dp),
@@ -227,11 +313,76 @@ fun SettingsScreen(
                 disabledContentColor = p.error,
             ),
         ) {
-            Text(text = "Revoke this device on all hosts", fontWeight = FontWeight.SemiBold)
+            Text(text = "Revoke on this device", fontWeight = FontWeight.SemiBold)
         }
-        UnavailableNote("The core has no revoke call yet — run gentle-mobile-pair --revoke on each host.")
+        UnavailableNote(
+            "Wipes this phone's key and its pinned hosts. The host side still needs " +
+                "gentle-mobile-pair --revoke on each host — the app cannot run it: " +
+                "it holds only this phone's key, never a shell on the host.",
+        )
         Spacer(Modifier.height(24.dp))
     }
+
+    if (confirmRegenerate) {
+        ConfirmDialog(
+            title = "Regenerate the device key?",
+            body = "This destroys the old key and clears every pinned host — a new key means new trust. " +
+                "Each host must trust the new key before it can connect.",
+            confirmLabel = "Regenerate",
+            onConfirm = {
+                confirmRegenerate = false
+                onRegenerateKey()
+            },
+            onDismiss = { confirmRegenerate = false },
+        )
+    }
+    if (confirmRevoke) {
+        ConfirmDialog(
+            title = "Revoke on this device?",
+            body = "This wipes this phone's key and every pinned host. The host still trusts the old key " +
+                "until you run gentle-mobile-pair --revoke on it — the app cannot run that for you: " +
+                "it holds only this phone's key, never a shell on the host.",
+            confirmLabel = "Revoke",
+            destructive = true,
+            onConfirm = {
+                confirmRevoke = false
+                onRevoke()
+            },
+            onDismiss = { confirmRevoke = false },
+        )
+    }
+}
+
+@Composable
+private fun ConfirmDialog(
+    title: String,
+    body: String,
+    confirmLabel: String,
+    destructive: Boolean = false,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val p = LocalPalette.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, fontWeight = FontWeight.SemiBold) },
+        text = { Text(body, fontSize = 13.sp, lineHeight = 18.sp) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = confirmLabel,
+                    color = if (destructive) p.error else p.accentEdge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = p.muted) }
+        },
+        containerColor = p.surfaceRaised,
+        titleContentColor = MaterialTheme.colorScheme.onBackground,
+        textContentColor = p.muted,
+    )
 }
 
 @Composable
@@ -308,14 +459,15 @@ private fun UnavailableNote(text: String) {
     )
 }
 
-/** A mini action like the board's `Regenerate` / `Manage`; disabled renders muted. */
+/** A mini action like the board's `Regenerate` / `Manage` / `Forget`. */
 @Composable
-private fun MiniButton(label: String, enabled: Boolean) {
+private fun MiniButton(label: String, enabled: Boolean, onClick: (() -> Unit)? = null) {
     val p = LocalPalette.current
     Box(
         modifier = Modifier
             .heightIn(min = 44.dp)
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 8.dp)
+            .then(if (enabled && onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -331,7 +483,6 @@ private fun MiniButton(label: String, enabled: Boolean) {
  * The board's locked switch (board 07): checked-on renders ON — the thumb in
  * textSecondary parked right on a surfaceRaised track with the board's 1px
  * border — so mandatory pinning cannot read as an OFF switch (the T16 fix).
- * A plain disabled switch keeps the quiet off reading (biometrics).
  */
 @Composable
 private fun DisabledSwitch(checked: Boolean, locked: Boolean = false) {
@@ -360,6 +511,58 @@ private fun DisabledSwitch(checked: Boolean, locked: Boolean = false) {
                     .padding(start = if (checked) 21.dp else 3.dp)
                     .size(18.dp)
                     .background(p.muted, CircleShape),
+            )
+        }
+    }
+}
+
+/**
+ * The live switch (board 07 `.switch[aria-checked]`): on, the track is the
+ * accent with the background-coloured thumb parked right — the board's one
+ * accent use on this screen. Off, the quiet track. A switch that cannot be
+ * enabled renders disabled and explains itself in the note under its row.
+ */
+@Composable
+private fun GateSwitch(checked: Boolean, enabled: Boolean, onToggle: (Boolean) -> Unit) {
+    val p = LocalPalette.current
+    Box(
+        modifier = Modifier.size(44.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(44.dp)
+                .height(26.dp)
+                .then(if (enabled) Modifier.clickable { onToggle(!checked) } else Modifier)
+                .border(
+                    1.dp,
+                    when {
+                        checked && enabled -> p.accent
+                        !enabled -> Color.Transparent
+                        else -> p.line
+                    },
+                    RoundedCornerShape(999.dp),
+                )
+                .background(
+                    when {
+                        checked && enabled -> p.accent
+                        else -> p.surface
+                    },
+                    RoundedCornerShape(999.dp),
+                ),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(start = if (checked) 21.dp else 3.dp)
+                    .size(18.dp)
+                    .background(
+                        when {
+                            checked && enabled -> p.bg
+                            else -> p.muted
+                        },
+                        CircleShape,
+                    ),
             )
         }
     }
@@ -412,22 +615,10 @@ internal fun keyFingerprint(publicKeyLine: String): String? {
     return "%02x:%02x:…:%02x".format(digest[0], digest[1], digest[31])
 }
 
-/** The hosts the core actually pinned, read from its known_hosts file. */
-internal fun pinnedHosts(knownHostsPath: String): List<String> =
-    File(knownHostsPath)
-        .takeIf { it.exists() }
-        ?.readLines()
-        ?.mapNotNull { line ->
-            line.trim().split(Regex("\\s+")).firstOrNull()?.takeIf { it.isNotEmpty() }
-        }
-        ?.flatMap { it.split(",") }
-        ?.distinct()
-        .orEmpty()
-
 /** The real versionName from the installed package — never a hardcoded one. */
 @Composable
 private fun appVersion(): String {
-    val context = LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     return try {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
     } catch (_: Exception) {

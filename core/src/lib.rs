@@ -41,8 +41,8 @@ pub use connection::{
 };
 pub use error::{Error, Result};
 pub use pin::{
-    PinDecision, accept_host_key, decide, fingerprint_of, format_fingerprint, parse_entries,
-    refusal_error, spec_for, HostPin,
+    PinDecision, accept_host_key, decide, fingerprint_of, forget_host, format_fingerprint,
+    parse_entries, refusal_error, spec_for, HostPin,
 };
 pub use profile::HostProfile;
 pub use supervise::Supervisor;

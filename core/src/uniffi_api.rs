@@ -361,6 +361,48 @@ pub fn accept_host_key(
     Ok(())
 }
 
+/// One pinned host as the Settings screen shows it: the OpenSSH hostspec
+/// (`host` for port 22, `[host]:port` otherwise) and the pinned key's
+/// `SHA256:...` fingerprint — the same string the connect challenge shows.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct KnownHostDto {
+    pub spec: String,
+    pub fingerprint: String,
+}
+
+/// List the pinned hosts from the app's known_hosts store. Junk lines and
+/// hashed entries the core does not understand are skipped, never errors; a
+/// missing file is an empty list.
+#[uniffi::export]
+pub fn list_known_hosts(known_hosts_path: String) -> Vec<KnownHostDto> {
+    pin::load_entries(Path::new(&known_hosts_path))
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|entry| {
+            let fingerprint = parse_public_key_base64(&entry.blob)
+                .ok()
+                .map(|key| pin::fingerprint_of(&key))?;
+            Some(entry.specs.iter().map(move |spec| KnownHostDto {
+                spec: spec.clone(),
+                fingerprint: fingerprint.clone(),
+            }))
+        })
+        .flatten()
+        .collect()
+}
+
+/// Remove every entry naming `host:port` from the pin store. `true` when an
+/// entry was removed — the next connection then challenges the fingerprint
+/// again instead of silently matching the old pin.
+#[uniffi::export]
+pub fn forget_host(
+    known_hosts_path: String,
+    host: String,
+    port: u16,
+) -> Result<bool, CompanionError> {
+    Ok(pin::forget_host(Path::new(&known_hosts_path), &host, port)?)
+}
+
 /// Parse the presented key: the bare base64 blob or the full OpenSSH
 /// one-line form. Anything else is an [`CompanionError::InvalidKeyBlob`].
 pub(crate) fn parse_presented_blob(key_blob: &str) -> Result<russh::keys::PublicKey, CompanionError> {
@@ -587,6 +629,43 @@ mod tests {
         let dto = agent_dto(&blank, None);
         assert_eq!(dto.name, "pi", "a blank name falls back to the kind");
         assert_eq!(dto.cwd, None);
+    }
+
+    #[test]
+    fn known_hosts_list_and_forget_round_trip() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("known_hosts");
+        std::fs::write(
+            &path,
+            format!(
+                "[127.0.0.1]:2424 ssh-ed25519 {}\nother.example ssh-ed25519 {}\nhost.example ssh-ed25519 not-base64!!\n",
+                pin::KEY1_BLOB,
+                pin::KEY2_BLOB
+            ),
+        )?;
+        // The malformed line is skipped, not an error; the two real pins come
+        // back with their spec and the OpenSSH fingerprint.
+        let listed = list_known_hosts(path.to_str().expect("utf8 path").to_owned());
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].spec, "[127.0.0.1]:2424");
+        assert_eq!(
+            listed[0].fingerprint,
+            pin::fingerprint_of(&parse_public_key_base64(pin::KEY1_BLOB).expect("test blob"))
+        );
+        assert_eq!(listed[1].spec, "other.example");
+        assert_eq!(
+            listed[1].fingerprint,
+            pin::fingerprint_of(&parse_public_key_base64(pin::KEY2_BLOB).expect("test blob"))
+        );
+        // Forgetting removes exactly that entry and only once.
+        assert!(forget_host(path.to_str().expect("utf8 path").to_owned(), "127.0.0.1".to_owned(), 2424)?);
+        assert_eq!(list_known_hosts(path.to_str().expect("utf8 path").to_owned()).len(), 1);
+        assert!(!forget_host(path.to_str().expect("utf8 path").to_owned(), "127.0.0.1".to_owned(), 2424)?);
+        // A file of only junk parses to an empty list, never an error.
+        let junk = dir.path().join("junk");
+        std::fs::write(&junk, "short-line\nhost.example ssh-ed25519 not-base64!!\n")?;
+        assert!(list_known_hosts(junk.to_str().expect("utf8 path").to_owned()).is_empty());
+        Ok(())
     }
 
 #[test]

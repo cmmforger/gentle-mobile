@@ -193,6 +193,48 @@ fn keep_other_specs(text: &str, spec: &str) -> Vec<String> {
         .collect()
 }
 
+/// Remove every entry naming `host:port` from the pin store — the Settings
+/// screen's per-host `Forget`. Only lines whose first token names the spec
+/// (bare host for port 22, `[host]:port` otherwise) are removed; comments,
+/// markers and lines written by other tools survive untouched, and a file
+/// with no matching entry is not rewritten at all. Returns `true` when at
+/// least one entry was removed, so the next connection challenges the
+/// fingerprint again ([`decide`] then reports [`PinDecision::Unknown`]).
+pub fn forget_host(path: &Path, host: &str, port: u16) -> crate::error::Result<bool> {
+    let spec = spec_for(host, port);
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let names_spec = |line: &str| -> bool {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('@') {
+            return false;
+        }
+        match trimmed.split_whitespace().next() {
+            Some(first) => first.split(',').any(|candidate| candidate == spec),
+            None => false,
+        }
+    };
+    if !text.lines().any(names_spec) {
+        return Ok(false);
+    }
+    let kept = keep_other_specs(&text, &spec);
+    let mut content = kept.join("\n");
+    if !kept.is_empty() {
+        content.push('\n');
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(content.as_bytes())?;
+    Ok(true)
+}
+
 /// Read the whole pin file, or an empty set when it does not exist yet.
 pub fn load_entries(path: &Path) -> crate::error::Result<Vec<HostPin>> {
     match fs::read_to_string(path) {
@@ -352,6 +394,52 @@ short-line";
         accept_host_key(&path, "127.0.0.1", 2424, &key(KEY1_BLOB))?;
         let text = fs::read_to_string(&path)?;
         assert_eq!(text.lines().count(), 1, "{text}");
+        Ok(())
+    }
+
+    #[test]
+    fn forget_host_removes_exactly_that_spec_and_the_next_connect_challenges(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("known_hosts");
+        fs::write(
+            &path,
+            format!(
+                "[127.0.0.1]:2424 ssh-ed25519 {}\nother.example ssh-ed25519 {}\n# comment\ngarbage-not-a-pin\n",
+                KEY1_BLOB, KEY2_BLOB
+            ),
+        )?;
+        assert!(forget_host(&path, "127.0.0.1", 2424)?);
+        // Everything except the forgotten spec survives, byte for byte.
+        let text = fs::read_to_string(&path)?;
+        assert!(text.contains("other.example"), "{text}");
+        assert!(text.contains("# comment"), "{text}");
+        assert!(text.contains("garbage-not-a-pin"), "{text}");
+        assert!(!text.contains("[127.0.0.1]:2424"), "{text}");
+        // The forgotten host challenges again on the next connect; the
+        // untouched host still matches its pin.
+        let entries = load_entries(&path)?;
+        assert_eq!(
+            decide(&entries, "127.0.0.1", 2424, &key(KEY1_BLOB)),
+            PinDecision::Unknown { presented: fingerprint_of(&key(KEY1_BLOB)) }
+        );
+        assert_eq!(decide(&entries, "other.example", 22, &key(KEY2_BLOB)), PinDecision::Match);
+        // Forgetting again finds nothing to remove.
+        assert!(!forget_host(&path, "127.0.0.1", 2424)?);
+        Ok(())
+    }
+
+    #[test]
+    fn forget_host_leaves_a_malformed_file_untouched() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("known_hosts");
+        let text = "short-line\nhost.example ssh-ed25519 not-base64!!\n\n";
+        fs::write(&path, text)?;
+        // Nothing in the file names the requested spec: nothing removed.
+        assert!(!forget_host(&path, "other.example", 22)?);
+        assert_eq!(fs::read_to_string(&path)?, text, "the file must not be rewritten");
+        // A missing file is not an error either.
+        assert!(!forget_host(&dir.path().join("absent"), "h", 22)?);
         Ok(())
     }
 

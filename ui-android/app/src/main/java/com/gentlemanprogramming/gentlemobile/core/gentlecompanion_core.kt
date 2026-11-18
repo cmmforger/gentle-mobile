@@ -679,6 +679,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_connect(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_forget_host(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_list_known_hosts(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected(
@@ -738,6 +742,10 @@ internal object UniffiLib {
     external fun uniffi_gentlecompanion_core_fn_func_accept_host_key(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_func_connect(`profile`: RustBuffer.ByValue,`session`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_func_forget_host(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_gentlecompanion_core_fn_func_list_known_hosts(`knownHostsPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_gentlecompanion_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -862,6 +870,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_connect() and 0xFFFF) != 42500) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_forget_host() and 0xFFFF) != 34521) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_list_known_hosts() and 0xFFFF) != 22676) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect() and 0xFFFF) != 59131) {
@@ -1968,6 +1982,49 @@ public object FfiConverterTypeHostProfileDto: FfiConverterRustBuffer<HostProfile
 
 
 
+/**
+ * One pinned host as the Settings screen shows it: the OpenSSH hostspec
+ * (`host` for port 22, `[host]:port` otherwise) and the pinned key's
+ * `SHA256:...` fingerprint — the same string the connect challenge shows.
+ */
+data class KnownHostDto (
+    val `spec`: kotlin.String
+    , 
+    val `fingerprint`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeKnownHostDto: FfiConverterRustBuffer<KnownHostDto> {
+    override fun read(buf: ByteBuffer): KnownHostDto {
+        return KnownHostDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: KnownHostDto) = (
+            FfiConverterString.allocationSize(value.`spec`) +
+            FfiConverterString.allocationSize(value.`fingerprint`)
+    )
+
+    override fun write(value: KnownHostDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`spec`, buf)
+            FfiConverterString.write(value.`fingerprint`, buf)
+    }
+}
+
+
+
 data class PaneDto (
     val `id`: kotlin.String
     , 
@@ -2882,6 +2939,34 @@ public object FfiConverterSequenceTypeCellDto: FfiConverterRustBuffer<List<CellD
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeKnownHostDto: FfiConverterRustBuffer<List<KnownHostDto>> {
+    override fun read(buf: ByteBuffer): List<KnownHostDto> {
+        val len = buf.getInt()
+        return List<KnownHostDto>(len) {
+            FfiConverterTypeKnownHostDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<KnownHostDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeKnownHostDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<KnownHostDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeKnownHostDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypePaneDto: FfiConverterRustBuffer<List<PaneDto>> {
     override fun read(buf: ByteBuffer): List<PaneDto> {
         val len = buf.getInt()
@@ -2993,6 +3078,41 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
         FfiConverterString.lower(`session`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Remove every entry naming `host:port` from the pin store. `true` when an
+         * entry was removed — the next connection then challenges the fingerprint
+         * again instead of silently matching the old pin.
+         */
+    @Throws(CompanionException::class) fun `forgetHost`(`knownHostsPath`: kotlin.String, `host`: kotlin.String, `port`: kotlin.UShort): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_forget_host(
+    
+        
+        FfiConverterString.lower(`knownHostsPath`),
+        FfiConverterString.lower(`host`),
+        FfiConverterUShort.lower(`port`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * List the pinned hosts from the app's known_hosts store. Junk lines and
+         * hashed entries the core does not understand are skipped, never errors; a
+         * missing file is an empty list.
+         */ fun `listKnownHosts`(`knownHostsPath`: kotlin.String): List<KnownHostDto> {
+            return FfiConverterSequenceTypeKnownHostDto.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_list_known_hosts(
+    
+        
+        FfiConverterString.lower(`knownHostsPath`),_status)
 }
     )
     }

@@ -78,6 +78,9 @@ dependencies {
     // The AAR carries the Android libjnidispatch.so natives; the plain jar
     // does not, and JNA fails with UnsatisfiedLinkError on device.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
+    // Biometric gate (T18): the prompt that guards opening a session and
+    // using the device key; BIOMETRIC_WEAK with device credential fallback.
+    implementation("androidx.biometric:biometric:1.1.0")
     // Ed25519 keypair generation for the device identity key (the key must be
     // exportable in OpenSSH format, so AndroidKeyStore is not usable here).
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
