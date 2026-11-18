@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# gentle-mobile — connect this machine to the Gentle Mobile app.
+#
+#   gentle-mobile pair            one-scan pairing: prints a QR, trusts one key, exits
+#   gentle-mobile status          is a pairing listener running, and which phones are trusted
+#   gentle-mobile doctor          check sshd, host key, addresses, herdr and qrencode
+#   gentle-mobile add-key KEY     manual fallback: trust one phone key
+#   gentle-mobile list            list the phone keys this tool added
+#   gentle-mobile revoke          remove every key this tool added
+#
+# `pair` is the normal path: the app scans the QR and nothing is copied by hand.
+set -uo pipefail
+
+SELF=$(readlink -f "$0")
+DIR=$(cd "$(dirname "$SELF")" && pwd)
+ENGINE="$DIR/gentle-mobile-pair"
+
+die() { printf '%s\n' "$*" >&2; exit 1; }
+ok()   { printf '  \033[32mok\033[0m    %s\n' "$*"; }
+warn() { printf '  \033[33mwarn\033[0m  %s\n' "$*"; }
+bad()  { printf '  \033[31mfail\033[0m  %s\n' "$*"; }
+
+usage() { sed -n '2,11p' "$SELF" | sed 's/^# \{0,1\}//'; }
+
+addr_lan() {
+    ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}'
+}
+addr_tailnet() {
+    command -v tailscale >/dev/null 2>&1 && tailscale ip -4 2>/dev/null | head -n1
+}
+trusted_count() { "$ENGINE" --list 2>/dev/null | grep -c '^ssh-' || true; }
+
+# A pairing listener is a process whose command is the engine itself; a shell
+# that merely mentions the name (this script, a test) must not count.
+pairing_listener_running() {
+    ps -eo pid=,args= 2>/dev/null | awk -v engine="$ENGINE"         '$0 ~ engine && $0 !~ /awk/ && $0 !~ /bash -c/ && $0 !~ /gentle-mobile (status|doctor)/ {found=1} END {exit !found}'
+}
+
+cmd_status() {
+    printf 'Gentle Mobile — status\n\n'
+    if pairing_listener_running; then
+        ok "a pairing listener is running (it accepts one key, then exits)"
+    else
+        warn "no pairing listener is running — start one with: gentle-mobile pair"
+    fi
+    n=$(trusted_count)
+    if [ "${n:-0}" -gt 0 ]; then
+        ok "$n phone key(s) trusted on this machine"
+        "$ENGINE" --list 2>/dev/null | sed 's/^/        /'
+    else
+        warn "no phone keys trusted yet"
+    fi
+    printf '\n'
+    ip=$(addr_tailnet); [ -n "${ip:-}" ] && ok "tailnet address $ip" || warn "Tailscale is not reporting an address"
+    lan=$(addr_lan);  [ -n "${lan:-}" ] && ok "LAN address $lan"   || warn "no LAN route found"
+    exit 0
+}
+
+cmd_doctor() {
+    fails=0
+    printf 'Gentle Mobile — doctor\n\n'
+
+    if ss -ltn 2>/dev/null | grep -qE ':22\b'; then
+        ok "sshd is listening on port 22"
+    else
+        bad "sshd is not listening on port 22 — the phone cannot connect"
+        printf '        enable it: sudo systemctl enable --now sshd\n'
+        fails=$((fails + 1))
+    fi
+
+    if [ -r /etc/ssh/ssh_host_ed25519_key.pub ]; then
+        fp=$(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub 2>/dev/null | awk '{print $2}')
+        ok "host key fingerprint $fp"
+    else
+        bad "no readable /etc/ssh/ssh_host_ed25519_key.pub"
+        fails=$((fails + 1))
+    fi
+
+    lan=$(addr_lan); ip=$(addr_tailnet)
+    { [ -n "${lan:-}" ] || [ -n "${ip:-}" ]; } && ok "reachable address: ${ip:-$lan}" \
+        || { bad "no LAN or tailnet address"; fails=$((fails + 1)); }
+
+    if command -v qrencode >/dev/null 2>&1; then
+        ok "qrencode present (the QR can be drawn in the terminal)"
+    else
+        warn "qrencode missing — install it to scan instead of pasting the link"
+    fi
+
+    if command -v herdr >/dev/null 2>&1; then
+        ok "herdr on PATH ($(herdr --version 2>/dev/null | head -n1))"
+        if [ -S "$HOME/.config/herdr/herdr.sock" ]; then
+            ok "herdr server socket present"
+        else
+            warn "herdr is installed but no server socket — start it with: herdr"
+        fi
+    else
+        warn "herdr not found on PATH — the app will connect but have no agents to show"
+    fi
+
+    auth="${AUTHORIZED_KEYS:-$HOME/.ssh/authorized_keys}"
+    if [ -w "$(dirname "$auth")" ]; then
+        ok "authorized_keys is writable ($auth, $(trusted_count) phone key(s))"
+    else
+        bad "cannot write $auth — pairing would fail"
+        fails=$((fails + 1))
+    fi
+
+    printf '\n'
+    if [ "$fails" -eq 0 ]; then
+        printf 'All good. Next: gentle-mobile pair\n'; exit 0
+    fi
+    printf '%s check(s) failed — fix them above, then run: gentle-mobile doctor\n' "$fails"
+    exit 1
+}
+
+case "${1:-}" in
+pair)      exec "$ENGINE" ;;
+status)    cmd_status ;;
+doctor)    cmd_doctor ;;
+add-key)   exec "$ENGINE" --add-key "${2:-}" ;;
+list)      exec "$ENGINE" --list ;;
+revoke)    exec "$ENGINE" --revoke ;;
+-h|--help|help|"") usage ;;
+*)         die "unknown command: $1 (try --help)" ;;
+esac
