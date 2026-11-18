@@ -689,6 +689,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_send_keys(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot(
     ): Int
     external fun ffi_gentlecompanion_core_uniffi_contract_version(
@@ -725,6 +727,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_read_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_send_keys(`ptr`: Long,`paneId`: RustBuffer.ByValue,`keys`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_snapshot(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_accept_host_key(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -869,6 +873,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane() and 0xFFFF) != 52004) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_send_keys() and 0xFFFF) != 26307) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot() and 0xFFFF) != 47863) {
@@ -1346,6 +1353,16 @@ public interface CompanionConnectionInterface {
     fun `readPane`(`paneId`: kotlin.String): PaneReadDto
     
     /**
+     * Send one batch of key presses to the agent's pane — the extra-key
+     * row's method. `keys` are the daemon's own key names (`esc`, `tab`,
+     * `enter`, `up`, `down`, single characters, and `ctrl+`/`alt+`
+     * compositions like `ctrl+c`); the core passes them through untouched.
+     * `Ok(())` means the daemon confirmed delivery (`ok`); a failure names
+     * why, so a chip never claims a press that did not land.
+     */
+    fun `sendKeys`(`paneId`: kotlin.String, `keys`: List<kotlin.String>)
+    
+    /**
      * The most recent full snapshot in plain DTOs, or `None` until the host
      * has sent one. The UI polls this; every reconnect starts a fresh
      * baseline so a snapshot is never a stale delta.
@@ -1548,6 +1565,29 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
     }
     )
     }
+    
+
+    
+    /**
+     * Send one batch of key presses to the agent's pane — the extra-key
+     * row's method. `keys` are the daemon's own key names (`esc`, `tab`,
+     * `enter`, `up`, `down`, single characters, and `ctrl+`/`alt+`
+     * compositions like `ctrl+c`); the core passes them through untouched.
+     * `Ok(())` means the daemon confirmed delivery (`ok`); a failure names
+     * why, so a chip never claims a press that did not land.
+     */
+    @Throws(CompanionException::class)override fun `sendKeys`(`paneId`: kotlin.String, `keys`: List<kotlin.String>)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_send_keys(
+        it,
+        
+        FfiConverterString.lower(`paneId`),
+        FfiConverterSequenceString.lower(`keys`),_status)
+}
+    }
+    
     
 
     
@@ -2717,6 +2757,34 @@ public object FfiConverterOptionalTypeSurfaceDto: FfiConverterRustBuffer<Surface
         } else {
             buf.put(1)
             FfiConverterTypeSurfaceDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String> {
+        val len = buf.getInt()
+        return List<kotlin.String>(len) {
+            FfiConverterString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterString.write(it, buf)
         }
     }
 }

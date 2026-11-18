@@ -107,6 +107,7 @@ impl From<RequestError> for HubError {
 /// The methods this screen needs, in their wire spelling.
 pub const METHOD_PANE_READ: &str = "pane.read";
 pub const METHOD_AGENT_PROMPT: &str = "agent.prompt";
+pub const METHOD_PANE_SEND_KEYS: &str = "pane.send_keys";
 
 impl RequestError {
     /// From a JSON reply envelope: `Some` when the daemon answered with an
@@ -182,6 +183,36 @@ pub fn parse_pane_read(response: &Value) -> std::result::Result<PaneRead, Reques
         .to_owned();
     let truncated = read.get("truncated").and_then(Value::as_bool).unwrap_or(false);
     Ok(PaneRead { pane_id, text, truncated })
+}
+
+/// `pane.send_keys` parameters: one request carrying the key list, addressed
+/// by pane id. Key names are the daemon's own, measured live: `esc` (also
+/// `escape`), `tab`, `enter`, `up`/`down`/`left`/`right`, `backspace`,
+/// `space`, `f1`–`f12`, and single characters — with `ctrl+`/`alt+`/`shift+`
+/// prefixes composing modifiers (`ctrl+c`).
+pub fn send_keys_params(pane_id: &str, keys: &[String]) -> Value {
+    json!({"pane_id": pane_id, "keys": keys})
+}
+
+/// Map a `pane.send_keys` reply envelope: “sent” only on the daemon's `ok`
+/// result — the measured success shape is `{"result":{"type":"ok"}}`.
+pub fn parse_send_keys(response: &Value) -> std::result::Result<(), RequestError> {
+    if let Some(refused) = RequestError::refused_from(response) {
+        return Err(refused);
+    }
+    let result_type = response
+        .get("result")
+        .and_then(|result| result.get("type"))
+        .and_then(Value::as_str);
+    match result_type {
+        Some("ok") => Ok(()),
+        Some(other) => Err(RequestError::BadResponse {
+            detail: format!("the send-keys reply was `{other}`, not `ok`"),
+        }),
+        None => Err(RequestError::BadResponse {
+            detail: "the send-keys reply has no result type".to_owned(),
+        }),
+    }
 }
 
 /// Map an `agent.prompt` reply envelope: “sent” only on the daemon's
@@ -601,6 +632,57 @@ fn prompt_params_carry_target_and_text() {
     let params = prompt_params("w1:p1", "echo t11-ok");
     assert_eq!(params["target"], json!("w1:p1"));
     assert_eq!(params["text"], json!("echo t11-ok"));
+}
+
+#[test]
+fn send_keys_params_carry_pane_and_key_list() {
+    let params = send_keys_params("w1:p1", &["c".to_owned(), "l".to_owned(), "tab".to_owned()]);
+    assert_eq!(params["pane_id"], json!("w1:p1"));
+    assert_eq!(params["keys"], json!(["c", "l", "tab"]));
+}
+
+#[test]
+fn send_keys_params_keep_modifier_composition_verbatim() {
+    // The daemon accepts `ctrl+c` as one key string; the core passes the
+    // caller's names through untouched — no local re-spelling that could
+    // drift from the daemon's parser.
+    let params = send_keys_params("w1:p1", &["ctrl+c".to_owned()]);
+    assert_eq!(params["keys"], json!(["ctrl+c"]));
+}
+
+fn send_keys_ok_response() -> Value {
+    // Measured live: the daemon's success shape for pane.send_keys.
+    json!({"id": "companion-1", "result": {"type": "ok"}})
+}
+
+#[test]
+fn send_keys_success_is_accepted_only_on_result_ok() {
+    assert!(parse_send_keys(&send_keys_ok_response()).is_ok(), "result ok is a send");
+    // Any other result shape does not prove the keys were delivered.
+    let other = json!({"id": "companion-1", "result": {"type": "pane_read"}});
+    let error = parse_send_keys(&other).expect_err("an unknown result is not a send");
+    assert!(matches!(error, RequestError::BadResponse { .. }), "{error:?}");
+    let none = json!({"id": "companion-1"});
+    let error = parse_send_keys(&none).expect_err("no result is not a send");
+    assert!(matches!(error, RequestError::BadResponse { .. }), "{error:?}");
+}
+
+#[test]
+fn send_keys_refusals_carry_the_daemons_code() {
+    for (code, message) in [
+        ("invalid_key", "unsupported key definitely-not-a-key"),
+        ("pane_not_found", "pane w99:p9 not found"),
+    ] {
+        let error = parse_send_keys(&refused_response(code, message))
+            .expect_err("a refusal is an error");
+        match error {
+            RequestError::Refused { code: got, detail } => {
+                assert_eq!(got, code);
+                assert_eq!(detail, message);
+            }
+            other => panic!("expected RequestError::Refused for {code}, got {other:?}"),
+        }
+    }
 }
 
 #[test]

@@ -316,6 +316,24 @@ impl CompanionConnection {
             .agent_prompt(target.as_str(), prompt.as_str())
             .map_err(CompanionError::from)
     }
+
+    /// Send one batch of key presses to the agent's pane — the extra-key
+    /// row's method. `keys` are the daemon's own key names (`esc`, `tab`,
+    /// `enter`, `up`, `down`, single characters, and `ctrl+`/`alt+`
+    /// compositions like `ctrl+c`); the core passes them through untouched.
+    /// `Ok(())` means the daemon confirmed delivery (`ok`); a failure names
+    /// why, so a chip never claims a press that did not land.
+    pub fn send_keys(&self, pane_id: String, keys: Vec<String>) -> Result<(), CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        connection
+            .pane_send_keys(pane_id.as_str(), &keys)
+            .map_err(CompanionError::from)
+    }
 }
 
 /// Pin the presented key for `host:port`. The `key_blob` comes from the

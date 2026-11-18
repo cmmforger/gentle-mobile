@@ -19,10 +19,22 @@ fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
     let mut pane = String::new();
     let mut prompt: Option<String> = None;
+    // Each `--keys a,b,esc` occurrence is one `pane.send_keys` request, in
+    // order — so `--keys c,l,e,a --keys tab` reproduces the key-row presses.
+    let mut key_batches: Vec<Vec<String>> = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--pane" => pane = args.next().ok_or(anyhow::anyhow!("--pane needs a value"))?,
             "--prompt" => prompt = Some(args.next().ok_or(anyhow::anyhow!("--prompt needs a value"))?),
+            "--keys" => {
+                let batch = args
+                    .next()
+                    .ok_or(anyhow::anyhow!("--keys needs a comma-separated list"))?
+                    .split(',')
+                    .map(str::to_owned)
+                    .collect();
+                key_batches.push(batch);
+            }
             other => anyhow::bail!("unknown argument {other}"),
         }
     }
@@ -80,6 +92,14 @@ fn main() -> anyhow::Result<()> {
             println!("--- end pane text ---");
         }
         Err(error) => println!("pane.read failed: {error}"),
+    }
+
+    for batch in &key_batches {
+        println!("pane.send_keys {pane}: sending {batch:?}…");
+        match connection.pane_send_keys(pane.as_str(), batch) {
+            Ok(()) => println!("pane.send_keys: the host confirmed delivery (ok)"),
+            Err(error) => println!("pane.send_keys failed: {error}"),
+        }
     }
 
     if let Some(prompt) = prompt {

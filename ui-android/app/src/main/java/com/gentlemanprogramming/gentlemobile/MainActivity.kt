@@ -222,6 +222,16 @@ private class SessionUi {
     var sent by mutableStateOf(false)
     var refreshNonce by mutableStateOf(0)
 
+    /** Extra-key row state (board 04). Ctrl and Alt are sticky one-shot
+     * modifiers: tapping toggles, the next key chip composes `ctrl+<key>`
+     * / `alt+<key>` and consumes the sticky state. `keySending` debounces
+     * a chip while its request is in flight, and `keyError` carries the
+     * host's typed refusal — a chip never claims a press that did not land. */
+    var ctrlSticky by mutableStateOf(false)
+    var altSticky by mutableStateOf(false)
+    var keySending by mutableStateOf(false)
+    var keyError by mutableStateOf<String?>(null)
+
     /** Full re-baseline: a new connection owns a fresh core store, so the
      * drawn grid and the fallback read start empty again. Drafts survive. */
     fun resetBaseline() {
@@ -971,6 +981,31 @@ fun ConnectScreen(
                             }
                         }
                     },
+                    onSendKeys = { keys ->
+                        val connection = current.connection
+                        val paneId = current.agent.paneId
+                        val generation = screen.generation
+                        sessionUi.keySending = true
+                        sessionUi.keyError = null
+                        executor.execute {
+                            try {
+                                connection.sendKeys(paneId, keys)
+                                // "Sent" only on the daemon's `ok` reply.
+                                mainHandler.post {
+                                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                                        sessionUi.keySending = false
+                                    }
+                                }
+                            } catch (error: Exception) {
+                                mainHandler.post {
+                                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                                        sessionUi.keySending = false
+                                        sessionUi.keyError = describe(error)
+                                    }
+                                }
+                            }
+                        }
+                    },
                 )
             }
         }
@@ -1186,6 +1221,7 @@ private fun SessionScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onSend: (String) -> Unit,
+    onSendKeys: (List<String>) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -1405,9 +1441,11 @@ private fun SessionScreen(
         }
 
         // Extra keys (board 04): the designed strip between the terminal
-        // and the composer. Keys render disabled — see ExtraKeyRow.
+        // and the composer. Every chip maps to a key name the daemon
+        // accepts (measured: esc, tab, enter, up, down, and ctrl+/alt+
+        // compositions), so all are enabled; Ctrl and Alt are sticky.
         Spacer(Modifier.height(8.dp))
-        ExtraKeyRow()
+        ExtraKeyRow(sessionUi, onSendKeys)
 
         // Composer: a prompt, sent through the daemon's own agent.prompt.
         // One row — the field with the send action beside it — so the
@@ -1694,50 +1732,117 @@ private fun InterruptedNotice(onRetry: () -> Unit) {
 
 /**
  * The extra-key row (board 04): Esc, Tab, Ctrl, Alt, arrows, Enter, sitting
- * above the composer. The core's request path offers only `pane.read` and
- * `agent.prompt` — there is no `pane.send_keys`-style method in this build —
- * so every key renders in its honest disabled state instead of faking a
- * press. The row still shows the designed shape so the layout matches the
- * board; the note under it says why the keys do not send.
+ * above the composer. Every chip sends the daemon's own `pane.send_keys`
+ * through the core — one request per press, `Ok(())` only on the daemon's
+ * `ok` reply. Ctrl and Alt are sticky: tapping toggles the pressed state
+ * (design `aria-pressed`), and the next key chip composes `ctrl+<key>`,
+ * `alt+<key>` or `ctrl+alt+<key>` and consumes the sticky state — exactly
+ * one press per modifier, so a sticky flag can never surprise a second key.
+ * Every key here is representable on the wire (measured), so no chip needs
+ * a disabled state; a failed send shows the host's typed refusal instead of
+ * pretending the key landed.
  */
 @Composable
-private fun ExtraKeyRow() {
+private fun ExtraKeyRow(sessionUi: SessionUi, onSendKeys: (List<String>) -> Unit) {
+    fun compose(key: String): List<String> {
+        val modifiers = listOfNotNull(
+            "ctrl".takeIf { sessionUi.ctrlSticky },
+            "alt".takeIf { sessionUi.altSticky },
+        )
+        return listOf(if (modifiers.isEmpty()) key else modifiers.joinToString("+") + "+" + key)
+    }
+
+    fun press(key: String) {
+        if (sessionUi.keySending) return
+        onSendKeys(compose(key))
+        // Sticky modifiers are one-shot: consumed by the key they composed.
+        sessionUi.ctrlSticky = false
+        sessionUi.altSticky = false
+    }
+
     Column {
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            listOf("Esc", "Tab", "Ctrl", "Alt", "↑", "↓", "Enter").forEach { label ->
-                ExtraKeyChip(label)
-            }
+            // Sticky toggles first, in the board's order.
+            ExtraKeyChip("Esc", enabled = true, sending = sessionUi.keySending) { press("esc") }
+            ExtraKeyChip("Tab", enabled = true, sending = sessionUi.keySending) { press("tab") }
+            ExtraKeyChip(
+                "Ctrl",
+                enabled = true,
+                pressed = sessionUi.ctrlSticky,
+                sending = sessionUi.keySending,
+            ) { sessionUi.ctrlSticky = !sessionUi.ctrlSticky }
+            ExtraKeyChip(
+                "Alt",
+                enabled = true,
+                pressed = sessionUi.altSticky,
+                sending = sessionUi.keySending,
+            ) { sessionUi.altSticky = !sessionUi.altSticky }
+            ExtraKeyChip("↑", enabled = true, sending = sessionUi.keySending) { press("up") }
+            ExtraKeyChip("↓", enabled = true, sending = sessionUi.keySending) { press("down") }
+            ExtraKeyChip("Enter", enabled = true, sending = sessionUi.keySending) { press("enter") }
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "Key sending is not in this core build yet — the request path has pane.read and agent.prompt, no key method — so the keys stay disabled rather than fake a press.",
-            color = LocalPalette.current.textDisabled,
-            fontSize = 11.sp,
-        )
+        sessionUi.keyError?.let { error ->
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = error,
+                color = LocalPalette.current.error,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
     }
 }
 
-/** One key chip: a ~30px visual inside a 44dp touch target (board 04). */
+/**
+ * One key chip: a ~30px visual inside a 44dp touch target (board 04).
+ * `pressed` is the sticky-modifier state (design `aria-pressed="true"`):
+ * accent edge and selection fill. A disabled chip keeps the muted text and
+ * no click — the honest unavailable state, never a fake press.
+ */
 @Composable
-private fun ExtraKeyChip(label: String) {
+private fun ExtraKeyChip(
+    label: String,
+    enabled: Boolean,
+    pressed: Boolean = false,
+    sending: Boolean = false,
+    onPress: () -> Unit,
+) {
+    val palette = LocalPalette.current
     Box(
         modifier = Modifier
             .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
             .padding(horizontal = 3.dp, vertical = 8.dp),
         contentAlignment = androidx.compose.ui.Alignment.Center,
     ) {
+        val clickModifier = if (enabled && !sending) {
+            Modifier.clickable(onClick = onPress)
+        } else {
+            Modifier
+        }
         Box(
             modifier = Modifier
                 .widthIn(min = 30.dp)
                 .height(30.dp)
-                .border(1.dp, LocalPalette.current.line, RoundedCornerShape(8.dp))
-                .background(LocalPalette.current.surfaceRaised, RoundedCornerShape(8.dp))
+                .then(clickModifier)
+                .border(
+                    1.dp,
+                    if (pressed) palette.accentEdge else palette.line,
+                    RoundedCornerShape(8.dp),
+                )
+                .background(
+                    if (pressed) palette.selection else palette.surfaceRaised,
+                    RoundedCornerShape(8.dp),
+                )
                 .padding(horizontal = 4.dp),
             contentAlignment = androidx.compose.ui.Alignment.Center,
         ) {
             Text(
                 text = label,
-                color = LocalPalette.current.textDisabled,
+                color = when {
+                    pressed -> palette.accentEdge
+                    enabled -> MaterialTheme.colorScheme.onBackground
+                    else -> palette.textDisabled
+                },
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
             )

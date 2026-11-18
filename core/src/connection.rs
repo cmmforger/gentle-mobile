@@ -387,6 +387,31 @@ impl Connection {
         })
     }
 
+    /// Send one batch of key presses to a pane, addressed by its pane id —
+    /// the same `pane.send_keys` the host's `herdr pane send-keys` uses.
+    /// Key names are the daemon's, measured live: `esc`/`tab`/`enter`,
+    /// `up`/`down`/`left`/`right`, `backspace`, `space`, single characters,
+    /// and `ctrl+`/`alt+`/`shift+` prefixed compositions. Success means the
+    /// daemon replied `ok`; a refusal names the daemon's own code.
+    pub fn pane_send_keys(
+        &self,
+        pane_id: &str,
+        keys: &[String],
+    ) -> std::result::Result<(), crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_PANE_SEND_KEYS,
+            crate::requests::send_keys_params(pane_id, keys),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_send_keys(&value).map_err(crate::requests::HubError::Request)
+        })
+    }
+
     /// Disconnect cleanly: stop the vendored client, close the SSH connection,
     /// and join every thread. The event stream ends with an
     /// [`Event::Disconnected`].

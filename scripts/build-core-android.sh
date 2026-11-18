@@ -45,11 +45,11 @@ cargo run -q -p "$CRATE" --bin uniffi-bindgen -- generate \
     --config "core/uniffi.toml" \
     --language kotlin \
     --out-dir "$GEN_DIR"
-rm -rf "$KOTLIN_SRC/com/gentlemanprogramming/gentlecompanion/core"
-mkdir -p "$KOTLIN_SRC/com/gentlemanprogramming/gentlecompanion"
-cp -r "$GEN_DIR/com/gentlemanprogramming/gentlecompanion/core" \
-    "$KOTLIN_SRC/com/gentlemanprogramming/gentlecompanion/"
-echo "   generated $(find "$KOTLIN_SRC/com/gentlemanprogramming/gentlecompanion/core" -name '*.kt' | wc -l) Kotlin file(s)"
+rm -rf "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile/core"
+mkdir -p "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile"
+cp -r "$GEN_DIR/com/gentlemanprogramming/gentlemobile/core" \
+    "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile/"
+echo "   generated $(find "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile/core" -name '*.kt' | wc -l) Kotlin file(s)"
 
 echo "== 3/4 cross-compile: x86_64-linux-android (emulator) + aarch64-linux-android (phone)"
 cargo build -p "$CRATE" --release --target x86_64-linux-android
