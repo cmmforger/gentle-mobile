@@ -66,6 +66,20 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   Also stated in this decision: the Pair screen must match `design/gentle-companion/01-pair.html`, not a
   developer form — the design is the contract for what gets built.
 
+- **S21 — Design fidelity checklist (what "as designed" means, board by board).**
+  The human's rule: nothing gets installed until the app matches the boards we made. Tracked as:
+  | Board | State |
+  |---|---|
+  | `01-pair` | done — identity, host command, `gc://` link, camera scanner |
+  | splash (in `01`) | in progress — mark, wordmark, progress line, hides when ready |
+  | `07-settings` | in progress — security, connection selector, theme, about, revoke |
+  | `06-themes` | in progress — three palettes, live preview, persisted choice |
+  | `03-inbox` | missing — grouped `needs you` → `done` → `working` → `idle` with group labels |
+  | `02-nodes` | missing — hosts with group and state before the agent list |
+  | `04-session` | partial — terminal and composer exist; the extra-key row does not |
+  | `05-compose` | missing — attachments and dictation are later features (T13/T14) |
+  An element the core cannot support yet is rendered in its honest unavailable state, never faked.
+
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
 
