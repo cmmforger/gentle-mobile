@@ -207,6 +207,21 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   "no tomes una decision sin antes indicarme"; "no programes, veamos todo lo necesario para ver
   el plan, cualquier duda me dices".
 
+- **S27 — Third phone test: the terminal must fit the phone, and the session chrome must disappear.**
+  1. **Fit instead of scroll**: the whole `80xN` frame must be visible on the phone — scale the cells down until the full
+     frame fits the card width (and the visible height), like Moshi. Today 10 sp with horizontal scroll hides most of the
+     information. Nothing may be cropped; no sideways scrolling to see the rest of a line.
+  2. **Wider card, smaller margins**: the terminal card loses side padding so the frame uses the phone's width.
+  3. **No measurement line**: `80x24 · 1065 drawn cells · 10 colours · wide "…"` goes away entirely.
+  4. **Quiet header buttons**: the back and refresh glyphs are small and muted, not two big pink arrows. Touch targets stay
+     44 dp even when the glyph is 18–20 dp.
+  5. **Never the word `pi`**: the session title is the project name the human recognises, never the agent kind.
+  6. **No explanatory line**: `live · what the agent shows right now` goes away; the space belongs to the terminal.
+  7. **The workspace's tabs**: the card's top strip shows the tabs of the current workspace so the human can switch between
+     them, instead of a numbered bar that does nothing.
+  8. **The other projects**: the workspaces surface lists the projects the human is *not* in too, and offers the `+` to
+     create one, so switching or starting is one tap. The word `Idle` is removed.
+
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -261,6 +276,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T19 | v1 packaging: signed APK release, what's-new page, sideload instructions, iOS target kept building | S10 | inline | — |
 | T20 | **Deferred (S16):** optional upstream ask for B-ii, a minimal `--attach-stdio` bridge for `gentle-shell-gpui`, after a `LICENSE` file exists. Not scheduled. | S3 S13 S16 | inline | — |
 | T21 | Continuity (v1.5): list the host's Gentle Shell sessions and resume a closed one, with a guard that refuses a session another process holds | S15 | worker | — |
+| T22 | Third phone test corrections: fit the frame to the phone, wider card, no measurement or `live` lines, quiet header glyphs, project name only, the workspace's tabs, and the full project list with `+` | S27 | worker | — |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
