@@ -196,6 +196,7 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import com.gentlemanprogramming.gentlemobile.ui.theme.ThemeStore
 import com.gentlemanprogramming.gentlemobile.ui.terminal.CardSurface
+import com.gentlemanprogramming.gentlemobile.ui.terminal.ComposerCrop
 import com.gentlemanprogramming.gentlemobile.ui.terminal.PanePresentation
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFit
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMaxSp
@@ -499,8 +500,16 @@ private class ScreenState {
 private class SessionUi {
     var pane by mutableStateOf<PaneReadDto?>(null)
     var readError by mutableStateOf<String?>(null)
-    /** The latest grid from the surface stream; `null` until the host rendered one. */
+    /** The latest grid from the surface stream; `null` until the host rendered one.
+     *  Stored already passed through [ComposerCrop] (S29): the desktop composer
+     *  rows are gone, the freed space padded blank at the top. */
     var surface by mutableStateOf<SurfaceDto?>(null)
+    /** S29: the rows the last frame's composer crop removed — the blank
+     *  padding at the top of the stored grid. Per-frame, not sticky: the fit
+     *  must match the frame it is fitting, and the request no longer depends
+     *  on it (ComposerCrop.requestRows takes the full allowance). Cleared
+     *  when the connection is. */
+    var composerCropRows by mutableStateOf(0)
     /** The workspace's own tabs (S27-7): from the snapshot the daemon keeps
      *  sending while the session is open — the strip's rows and the
      *  pane→tab map a tap needs. Empty until the first snapshot. */
@@ -588,6 +597,8 @@ private class SessionUi {
         // must ask (PanePresentation).
         askedCols = null
         askedRows = null
+        // A fresh connection knows no crop yet: the first frames re-detect it.
+        composerCropRows = 0
         // A dead connection cannot keep a recognizer: any dictation in
         // flight is cancelled honestly (its partial is never committed).
         if (dictationController.state is DictationState.Listening ||
@@ -3307,7 +3318,24 @@ private fun pollSurface(
                         surface != null &&
                         (previous == null || surface.revision != previous.revision)
                     ) {
-                        sessionUi.surface = surface
+                        // S29: the stored frame is the cropped one — every
+                        // consumer (this screen's renderer, the fit, the
+                        // reconnect path) sees the composer gone, and a tab
+                        // rebind or reconnect re-runs the detection here.
+                        val cropped = ComposerCrop.crop(surface)
+                        sessionUi.surface = cropped.surface
+                        sessionUi.composerCropRows = cropped.removedRows
+                        // S29/T44 diagnosis: what came back, what the
+                        // detector decided, and the window's text (debug
+                        // builds only, S23).
+                        Log.i(
+                            TAG,
+                            "composer crop: rows returned=${surface.height} of asked=${sessionUi.askedRows} " +
+                                "cols=${surface.width} removed=${cropped.removedRows}",
+                        )
+                        for (row in maxOf(0, surface.height.toInt() - ComposerCrop.WINDOW) until surface.height.toInt()) {
+                            Log.i(TAG, "composer crop row $row: ${ComposerCrop.rowText(surface, row)}")
+                        }
                     }
                 }
                 val ended = try {
@@ -3702,6 +3730,11 @@ private fun SessionScreen(
                 val density = LocalDensity.current
                 val cols = surface.width.toInt().coerceAtLeast(1)
                 val rows = surface.height.toInt().coerceAtLeast(1)
+                // S29: the frame's content rows — the grid minus the rows the
+                // composer crop freed (blank padding at the top). The fit sizes
+                // the font for the content, not for the padding, so the freed
+                // height becomes conversation at the same readable size.
+                val contentRows = (rows - sessionUi.composerCropRows).coerceAtLeast(1)
                 // Measured advance (S27b): what the font really paints, not
                 // the nominal ratio — measure a run of M's at a reference
                 // size and derive the painted em fraction. The renderer
@@ -3728,7 +3761,7 @@ private fun SessionScreen(
                 // frame's size changes, then the fit rules again.
                 val fit = TerminalFit.fit(
                     cols,
-                    rows,
+                    contentRows,
                     constraints.maxWidth.toFloat(),
                     constraints.maxHeight.toFloat(),
                     metrics.advanceRatio,
@@ -3755,7 +3788,14 @@ private fun SessionScreen(
                     maxFontPx = maxPx,
                     advanceRatioOverride = maxOf(metrics.advanceRatio, painted),
                 )
-                LaunchedEffect(cardSurface.cols, cardSurface.rows, agent.paneId) {
+                // S29: the pane is asked for the derived rows PLUS the FULL
+                // crop allowance — never the measured removed rows, which are
+                // 0 on the first pass and kept the freed rows from ever coming
+                // back (measured defect, T44). The host keeps painting the
+                // composer, the phone crops it, and the cropped frame still
+                // holds at least the derived rows, so it fills the card.
+                val targetRows = ComposerCrop.requestRows(cardSurface.rows)
+                LaunchedEffect(cardSurface.cols, targetRows, agent.paneId) {
                     // S28-3, third round: the pane and the painted frame must
                     // be the same width — measured on the host and read from
                     // the daemon's source, a resize from a client that never
@@ -3769,7 +3809,7 @@ private fun SessionScreen(
                         sessionUi.askedCols,
                         sessionUi.askedRows,
                         cardSurface.cols,
-                        cardSurface.rows,
+                        targetRows,
                     )
                     if (request != null) {
                         val cols = request.cols.toUShort()
@@ -3811,7 +3851,7 @@ private fun SessionScreen(
                     TAG,
                     "card surface: card=${constraints.maxWidth}x${constraints.maxHeight} " +
                         "cell=${cardSurface.cellWidthPx}x${cardSurface.cellHeightPx}px " +
-                        "grid=${cardSurface.cols}x${cardSurface.rows} " +
+                        "grid=${cardSurface.cols}x${cardSurface.rows} targetRows=$targetRows " +
                         "fill=${cardSurface.gridWidthPx / constraints.maxWidth.toFloat()}x" +
                         "${cardSurface.gridHeightPx / constraints.maxHeight.toFloat()} " +
                         "fontPx=${cardSurface.fontPx}",
