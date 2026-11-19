@@ -148,7 +148,6 @@
     <string name="cd_mic_permission">Dictar — esperando el permiso del micrófono</string>
     <string name="cd_mic">Dictar — tu voz se convierte en texto</string>
     <string name="cd_mic_reason">Dictar — tu voz se convierte en texto. %1$s</string>
-    <string name="dictation_permission_explanation">El dictado escucha tu voz y la escribe como texto en el campo — no se graba ni se guarda nada.</string>
 
     <!-- Adjuntos -->
     <string name="att_preview_of">Vista previa de %1$s</string>
@@ -335,10 +334,12 @@
 
     <!-- Motivos del motor de dictado -->
     <string name="dict_no_recognizer">No hay un reconocedor de voz instalado en este dispositivo — el dictado no está disponible.</string>
-    <string name="dict_start_failed">El reconocedor no pudo arrancar: %1$s</string>
+    <string name="dict_start_failed">El dictado no pudo arrancar — probá de nuevo.</string>
     <string name="dict_no_speech">No se escuchó nada — no se dictó nada.</string>
     <string name="dict_silent">No se escuchó nada — el micrófono quedó callado.</string>
-    <string name="dict_permission_refused">El permiso del micrófono fue rechazado, así que no se escuchó nada.</string>
+    <string name="dict_permission_refused">Permiso de micrófono denegado — no se grabó nada.</string>
+    <string name="dict_permission_permanent">El permiso de micrófono está denegado — abrí Ajustes para permitir el micrófono.</string>
+    <string name="dict_permission_open_settings">Abrir ajustes</string>
     <string name="dict_network_failed">El servicio de red del reconocedor falló — el motor en el dispositivo lo evita.</string>
     <string name="dict_busy">El reconocedor estaba ocupado — probá de nuevo en un momento.</string>
     <string name="dict_failed">El dictado falló (error de reconocedor %1$d).</string>

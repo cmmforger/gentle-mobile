@@ -15,7 +15,9 @@ package com.gentlemanprogramming.gentlemobile.ui.session
  *
  * * idle → requesting permission (only when the engine needs RECORD_AUDIO)
  *   → listening (with a partial transcript and an elapsed clock) → finished;
- * * plus denied (permission refused), unavailable (no recognizer / no
+ * * plus denied (permission refused — the exact refusal sentence, never the
+ *   request explanation), permanentlyDenied (the system will no longer show
+ *   the dialog: the line points at Settings), unavailable (no recognizer / no
  *   model) and error (recognition failed) — each carrying the exact reason
  *   the line under the composer must show, never a silent no-op.
  *
@@ -28,8 +30,9 @@ sealed interface DictationState {
     /** Nothing happening; the accent circle is the microphone. */
     data object Idle : DictationState
 
-    /** The system permission dialog is up; [explanation] is why we ask. */
-    data class RequestingPermission(val explanation: String) : DictationState
+    /** The system permission dialog is up; the message area stays empty —
+     *  the icon's accessibility label already says what is happening. */
+    data object RequestingPermission : DictationState
 
     /** The recognizer is listening; [partial] is the transcript so far. */
     data class Listening(val partial: String?, val startedAtMillis: Long) : DictationState
@@ -37,8 +40,12 @@ sealed interface DictationState {
     /** Dictation ended; whatever was committed is already in the field. */
     data object Finished : DictationState
 
-    /** The user refused the microphone; the mic stays disabled with the reason. */
+    /** The user refused the microphone; the mic stays disabled with the exact refusal. */
     data class Denied(val explanation: String) : DictationState
+
+    /** The system will no longer show the dialog (denied permanently); the line
+     *  points at the system settings, and the mic tap opens them. */
+    data class PermanentlyDenied(val reason: String) : DictationState
 
     /** No recognizer or no model; the mic stays disabled with the reason. */
     data class Unavailable(val reason: String) : DictationState
@@ -53,9 +60,51 @@ sealed interface DictationState {
  */
 fun DictationState?.disabledReason(): String? = when (this) {
     is DictationState.Denied -> explanation
+    is DictationState.PermanentlyDenied -> reason
     is DictationState.Unavailable -> reason
     is DictationState.Error -> message
     else -> null
+}
+
+/** The recognizer seam, behind the shared session: the real
+ *  [AndroidDictationEngine] implements it; the tests drive a fake. The
+ *  session's contract with the phone: [start] may only ever be called after
+ *  the permission gate returned granted — never before. */
+interface DictationEngine {
+    interface Listener {
+        /** A partial transcript; it replaces the previous one in the field. */
+        fun onPartial(text: String)
+
+        /** The final transcript; it replaces every partial. */
+        fun onFinal(text: String)
+
+        /** Recognition failed; [message] is the honest reason to show. */
+        fun onError(message: String)
+    }
+
+    /** True while the microphone permission is not granted yet. */
+    val needsPermission: Boolean
+
+    /** The exact line when the permission was refused (S24-9). */
+    val refusalMessage: String
+
+    /** The exact line when the system will not show the dialog any more. */
+    val permanentlyRefusedMessage: String
+
+    /** `null` when a recognizer can start; otherwise the exact reason. */
+    fun availabilityReason(): String?
+
+    /** Construct and start the recognizer. Gate first, this after. */
+    fun start(listener: Listener)
+
+    /** The user pressed Stop. */
+    fun stop()
+
+    /** The user pressed Cancel. */
+    fun cancel()
+
+    /** The screen went away. */
+    fun dispose()
 }
 
 /** The state plus the field text a transition leaves behind. */
@@ -83,15 +132,16 @@ class DictationController(private val clock: () -> Long = System::currentTimeMil
     /**
      * The microphone was tapped. [currentDraft] is captured as the base the
      * dictation builds on; [needsPermission] decides whether the permission
-     * gate is shown first; [explanation] is the honest reason, shown while
-     * requesting and again if permission is denied.
+     * gate is shown first. No explanation copy: the message area is empty
+     * while the dialog is up (S24-9 amendment) — the mic icon already says
+     * what it does.
      */
-    fun begin(currentDraft: String, needsPermission: Boolean, explanation: String): DictationUpdate {
+    fun begin(currentDraft: String, needsPermission: Boolean): DictationUpdate {
         baseDraft = currentDraft
         committedText = null
         partialText = null
         state = if (needsPermission) {
-            DictationState.RequestingPermission(explanation)
+            DictationState.RequestingPermission
         } else {
             DictationState.Listening(partial = null, startedAtMillis = clock())
         }
@@ -106,12 +156,17 @@ class DictationController(private val clock: () -> Long = System::currentTimeMil
         return DictationUpdate(state, currentDraft())
     }
 
-    /** The system refused the microphone: disabled, with the same why. */
-    fun onPermissionDenied(): DictationUpdate {
-        val explanation = (state as? DictationState.RequestingPermission)?.explanation
-            ?: (state as? DictationState.Denied)?.explanation
-            ?: ""
-        state = DictationState.Denied(explanation)
+    /** The system refused the microphone: disabled, with the exact refusal
+     *  sentence (S24-9) — never the request explanation. */
+    fun onPermissionDenied(refusal: String): DictationUpdate {
+        state = DictationState.Denied(refusal)
+        return DictationUpdate(state, currentDraft())
+    }
+
+    /** The system will not show the dialog again: disabled, pointing at
+     *  the settings the user must open (S24-9). */
+    fun onPermissionPermanentlyDenied(refusal: String): DictationUpdate {
+        state = DictationState.PermanentlyDenied(refusal)
         return DictationUpdate(state, currentDraft())
     }
 
@@ -169,6 +224,27 @@ class DictationController(private val clock: () -> Long = System::currentTimeMil
         state = DictationState.Error(message)
         partialText = null
         return DictationUpdate(state, if (hadUncommitted) baseDraft else currentDraft())
+    }
+
+    /**
+     * The result message's four seconds are over (S24-9 amendment): the
+     * line clears itself — a refusal, an unavailable recognizer or an error
+     * is transient, never standing copy. The state returns to idle with
+     * nothing to report and the field text is kept exactly as it is. A
+     * permanent denial is sticky and never expires here; active states are
+     * untouched.
+     */
+    fun onMessageExpired(): DictationUpdate {
+        if (state is DictationState.Denied ||
+            state is DictationState.Unavailable ||
+            state is DictationState.Error
+        ) {
+            baseDraft = currentDraft()
+            committedText = null
+            partialText = null
+            state = DictationState.Idle
+        }
+        return DictationUpdate(state, currentDraft())
     }
 
     /** The field text this machine believes the composer holds: the base

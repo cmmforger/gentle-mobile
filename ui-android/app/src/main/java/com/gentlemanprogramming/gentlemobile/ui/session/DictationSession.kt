@@ -1,30 +1,51 @@
 package com.gentlemanprogramming.gentlemobile.ui.session
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 
 /**
  * T14 (S8): one shared dictation session — the engine, the permission gate
  * and the state machine wired together, used identically by the live
  * session screen and the fixture so there is exactly one flow to verify.
  *
- * The sequence: tap → the machine goes to requesting-permission (only when
- * RECORD_AUDIO is not granted) → the system dialog → granted starts the
- * recognizer and listening begins; refused lands on the disabled state
- * carrying the same explanation. Partials fill the field as they arrive,
- * the final replaces them, Stop commits and Cancel discards.
+ * The sequence (S24-9): tap → availability gate → the system permission
+ * request (a real `RequestPermission` launcher) **before** any recognizer
+ * is constructed → granted starts the recognizer and listening begins;
+ * refused lands on [DictationState.Denied] with the exact refusal line.
+ * If the system has fixed the refusal (two denials — the dialog would
+ * never appear again), the next tap lands on [DictationState.PermanentlyDenied]
+ * pointing at the settings, and the mic tap opens them instead of launching
+ * a dialog that cannot come. Partials fill the field as they arrive, the
+ * final replaces them, Stop commits and Cancel discards.
+ *
+ * The line above the composer is a message area, empty by default (S24-9
+ * amendment): it shows text only when there is something the icon cannot
+ * say — a refusal, an unavailable recognizer, an error, the listening
+ * state itself. No idle copy.
  */
 class DictationSession(
     private val controller: DictationController,
     private val onApply: (DictationUpdate) -> Unit,
-    private val engine: AndroidDictationEngine,
+    private val engine: DictationEngine,
     private val requestPermission: () -> Unit,
+    /** True when the system will never show the dialog again for this app. */
+    private val isPermanentlyDenied: () -> Boolean,
+    private val openSettings: () -> Unit,
 ) {
-    val listener = object : AndroidDictationEngine.Listener {
+    /** Set after the first refusal; the permanence check needs it, because
+     *  a never-asked permission also reports no-rationale. */
+    private var refusedOnce = false
+
+    val listener = object : DictationEngine.Listener {
         override fun onPartial(text: String) = onApply(controller.onPartial(text))
         override fun onFinal(text: String) = onApply(controller.onFinal(text))
         override fun onError(message: String) = onApply(controller.onError(message))
@@ -37,29 +58,38 @@ class DictationSession(
             onApply(controller.onUnavailable(reason))
             return
         }
-        val update = controller.begin(
-            currentDraft,
-            needsPermission = engine.needsPermission,
-            explanation = engine.permissionExplanation,
-        )
-        onApply(update)
-        if (update.state is DictationState.Listening) {
-            engine.start(listener)
-        } else {
+        if (engine.needsPermission) {
+            // A permanently fixed refusal: the dialog cannot come, so the
+            // tap lands on the settings pointer instead of a silent no-op.
+            if (refusedOnce && isPermanentlyDenied()) {
+                onApply(controller.onPermissionPermanentlyDenied(engine.permanentlyRefusedMessage))
+                return
+            }
+            onApply(controller.begin(currentDraft, needsPermission = true))
             requestPermission()
+            return
         }
+        onApply(controller.begin(currentDraft, needsPermission = false))
+        engine.start(listener)
     }
 
-    /** The system dialog answered; granted starts the recognizer. */
+    /** The system dialog answered; granted starts the recognizer — only now. */
     fun onPermissionResult(granted: Boolean) {
-        val update = if (granted) {
-            controller.onPermissionGranted()
-        } else {
-            controller.onPermissionDenied()
+        if (!granted) {
+            refusedOnce = true
+            onApply(controller.onPermissionDenied(engine.refusalMessage))
+            return
         }
-        onApply(update)
-        if (granted) engine.start(listener)
+        onApply(controller.onPermissionGranted())
+        engine.start(listener)
     }
+
+    /** The settings pointer's action (and the mic tap while permanently denied). */
+    fun openPermissionSettings() = openSettings()
+
+    /** The transient result message's four seconds are over: clear it —
+     *  the text stays, only the line above the composer goes. */
+    fun dismissMessage() = onApply(controller.onMessageExpired())
 
     /** Stop: the last partial commits now; the final result still lands. */
     fun stop() {
@@ -99,10 +129,38 @@ fun rememberDictationSession(
             requestPermission = {
                 permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
             },
+            isPermanentlyDenied = {
+                // Only meaningful after a refusal (the session guards it):
+                // no rationale wanted means the system fixed the denial.
+                context.findActivity()
+                    ?.let { activity ->
+                        !activity.shouldShowRequestPermissionRationale(
+                            android.Manifest.permission.RECORD_AUDIO,
+                        )
+                    } ?: false
+            },
+            openSettings = {
+                context.findActivity()?.let { activity ->
+                    activity.startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", activity.packageName, null),
+                        ),
+                    )
+                }
+            },
         ).also { holder.clear(); holder.add(it) }
     }
     DisposableEffect(session) {
         onDispose { session.dispose() }
     }
     return session
+}
+
+/** LocalContext may be the locale-wrapped context (S24-1): unwrap the chain
+ *  to the Activity the permission APIs and the settings screen need. */
+private tailrec fun Context.findActivity(): android.app.Activity? = when (this) {
+    is android.app.Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

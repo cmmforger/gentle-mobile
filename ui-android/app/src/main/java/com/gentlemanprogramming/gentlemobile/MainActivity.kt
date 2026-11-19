@@ -252,6 +252,9 @@ class MainActivity : FragmentActivity() {
         // surface so terminal geometry can be iterated without an SSH host, a
         // host-key challenge or a live agent.
         val showFixture = intent?.getBooleanExtra("fixture", false) == true
+        // S24-9: geometry on screen only behind this second extra; normally
+        // the fixture logs it instead (logcat -s Fixture).
+        val showFixtureDebug = intent?.getBooleanExtra("fixture_debug", false) == true
         // Debug-only, per-launch override used by the tests; absent in release.
         val devSessionsDirOverride =
             if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
@@ -287,7 +290,9 @@ class MainActivity : FragmentActivity() {
             ) {
                 GentleMobileTheme(appTheme) {
                 if (showFixture) {
-                    com.gentlemanprogramming.gentlemobile.ui.terminal.FixtureTerminal()
+                    com.gentlemanprogramming.gentlemobile.ui.terminal.FixtureTerminal(
+                        debugInfo = showFixtureDebug,
+                    )
                 } else {
                     // The identity key lives in app-private storage now. The
                     // legacy external copy (the old adb-push path) is migrated
@@ -3021,6 +3026,8 @@ private fun SessionScreen(
             onStartDictation = { dictationSession.start(sessionUi.draft) },
             onStopDictation = { dictationSession.stop() },
             onCancelDictation = { dictationSession.cancel() },
+            onOpenSettings = { dictationSession.openPermissionSettings() },
+            onDismissMessage = { dictationSession.dismissMessage() },
             onRetryUpload = { id ->
                 val uri = sessionUi.attachmentUris[id]
                 if (uri != null) {

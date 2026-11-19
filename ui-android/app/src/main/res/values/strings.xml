@@ -147,7 +147,6 @@
     <string name="cd_mic_permission">Dictate — waiting for the microphone permission</string>
     <string name="cd_mic">Dictate — speech becomes text</string>
     <string name="cd_mic_reason">Dictate — speech becomes text. %1$s</string>
-    <string name="dictation_permission_explanation">Dictation hears your voice and types it as text in the field — nothing is recorded or kept.</string>
 
     <!-- Attachments -->
     <string name="att_preview_of">Preview of %1$s</string>
@@ -334,10 +333,12 @@
 
     <!-- Dictation engine reasons -->
     <string name="dict_no_recognizer">No speech recognizer is installed on this device — dictation is unavailable.</string>
-    <string name="dict_start_failed">The recognizer could not start: %1$s</string>
+    <string name="dict_start_failed">Dictation could not start — try again.</string>
     <string name="dict_no_speech">No speech heard — nothing was dictated.</string>
     <string name="dict_silent">No speech heard — the microphone stayed quiet.</string>
-    <string name="dict_permission_refused">The microphone permission was refused, so nothing was heard.</string>
+    <string name="dict_permission_refused">Microphone permission was refused — nothing was recorded.</string>
+    <string name="dict_permission_permanent">Microphone permission is turned off — open Settings to allow the microphone.</string>
+    <string name="dict_permission_open_settings">Open settings</string>
     <string name="dict_network_failed">The recognizer\u2019s network service failed — the on-device engine avoids this.</string>
     <string name="dict_busy">The recognizer was busy — try again in a moment.</string>
     <string name="dict_failed">Dictation failed (recognizer error %1$d).</string>

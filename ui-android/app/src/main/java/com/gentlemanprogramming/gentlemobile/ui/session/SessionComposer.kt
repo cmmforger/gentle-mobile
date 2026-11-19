@@ -68,10 +68,18 @@ import kotlinx.coroutines.delay
  * `05-compose.html`: while listening, a quiet line above the composer shows
  * the partial transcript in italics, the elapsed time, and Stop (plus
  * Cancel); partials fill the field as they arrive and the final result
- * replaces them. Every honest failure — permission denied, no recognizer,
- * recognition error — keeps the microphone disabled with that exact reason
- * on the line below, never a silent no-op. The circle returns to the send
- * triangle as soon as the field has text.
+ * replaces them. Every honest failure — permission denied (with a settings
+ * pointer when permanent), no recognizer, recognition error — keeps the
+ * microphone disabled with that exact reason on the line below, never a
+ * silent no-op. The circle returns to the send triangle as soon as the
+ * field has text.
+ *
+ * S24-9 amendment: the line above the composer is a message area, empty by
+ * default. It shows text only when there is something the mic icon cannot
+ * say — a refusal, a permanent refusal (with the settings action), an
+ * unavailable recognizer, an error, the listening state itself — and it
+ * disappears when the state returns to idle with nothing to report. No
+ * idle copy, no standing explanation paragraph.
  *
  * Honesty rules:
  * * a send exists only while every attachment has landed: a failed
@@ -98,6 +106,8 @@ fun SessionComposer(
     onStartDictation: () -> Unit,
     onStopDictation: () -> Unit,
     onCancelDictation: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onDismissMessage: () -> Unit,
     onRetryUpload: (Long) -> Unit,
     onRemoveAttachment: (Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -140,10 +150,10 @@ fun SessionComposer(
         if (attachments.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
         }
-        // T14: the dictation lines, per 05-compose.html — while listening a
-        // quiet line with the partial transcript and Stop; any honest
-        // failure (permission denied, no recognizer, error) shows its exact
-        // reason on the line below, never silently.
+        // T14: the dictation message area (S24-9 amendment) — empty by
+        // default, text only when there is something the icon cannot say:
+        // the listening line, a refusal, a permanent refusal with the
+        // settings action, an unavailable recognizer, an error.
         when (val dictationState = dictation) {
             is DictationState.Listening -> DictationListeningLine(
                 partial = dictationState.partial,
@@ -151,11 +161,23 @@ fun SessionComposer(
                 onStop = onStopDictation,
                 onCancel = onCancelDictation,
             )
-            is DictationState.RequestingPermission -> DictationReasonLine(dictationState.explanation)
+            is DictationState.PermanentlyDenied -> DictationReasonLine(
+                reason = dictationState.reason,
+                actionLabel = stringResource(R.string.dict_permission_open_settings),
+                onAction = onOpenSettings,
+                // Sticky by rule: the user must act on it.
+            )
             else -> {
                 val reason = dictation.disabledReason()
                 if (reason != null) {
+                    // A refusal, an unavailable recognizer or an error is a
+                    // result message, not standing copy: it shows for about
+                    // four seconds and clears itself (S24-9 amendment).
                     DictationReasonLine(reason)
+                    LaunchedEffect(dictation) {
+                        delay(MESSAGE_TRANSIENT_MS)
+                        onDismissMessage()
+                    }
                 }
             }
         }
@@ -179,11 +201,15 @@ fun SessionComposer(
                 onSend = onSend,
                 onStartDictation = onStartDictation,
                 onStopDictation = onStopDictation,
+                onOpenSettings = onOpenSettings,
             )
         }
         Spacer(Modifier.height(4.dp))
     }
 }
+
+/** How long a transient result message stays before it clears itself. */
+private const val MESSAGE_TRANSIENT_MS = 4_000L
 
 /**
  * The listening line, per 05-compose.html's `.listen`: a 2 px accent bar on
@@ -262,16 +288,39 @@ private fun DictationAction(label: String, tint: Color, enabled: Boolean, onClic
     }
 }
 
-/** The exact honest reason (permission, availability, error) on one quiet line. */
+/**
+ * The exact honest reason (refusal, availability, error) on one quiet line —
+ * part of the S24-9 message area, so it exists only while there is a reason.
+ * [actionLabel] renders a tappable action beside it (the settings pointer).
+ */
 @Composable
-private fun DictationReasonLine(reason: String) {
+private fun DictationReasonLine(
+    reason: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
     val palette = LocalPalette.current
-    Text(
-        text = reason,
-        color = palette.muted,
-        fontSize = 11.sp,
-        fontFamily = FontFamily.Monospace,
-    )
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = reason,
+            color = palette.muted,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (actionLabel != null && onAction != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = actionLabel,
+                color = palette.accentEdge,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clickable(onClick = onAction)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+    }
 }
 
 /** The blocking rule, shared with the queue: nothing may send while any
@@ -515,22 +564,27 @@ private fun ComposerCircle(
     onSend: () -> Unit,
     onStartDictation: () -> Unit,
     onStopDictation: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val palette = LocalPalette.current
     val sendEnabled = canSend && !sending
     val sendCd = stringResource(R.string.cd_send)
     val sendWaitingCd = stringResource(R.string.cd_send_waiting)
     // A tap on the circle during dictation stops it; the listening line's
-    // Stop and Cancel buttons are the explicit path too.
+    // Stop and Cancel buttons are the explicit path too. After a permanent
+    // refusal the tap opens the settings — the dialog cannot come again.
     val listening = dictation is DictationState.Listening
     val micStartable = dictation is DictationState.Idle ||
         dictation is DictationState.Finished ||
         dictation is DictationState.Denied ||
+        dictation is DictationState.PermanentlyDenied ||
         dictation is DictationState.Error
     val micEnabled = listening || micStartable
     val micDescription = when (dictation) {
         is DictationState.Listening -> stringResource(R.string.cd_mic_stop)
         is DictationState.RequestingPermission -> stringResource(R.string.cd_mic_permission)
+        is DictationState.PermanentlyDenied ->
+            stringResource(R.string.cd_mic_reason, dictation.reason)
         is DictationState.Denied ->
             stringResource(R.string.cd_mic_reason, dictation.explanation)
         is DictationState.Unavailable ->
@@ -555,7 +609,13 @@ private fun ComposerCircle(
             .size(44.dp)
             .clip(CircleShape)
             .background(palette.accent)
-            .clickable(onClick = if (listening) onStopDictation else onStartDictation)
+            .clickable(
+                onClick = when {
+                    listening -> onStopDictation
+                    dictation is DictationState.PermanentlyDenied -> onOpenSettings
+                    else -> onStartDictation
+                },
+            )
             .semantics { contentDescription = micDescription }
         else -> Modifier
             .size(44.dp)

@@ -34,6 +34,10 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
  * iterate on the terminal geometry without an SSH connection, a host key
  * challenge or a live agent. It is development scaffolding: the real screen
  * always draws what the host sent.
+ *
+ * S24-9: the surface prints nothing about itself on the screen — the header
+ * read as app UI. The geometry goes to logcat (`adb logcat -s Fixture`); pass
+ * `--ez fixture_debug true` to draw it for a geometry check.
  */
 private const val COLS = 80
 private const val ROWS = 24
@@ -100,9 +104,9 @@ fun fixtureSurface(): SurfaceDto {
 }
 
 @Composable
-fun FixtureTerminal(modifier: Modifier = Modifier) {
+fun FixtureTerminal(debugInfo: Boolean = false) {
     BoxWithConstraints(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(LocalPalette.current.bg)
             .windowInsetsPadding(WindowInsets.safeDrawing),
@@ -112,13 +116,22 @@ fun FixtureTerminal(modifier: Modifier = Modifier) {
         val fitPx = maxWidth.value / (COLS * TERMINAL_FONT_RATIO)
         val fontSizePx = fitPx.coerceIn(MIN_READABLE_FONT_PX, 24f)
         val needsScroll = fitPx < MIN_READABLE_FONT_PX
+        // Off the screen (S24-9): the numbers live in logcat, or behind the
+        // fixture_debug extra for a geometry check — never as app UI.
+        val geometry = "fixture · $COLS×$ROWS · font ${"%.1f".format(fontSizePx)}px" +
+            if (needsScroll) " · scroll" else ""
+        androidx.compose.runtime.LaunchedEffect(geometry) {
+            android.util.Log.i("Fixture", geometry)
+        }
         Column(Modifier.fillMaxSize()) {
-            Text(
-                text = "fixture · $COLS×$ROWS · font ${"%.1f".format(fontSizePx)}px" + if (needsScroll) " · scroll" else "",
-                color = LocalPalette.current.muted,
-                fontSize = 11.sp,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (debugInfo) {
+                Text(
+                    text = geometry,
+                    color = LocalPalette.current.muted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             val scroll = if (needsScroll) {
                 Modifier.horizontalScroll(rememberScrollState())
             } else {
@@ -175,6 +188,8 @@ fun FixtureTerminal(modifier: Modifier = Modifier) {
                 onStartDictation = { dictationSession.start(fixtureDraft) },
                 onStopDictation = { dictationSession.stop() },
                 onCancelDictation = { dictationSession.cancel() },
+                onOpenSettings = { dictationSession.openPermissionSettings() },
+                onDismissMessage = { dictationSession.dismissMessage() },
                 onRetryUpload = {},
                 onRemoveAttachment = {},
             )

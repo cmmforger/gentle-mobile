@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.gentlemanprogramming.gentlemobile.R
 
@@ -34,28 +35,18 @@ import com.gentlemanprogramming.gentlemobile.R
  * The callbacks arrive on the main thread; [DictationSession] hands them
  * to the [DictationController], which owns every state decision.
  */
-class AndroidDictationEngine(private val context: Context) {
+class AndroidDictationEngine(private val context: Context) : DictationEngine {
 
-    interface Listener {
-        /** A partial transcript; it replaces the previous one in the field. */
-        fun onPartial(text: String)
+    /** The exact refusal line, in the stored locale (S24-9): plain words,
+     *  never the request explanation reused as a refusal. */
+    override val refusalMessage: String
+        get() = context.getString(R.string.dict_permission_refused)
 
-        /** The final transcript; it replaces every partial. */
-        fun onFinal(text: String)
+    /** The exact line when the system will not show the dialog again (S24-9). */
+    override val permanentlyRefusedMessage: String
+        get() = context.getString(R.string.dict_permission_permanent)
 
-        /** Recognition failed; [message] is the honest reason to show. */
-        fun onError(message: String)
-    }
-
-    /**
-     * True when the microphone permission is not granted yet — the gate for
-     * both recognizer paths, because both record audio while listening.
-     */
-    /** Why dictation asks for the microphone, in the stored locale (S24-1). */
-    val permissionExplanation: String
-        get() = context.getString(R.string.dictation_permission_explanation)
-
-    val needsPermission: Boolean
+    override val needsPermission: Boolean
         get() = ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.RECORD_AUDIO,
@@ -65,7 +56,7 @@ class AndroidDictationEngine(private val context: Context) {
      * `null` when a recognizer can start; otherwise the exact reason the
      * composer must show under the disabled microphone.
      */
-    fun availabilityReason(): String? = when {
+    override fun availabilityReason(): String? = when {
         onDeviceAvailable() -> null
         SpeechRecognizer.isRecognitionAvailable(context) -> null
         else -> context.getString(R.string.dict_no_recognizer)
@@ -78,7 +69,7 @@ class AndroidDictationEngine(private val context: Context) {
      * Start listening. The caller has already routed the permission gate;
      * partials and finals go to [listener] as they arrive.
      */
-    fun start(listener: Listener) {
+    override fun start(listener: DictationEngine.Listener) {
         val recognizer = createRecognizer() ?: run {
             listener.onError(context.getString(R.string.dict_no_recognizer))
             return
@@ -97,13 +88,15 @@ class AndroidDictationEngine(private val context: Context) {
             recognizer.startListening(intent)
         } catch (error: Exception) {
             destroy()
-            listener.onError(
-                context.getString(
-                    R.string.dict_start_failed,
-                    error.message ?: error.javaClass.simpleName,
-                ),
-            )
+            // S24-9: the recognizer's raw error never reaches the screen —
+            // the user sees the plain sentence, the detail stays in the log.
+            Log.w(TAG, "dictation start failed", error)
+            listener.onError(context.getString(R.string.dict_start_failed))
         }
+    }
+
+    private companion object {
+        private const val TAG = "AndroidDictation"
     }
 
     /**
@@ -111,7 +104,7 @@ class AndroidDictationEngine(private val context: Context) {
      * recognizers flush it right after stopListening. The recognizer stays
      * alive until that final (or an error) arrives, or until cancel/dispose.
      */
-    fun stop() {
+    override fun stop() {
         try {
             recognizer?.stopListening()
         } catch (_: Exception) {
@@ -119,7 +112,7 @@ class AndroidDictationEngine(private val context: Context) {
     }
 
     /** The user pressed Cancel: discard the request, nothing is kept. */
-    fun cancel() {
+    override fun cancel() {
         try {
             recognizer?.cancel()
         } catch (_: Exception) {
@@ -128,7 +121,7 @@ class AndroidDictationEngine(private val context: Context) {
     }
 
     /** Release the recognizer; called when the screen goes away. */
-    fun dispose() = destroy()
+    override fun dispose() = destroy()
 
     private var recognizer: SpeechRecognizer? = null
 
@@ -150,7 +143,7 @@ class AndroidDictationEngine(private val context: Context) {
     }
 
     /** Maps the framework callbacks onto the listener's three honest events. */
-    private inner class Bridge(private val listener: Listener) : RecognitionListener {
+    private inner class Bridge(private val listener: DictationEngine.Listener) : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) = Unit
         override fun onBeginningOfSpeech() = Unit
         override fun onRmsChanged(rmsdB: Float) = Unit
