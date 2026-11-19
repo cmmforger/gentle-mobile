@@ -474,3 +474,17 @@ pinned the host fingerprint and reached the real agent list. 42 JVM tests green;
 `CN=Gentle Mobile`. Accepted risk to revisit: `usesCleartextTraffic="true"` is app-wide because the pairing POST
 is plain HTTP to a host unknown in advance; the token is single-use, short-lived and reachable only on the local
 network, and the flag should be narrowed once pairing can use HTTPS.
+
+**L17 (handoff — dictation fixed, work paused for the day):** The dictation path is corrected: the mic tap runs a real
+`RequestPermission` launcher **before** any recogniser is constructed, which is why the dialog never appeared on
+the phone — the recogniser was being built without the grant and its raw error was shown instead. Now: refused,
+permanently refused (with a settings action) and no speech service each have their own sentence, and a result
+message clears itself after four seconds, so nothing sits above the composer. The idle explanatory paragraph is
+deleted from both languages, and the fixture geometry moved to logcat behind `fixture_debug`.
+State: 150+ JVM tests green, build green, commits up to `460b1cd`. Verified so far by screenshot: the system
+permission dialog appears. **Not yet verified after this fix:** the denied / permanently-denied / no-speech
+screens, and a real transcript (needs a phone with a microphone).
+Next session order: multi-host with the Name field already stored (S24-4) → start a session from repositories with
+history (S24-5) → the agent row showing only the project name (S24-8) → cache the sessions index so 200 sessions do
+not take two minutes → then the release APK, which the human releases only on approval (S23).
+
