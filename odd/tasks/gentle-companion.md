@@ -146,6 +146,15 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   `--add-key` command move into a collapsed **Manual setup** block, since with one-scan pairing they are a
   fallback, not the default.
 
+- **S26 — After the second phone test: the app must show the herdr workspace, not only the agents.**
+  1. **Connect error without Tailscale** only said "could not …": unreachable host must be one plain sentence naming the likely cause
+     ("Can't reach 100.96.18.28 — is Tailscale on?"), distinguished from auth refusal and from a wrong port.
+  2. **Workspaces**: the app has no view of the herdr workspace list the human uses on the desk (repos with their branch and
+     status). It must list workspaces (name, branch, ahead/behind, state, agents) and let the human move between them.
+  3. **Add a project**: a `+` that starts a workspace in a chosen path on the host, so a repo without history can be opened.
+  4. **Session header noise**: `Agents` and `Refresh` must be icons, and the cwd under the agent name must be the project name only.
+  5. **Rename a saved host** from the hosts list, not only when creating it: several machines with names the human chooses.
+
 - **S4 — pi-companion is out of scope.**
   "no estamos usando pi-companion".
 
