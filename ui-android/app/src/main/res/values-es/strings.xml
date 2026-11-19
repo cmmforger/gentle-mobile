@@ -89,7 +89,9 @@
     <string name="nodes_meta">%1$s \u00B7 puerto %2$s \u00B7 %3$s</string>
     <string name="nodes_state_row_connected">conectado</string>
     <string name="nodes_state_row_interrupted">interrumpido</string>
-    <string name="nodes_one_host">Por ahora un host por instalación — agregar un segundo host necesita una versión futura.</string>
+    <string name="nodes_state_row_saved">guardado</string>
+    <string name="hosts_add">Agregar un equipo</string>
+    <string name="hosts_empty">Todavía no hay equipos — agregá uno para empezar.</string>
     <string name="nodes_session_history">Historial de sesiones</string>
     <string name="nodes_session_history_sub">Abrí una sesión de Gentle Shell que ya existe en el host.</string>
 

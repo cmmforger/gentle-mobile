@@ -138,6 +138,7 @@ import com.gentlemanprogramming.gentlemobile.core.refreshLease
 import com.gentlemanprogramming.gentlemobile.core.releaseLease
 import com.gentlemanprogramming.gentlemobile.core.resumeSession as coreResumeSession
 import com.gentlemanprogramming.gentlemobile.ui.sessions.HeldLease
+import com.gentlemanprogramming.gentlemobile.ui.AgentActivity
 import com.gentlemanprogramming.gentlemobile.ui.AgentRowModel
 import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.ui.locale.AppLanguage
@@ -153,6 +154,8 @@ import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
 import com.gentlemanprogramming.gentlemobile.pair.ConnectValidator
 import com.gentlemanprogramming.gentlemobile.pair.FingerprintCheck
 import com.gentlemanprogramming.gentlemobile.pair.HostStore
+import com.gentlemanprogramming.gentlemobile.pair.HostsStore
+import com.gentlemanprogramming.gentlemobile.pair.KnownHostsFile
 import com.gentlemanprogramming.gentlemobile.pair.PairClient
 import com.gentlemanprogramming.gentlemobile.pair.PairCommand
 import com.gentlemanprogramming.gentlemobile.pair.PairLink
@@ -160,6 +163,7 @@ import com.gentlemanprogramming.gentlemobile.pair.PairLinkResult
 import com.gentlemanprogramming.gentlemobile.pair.PairParams
 import com.gentlemanprogramming.gentlemobile.pair.QrScannerScreen
 import com.gentlemanprogramming.gentlemobile.pair.SavedHost
+import com.gentlemanprogramming.gentlemobile.pair.SavedHostEntry
 import com.gentlemanprogramming.gentlemobile.security.BiometricDecision
 import com.gentlemanprogramming.gentlemobile.security.BiometricUnlockStore
 import com.gentlemanprogramming.gentlemobile.security.biometricDecision
@@ -298,11 +302,11 @@ class MainActivity : FragmentActivity() {
                     // legacy external copy (the old adb-push path) is migrated
                     // once by DeviceIdentity.ensure, which also generates the
                     // keypair on first launch — no files are pushed any more.
+                    // Host-key trust is per host (S24-4): each saved host owns
+                    // its own known_hosts file, named by [KnownHostsFile].
                     val keyPath = File(filesDir, DeviceIdentity.KEY_FILE).absolutePath
-                    val knownHostsPath = File(filesDir, DeviceIdentity.KNOWN_HOSTS_FILE).absolutePath
                     ConnectScreen(
                         keyPath = keyPath,
-                        knownHostsPath = knownHostsPath,
                         appTheme = appTheme,
                         language = language,
                         onSetLanguage = { chosen ->
@@ -346,6 +350,8 @@ internal val mainHandler = Handler(Looper.getMainLooper())
 private const val TAG = "Supervision"
 
 private sealed interface UiState {
+    /** S24-4: the host list — the app's home when no link is live. */
+    data object Hosts : UiState
     data object Form : UiState
     data object Connecting : UiState
     data object Scanning : UiState
@@ -360,7 +366,7 @@ private sealed interface UiState {
 
 /** Screen state + connect generation, so poll callbacks can stop cleanly. */
 private class ScreenState {
-    var ui by mutableStateOf<UiState>(UiState.Form)
+    var ui by mutableStateOf<UiState>(UiState.Hosts)
     var generation: Int = 0
  /** One session state per agent pane, so drafts survive going back. */
     val sessions = mutableMapOf<String, SessionUi>()
@@ -401,6 +407,14 @@ private class ScreenState {
      *  a session, going back to the host list, replacing the connection — is
      *  provable with a counter that returns to zero. */
     val pollers = PollTracker()
+
+    /** S24-4: the saved host list, in the order hosts were added. Reloaded
+     *  after every save and removal. */
+    var hosts by mutableStateOf<List<SavedHostEntry>>(emptyList())
+
+    /** S24-8: the per-agent last-observed activity this connection has seen;
+     *  reset with every new connection, read by the inbox rows. */
+    val activity = AgentActivity()
 
     /** S24-1: the application context, captured once so messages composed
      *  on the worker threads (errors, drop reasons) can resolve their
@@ -528,7 +542,6 @@ private fun describeResumeFailure(error: Exception): String =
 fun ConnectScreen(
     sessionsDirOverride: String? = null,
     keyPath: String,
-    knownHostsPath: String,
     appTheme: AppTheme,
     language: AppLanguage,
     onSetLanguage: (AppLanguage) -> Unit,
@@ -549,6 +562,9 @@ fun ConnectScreen(
     // first launch with only the SSH port as default.
     val hostStore = remember { HostStore(SharedPreferencesStore(context)) }
     val savedForm = remember { hostStore.load() }
+    // S24-4: the saved host list lives beside the last-used form: the form
+    // prefill stays, and the list is what the app opens on.
+    val hostsStore = remember { HostsStore(SharedPreferencesStore(context)) }
     var hostName by remember { mutableStateOf(savedForm.name) }
     var host by remember { mutableStateOf(savedForm.host) }
     var port by remember { mutableStateOf(savedForm.port) }
@@ -579,19 +595,17 @@ fun ConnectScreen(
             }
         }
     }
-    LaunchedEffect(Unit) { loadIdentity() }
 
-    /** The hosts the core has pinned right now, for the Settings list. */
-    fun refreshHosts() {
-        val generation = screen.generation
-        executor.execute {
-            val hosts = try {
-                listKnownHosts(knownHostsPath)
-            } catch (_: Exception) {
-                emptyList()
-            }
-            mainHandler.post { if (screen.generation == generation) knownHosts = hosts }
-        }
+    /** The saved host list (S24-4): re-read after every save or removal. The
+     *  list is small and local, so a plain read is enough. */
+    fun refreshSavedHosts() {
+        screen.hosts = hostsStore.load()
+    }
+
+    /** The saved host list (S24-4), read once on entry. */
+    LaunchedEffect(Unit) {
+        refreshSavedHosts()
+        loadIdentity()
     }
 
     /** The switch's persisted state plus what this device can enforce. */
@@ -615,6 +629,29 @@ fun ConnectScreen(
             requireBiometricUnlock(activity, biometricStore, biometricDecision, action)
         } else {
             action()
+        }
+    }
+
+    /** The hosts the core has pinned right now, for the Settings list: the
+     *  union of every saved host's own known_hosts file (S24-4) — a pin is
+     *  per host, so the list reads them all. */
+    fun refreshHosts() {
+        val generation = screen.generation
+        executor.execute {
+            val hosts = try {
+                screen.hosts.flatMap { entry ->
+                    val portInt = entry.port.trim().toIntOrNull() ?: return@flatMap emptyList()
+                    val path = File(context.filesDir, KnownHostsFile.fileName(entry.host, portInt))
+                    try {
+                        listKnownHosts(path.absolutePath)
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            mainHandler.post { if (screen.generation == generation) knownHosts = hosts }
         }
     }
 
@@ -723,7 +760,9 @@ fun ConnectScreen(
                 } catch (_: Exception) {
                 }
             }
-            screen.ui = UiState.Form
+            // S24-4: the host list is the home screen — after a disconnect
+            // the app shows the saved hosts, not the Pair form.
+            screen.ui = UiState.Hosts
             screen.machine.reset()
         }
         // S18: disconnecting releases any advisory lease this device holds —
@@ -783,7 +822,12 @@ fun ConnectScreen(
                     val (forgottenHost, port) = target
                     executor.execute {
                         try {
-                            forgetHost(knownHostsPath, forgottenHost, port.toUShort())
+                            // The pin lives in that host's own file (S24-4).
+                            val path = File(
+                                context.filesDir,
+                                KnownHostsFile.fileName(forgottenHost, port),
+                            )
+                            forgetHost(path.absolutePath, forgottenHost, port.toUShort())
                         } catch (_: Exception) {
                         }
                         mainHandler.post { refreshHosts() }
@@ -802,7 +846,7 @@ fun ConnectScreen(
                         knownHosts = emptyList<KnownHostDto>()
                         identity = null
                         identityError = null
-                        screen.ui = UiState.Form
+                        screen.ui = UiState.Hosts
                         screen.machine.reset()
                         route = Route.Main
                         loadIdentity()
@@ -1096,6 +1140,28 @@ fun ConnectScreen(
     }
 
     fun connect(acceptChallenge: UiState.Challenge?, pair: PairParams?) {
+        // S24-4: one live connection at a time. A connect while another host
+        // is live switches hosts: the old link goes down cleanly first —
+        // its pollers stop with the generation bump below, the supervision
+        // machine restarts, the foreground service stops with the state
+        // change, and any advisory lease is handed back.
+        (screen.ui as? UiState.Connected)?.connection?.let { existing ->
+            executor.execute {
+                try {
+                    existing.disconnect()
+                } catch (_: Exception) {
+                }
+            }
+        }
+        (screen.ui as? UiState.Session)?.connection?.let { existing ->
+            executor.execute {
+                try {
+                    existing.disconnect()
+                } catch (_: Exception) {
+                }
+            }
+        }
+        releaseHeldLease(screen)
         screen.generation += 1
         val generation = screen.generation
         // S25-3: the fingerprint pinned by the last applied link, enforced
@@ -1112,6 +1178,14 @@ fun ConnectScreen(
         pairStatus = pair?.let {
             context.getString(R.string.pair_status_pairing, "${it.host}:${it.port}")
         }
+        // S24-4: host-key trust is per host. Each saved host owns its own
+        // known_hosts file — a name derived from the exact host:port — so a
+        // pin on one machine can never satisfy another, even two entries
+        // pointing at the same machine over different addresses.
+        val knownHostsPath = File(
+            context.filesDir,
+            KnownHostsFile.fileName(host, port.trim().toIntOrNull() ?: 0),
+        ).absolutePath
         val profile = HostProfileDto(
             host = host,
             port = port.toUShortOrNull() ?: 0u,
@@ -1230,9 +1304,24 @@ fun ConnectScreen(
                                 // The alert brain re-primes too: the first
                                 // snapshot of THIS connection is the baseline
                                 // (an agent already in needs you never alerts).
+                                // The last-used clock does the same (S24-8).
                                 screen.sessions.values.forEach { it.resetBaseline() }
                                 screen.alertTracker.reset()
+                                screen.activity.reset()
                                 screen.inboxOpen = false
+                                // S24-4: a successful connection saves the
+                                // host with its name — the human's own words,
+                                // falling back to user@host when the field
+                                // was left empty. Same address = a rename.
+                                hostsStore.save(
+                                    SavedHostEntry(
+                                        name = hostName,
+                                        host = host,
+                                        port = port,
+                                        user = user,
+                                    ),
+                                )
+                                refreshSavedHosts()
                                 screen.machine.onLive()
                                 screen.ui = UiState.Connected(connection, snapshot = null)
                                 // T15 (S11): the foreground service keeps the
@@ -1262,6 +1351,42 @@ fun ConnectScreen(
                 }
             }
         }
+    }
+
+    /** Open one saved host (S24-4): switching hosts disconnects the live one
+     *  cleanly first — supervision stops, the foreground service stops, the
+     *  pollers stop — then the same connect path runs for the tapped entry. */
+    fun connectTo(entry: SavedHostEntry) {
+        disconnectLive()
+        hostName = entry.name
+        host = entry.host
+        port = entry.port
+        user = entry.user
+        hostError = null
+        portError = null
+        userError = null
+        pairParams = null
+        linkFingerprint = null
+        pairStatus = null
+        pairLink = ""
+        pairError = null
+        askForNotifications()
+        gated { connect(acceptChallenge = null, pair = null) }
+    }
+
+    /** Open the Pair/Connect screen from the host list (S24-4). The screen
+     *  starts from the last-used form; a successful connection saves the
+     *  host with its name. One live connection at a time: opening the form
+     *  from a live host disconnects it first, honestly. */
+    fun openAddHost() {
+        disconnectLive()
+        hostError = null
+        portError = null
+        userError = null
+        pairParams = null
+        linkFingerprint = null
+        pairStatus = null
+        screen.ui = UiState.Form
     }
 
     /** Open one agent's session screen — the exact path the inbox row and
@@ -1424,6 +1549,26 @@ fun ConnectScreen(
             // gear icon, labelled for screen readers, instead of the repeated
             // `Settings` word.
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                // S24-4: the form and the challenge sit on top of the host
+                // list — the chevron is the way back to it. Not shown on the
+                // list screens themselves (Hosts, Connected): there the chevron
+                // would repeat what the screen already is.
+                val backShown = screen.ui is UiState.Form ||
+                    screen.ui is UiState.Connecting ||
+                    screen.ui is UiState.Failed ||
+                    screen.ui is UiState.Challenge
+                if (backShown) {
+                    val backToHosts = stringResource(R.string.cd_back_to_hosts)
+                    Text(
+                        text = "‹",
+                        color = LocalPalette.current.accent,
+                        fontSize = 20.sp,
+                        modifier = Modifier
+                            .clickable { screen.ui = UiState.Hosts }
+                            .semantics { contentDescription = backToHosts }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 Box(
                     modifier = Modifier
@@ -2086,9 +2231,14 @@ fun ConnectScreen(
                                 if (agents.isNotEmpty()) {
                                     GroupLabel(groupLabelWithCount(label, agents.size), uppercase = false)
                                     agents.forEach { agent ->
-                                        InboxRow(agent, needsYou = needsYou, onOpen = {
-                                            openAgentSession(current, agent)
-                                        })
+                                        InboxRow(
+                                            agent,
+                                            activity = screen.activity,
+                                            needsYou = needsYou,
+                                            onOpen = {
+                                                openAgentSession(current, agent)
+                                            },
+                                        )
                                     }
                                 }
                             }
@@ -2141,8 +2291,11 @@ fun ConnectScreen(
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace,
                         )
-                    } else {
-                        Text(
+                    }
+                    // The host list itself never waits for the first snapshot:
+                    // its rows are local data (S24-4), and only the agent
+                    // count used to need the host's answer.
+                    Text(
                             text = stringResource(R.string.nodes_your_hosts),
                             color = MaterialTheme.colorScheme.onBackground,
                             fontSize = 22.sp,
@@ -2150,28 +2303,36 @@ fun ConnectScreen(
                             fontWeight = FontWeight.Bold,
                         )
                         Spacer(Modifier.height(4.dp))
-                        GroupLabel("$user@$host")
-                        NodeRow(
-                            name = host,
-                            // State as a word, never a stale snapshot rendered
-                            // as if it were live (T8c).
-                            state = if (interrupted != null) {
-                                stringResource(R.string.nodes_state_row_interrupted)
-                            } else {
-                                stringResource(R.string.nodes_state_row_connected)
-                            },
-                            meta = stringResource(
-                                R.string.nodes_meta,
-                                "$user@$host",
-                                port,
-                                pluralStringResource(
-                                    R.plurals.agents_count,
-                                    snapshot.agents.size,
-                                    snapshot.agents.size,
-                                ),
-                            ),
-                            onOpen = { screen.inboxOpen = true },
-                        )
+                        // S24-4: the whole saved host list, in the order the
+                        // hosts were added. The live machine is marked with
+                        // its state word in the accent; the others read
+                        // quietly as saved. Tapping another host switches:
+                        // the live link goes down cleanly first.
+                        screen.hosts.forEach { entry ->
+                            val live = entry.host.equals(host.trim(), ignoreCase = true) &&
+                                entry.port.trim() == port.trim()
+                            NodeRow(
+                                name = entry.name,
+                                state = if (live) {
+                                    if (interrupted != null) {
+                                        stringResource(R.string.nodes_state_row_interrupted)
+                                    } else {
+                                        stringResource(R.string.nodes_state_row_connected)
+                                    }
+                                } else {
+                                    stringResource(R.string.nodes_state_row_saved)
+                                },
+                                stateAccent = live && interrupted == null,
+                                meta = "${entry.user}@${entry.host}:${entry.port}",
+                                onOpen = {
+                                    if (live) {
+                                        screen.inboxOpen = true
+                                    } else {
+                                        connectTo(entry)
+                                    }
+                                },
+                            )
+                        }
                         // T17a (S15): the host's Gentle Shell sessions, listed
                         // over SFTP and lease-guarded — the entry point the
                         // continuity flow starts from. S24-3: plain language —
@@ -2185,17 +2346,75 @@ fun ConnectScreen(
                             onOpen = { route = Route.Sessions },
                         )
                         Spacer(Modifier.height(24.dp))
-                        // Honest empty space, not a dead accent button: a
-                        // second host cannot be added in this build.
-                        Text(
-                            text = stringResource(R.string.nodes_one_host),
-                            color = LocalPalette.current.muted,
-                            fontSize = 13.sp,
-                        )
-                        // Search stays out on purpose: with one host there is
-                        // nothing real for it to filter, so the field would be
-                        // dead chrome (design/system.md redundancy rule).
+                        // The one accent action of the list (S24-4): add a
+                        // host. It opens the Pair/Connect screen; the new
+                        // host is saved with its name on a successful
+                        // connection. Adding from a live host disconnects it
+                        // first — one live connection at a time.
+                        Button(
+                            onClick = { openAddHost() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = LocalPalette.current.accent,
+                                contentColor = LocalPalette.current.bg,
+                            ),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.hosts_add),
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
+            }
+
+            UiState.Hosts -> {
+                // --- 02-nodes.html: the saved host list (S24-4). One surface,
+                // hairline-free rows, the name the human gave each machine as
+                // the title and user@host:port as the mono meta. The one
+                // accent action adds a host.
+                Text(
+                    text = stringResource(R.string.nodes_your_hosts),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 22.sp,
+                    lineHeight = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(4.dp))
+                if (screen.hosts.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.hosts_empty),
+                        color = LocalPalette.current.muted,
+                        fontSize = 13.sp,
+                    )
+                } else {
+                    screen.hosts.forEach { entry ->
+                        NodeRow(
+                            name = entry.name,
+                            state = stringResource(R.string.nodes_state_row_saved),
+                            meta = "${entry.user}@${entry.host}:${entry.port}",
+                            onOpen = { connectTo(entry) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+                Button(
+                    onClick = { openAddHost() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LocalPalette.current.accent,
+                        contentColor = LocalPalette.current.bg,
+                    ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.hosts_add),
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
 
@@ -3239,7 +3458,12 @@ private fun Notice(message: String, color: androidx.compose.ui.graphics.Color) {
  * Elapsed time is not in the snapshot's AgentDto, so it is omitted rather
  * than invented. */
 @Composable
-private fun InboxRow(agent: AgentDto, needsYou: Boolean, onOpen: () -> Unit) {
+private fun InboxRow(
+    agent: AgentDto,
+    activity: AgentActivity,
+    needsYou: Boolean,
+    onOpen: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -3266,17 +3490,23 @@ private fun InboxRow(agent: AgentDto, needsYou: Boolean, onOpen: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            // S24-8: the full cwd stays here (board 03's meta), but the
-            // default kind `pi` is never repeated beside the name.
-            Text(
-                text = listOfNotNull(agent.cwd, AgentRowModel.secondaryKind(agent.kind))
-                    .joinToString(" · "),
-                color = LocalPalette.current.muted,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // S24-8: the secondary line is the agent kind (when it is not
+            // `pi`) plus the relative last-used time — never the full cwd;
+            // the path lives inside the session screen.
+            AgentRowModel.secondaryMeta(
+                agent.kind,
+                activity.lastUsed(agent.paneId),
+                System.currentTimeMillis(),
+            )?.let { meta ->
+                Text(
+                    text = meta,
+                    color = LocalPalette.current.muted,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Text(text = "›", color = LocalPalette.current.muted, fontSize = 15.sp)
     }
@@ -3284,9 +3514,17 @@ private fun InboxRow(agent: AgentDto, needsYou: Boolean, onOpen: () -> Unit) {
 
 /** One host row on the Nodes screen (board 02): state is a plain word in
  * secondary text — no chip, no row fill — and the row opens the agent list.
- * A row that explains itself (S24-3) passes `state = null` and shows none. */
+ * A row that explains itself (S24-3) passes `state = null` and shows none.
+ * The live host's word reads in the accent colour (S24-4): the connected
+ * machine is marked, never left looking like the rest. */
 @Composable
-private fun NodeRow(name: String, state: String?, meta: String, onOpen: () -> Unit) {
+private fun NodeRow(
+    name: String,
+    state: String?,
+    meta: String,
+    onOpen: () -> Unit,
+    stateAccent: Boolean = false,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -3306,7 +3544,11 @@ private fun NodeRow(name: String, state: String?, meta: String, onOpen: () -> Un
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = state,
-                        color = LocalPalette.current.muted,
+                        color = if (stateAccent) {
+                            LocalPalette.current.accent
+                        } else {
+                            LocalPalette.current.muted
+                        },
                         fontSize = 11.sp,
                         letterSpacing = 0.5.sp,
                     )
@@ -3533,7 +3775,6 @@ private fun ConnectScreenPreview() {
     GentleMobileTheme {
         ConnectScreen(
             keyPath = "/data/local/tmp/client_ed25519",
-            knownHostsPath = "/data/known_hosts",
             appTheme = AppTheme.CUTE,
             language = AppLanguage.ENGLISH,
             onSetLanguage = {},

@@ -1,5 +1,6 @@
 package com.gentlemanprogramming.gentlemobile.ui
 
+import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -51,6 +52,37 @@ class AgentRowTest {
     fun a_blank_kind_is_not_shown() {
         assertNull(AgentRowModel.secondaryKind(""))
         assertNull(AgentRowModel.secondaryKind(null))
+    }
+
+    // --- secondaryMeta (S24-8): kind when it is not `pi`, plus relative last-used time,
+    //     never the full path -------------------------------------------------------
+
+    @Test
+    fun `the meta line carries the kind and the relative last-used time`() {
+        val now = 1_000_000L
+        assertEquals(
+            "codex · 2 min ago",
+            AgentRowModel.secondaryMeta("codex", now - 2 * 60_000, now),
+        )
+    }
+
+    @Test
+    fun `pi is never repeated and the time stands alone`() {
+        val now = 1_000_000L
+        assertEquals("just now", AgentRowModel.secondaryMeta("pi", now - 10_000, now))
+        assertNull(AgentRowModel.secondaryMeta("pi", null, now))
+    }
+
+    @Test
+    fun `a kind without observed activity still names the kind`() {
+        assertEquals("codex", AgentRowModel.secondaryMeta("codex", null, 0))
+        assertNull(AgentRowModel.secondaryMeta(null, null, 0))
+    }
+
+    @Test
+    fun `a host clock slightly ahead never shows a negative time`() {
+        val now = 1_000_000L
+        assertEquals("just now", AgentRowModel.secondaryMeta(null, now + 60_000, now))
     }
 
     // --- groupLabel (S24-6) ---------------------------------------------------------

@@ -1,5 +1,7 @@
 package com.gentlemanprogramming.gentlemobile.ui
 
+import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
+
 /**
  * The pure row words for the grouped agent list (S24-6, S24-8). The inbox
  * composable renders these; the words themselves are unit-tested so the
@@ -26,6 +28,20 @@ object AgentRowModel {
      */
     fun secondaryKind(kind: String?): String? =
         kind?.trim()?.takeIf { it.isNotEmpty() && it != "pi" }
+
+    /**
+     * The row's whole secondary line (S24-8): the agent kind when it is not
+     * `pi`, plus the relative last-used time this connection observed. Never
+     * the full cwd — the path lives inside the session screen. Both parts may
+     * be absent; a line with nothing to say is no line at all.
+     */
+    fun secondaryMeta(kind: String?, lastUsedEpochMs: Long?, nowMs: Long): String? {
+        val parts = listOfNotNull(
+            secondaryKind(kind),
+            lastUsedEpochMs?.let { SessionsModel.relativeTime(it, nowMs) },
+        )
+        return parts.joinToString(" \u00B7 ").ifEmpty { null }
+    }
 
     /**
      * The group label (S24-6): the human word already in sentence case, with

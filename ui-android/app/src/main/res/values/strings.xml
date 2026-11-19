@@ -88,7 +88,9 @@
     <string name="nodes_meta">%1$s \u00B7 port %2$s \u00B7 %3$s</string>
     <string name="nodes_state_row_connected">connected</string>
     <string name="nodes_state_row_interrupted">interrupted</string>
-    <string name="nodes_one_host">One host per install for now — adding a second host needs a later build.</string>
+    <string name="nodes_state_row_saved">saved</string>
+    <string name="hosts_add">Add a host</string>
+    <string name="hosts_empty">No hosts yet — add one to start.</string>
     <string name="nodes_session_history">Session history</string>
     <string name="nodes_session_history_sub">Open a Gentle Shell session that already exists on the host.</string>
 
