@@ -238,6 +238,17 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   The frame includes pi's own input box (`type, or / for commands` with its `waiting for input` bar). The phone writes through
   its own composer, so that box is chrome the human cannot use. Decision: **hide the composer rows only**, keep the metrics
   lines below them (`TPS … tok/s`, `N files · +x −y`), and never hide a row when the marker is not clearly the composer.
+- **S30 — Fifth phone test: spacing, the wire width again, the wrong pane, and attachment honesty.**
+  1. **Too much top padding**: the gap above the card/tabs is dead space; reduce it.
+  2. **Lines still cut** on the phone while the desktop shows them whole: the frame paints fewer columns than the pane holds
+     (the reflow is not applied on a warm rebind — the residual the T24 worker reported). Lines must read exactly as they read
+     on the desktop.
+  3. **Writing goes to the wrong pane**: after switching to tab 2, a prompt sent from the phone landed in tab 1. The prompt must
+     go to the pane the human is looking at. Also remove the `Sent — the host confirmed the submission.` note entirely.
+  4. **The card must re-fit when the keyboard opens**: today it keeps the old size, so the terminal shrinks into a strip.
+  5. **Attachments**: some images render inline and some come out as an empty block with only the `[Image#N] png · …` label. A
+     format or size the phone cannot decode must say so instead of drawing nothing. And the upload error must read `Upload failed`
+     — short, no sentence cut with an ellipsis.
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -295,6 +306,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T22 | Third phone test corrections: fit the frame to the phone, wider card, no measurement or `live` lines, quiet header glyphs, project name only, the workspace's tabs, and the full project list with `+` | S27 | worker | — |
 | T23 | Fourth phone test: working tabs via `tab.focus`, accent header glyphs, a surface derived from the card so the frame fills the phone, workspaces nested under their host without duplication, and a workspace screen that enters the session directly | S28 | worker | — |
 | T24 | Hide the desktop composer rows from the phone's frame: detect the composer, drop those rows, shift the rest up, keep the metrics, and take the freed rows as extra conversation (request that many more rows) | S29 | worker | — |
+| T25 | Fifth phone test: reduce the top padding, fix the pane/painted width mismatch on a warm rebind, route prompts to the visible pane, drop the Sent note, re-fit the card when the keyboard opens, and make attachment failures honest and short | S30 | worker | — |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
