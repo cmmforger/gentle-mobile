@@ -147,8 +147,14 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   fallback, not the default.
 
 - **S26 — After the second phone test: the app must show the herdr workspace, not only the agents.**
-  1. **Connect error without Tailscale** only said "could not …": unreachable host must be one plain sentence naming the likely cause
-     ("Can't reach 100.96.18.28 — is Tailscale on?"), distinguished from auth refusal and from a wrong port.
+  1. **Connect error without Tailscale** only said "could not …". Verbatim from the phone: "Could not reach the pairing at
+     100.96.18.28:40681 — run gentle-mobile pair on the host and start again. failed to connect to /100.96.18.28 from
+     /192.168.18.97 port 54068 after 10000 ms". Two defects: the advice names the wrong cause (it assumes a stale pairing when
+     the **socket never left the phone**), and the raw Android networking text is shown as user copy. Required: classify the
+     failure — **timeout / network unreachable** → "Can't reach 100.96.18.28 — check that both devices are on the same network
+     or that Tailscale is connected"; **connection refused** → "Reached the host but nothing is listening on that port — run
+     gentle-mobile pair again"; auth or token problems keep their current wording. The technical detail goes to the log, or at
+     most a small secondary line, never as the sentence the user reads first. Same classification for plain SSH connect.
   2. **Workspaces**: the app has no view of the herdr workspace list the human uses on the desk (repos with their branch and
      status). It must list workspaces (name, branch, ahead/behind, state, agents) and let the human move between them.
   3. **Add a project**: a `+` that starts a workspace in a chosen path on the host, so a repo without history can be opened.
