@@ -11,7 +11,7 @@
 use std::{collections::HashMap, path::Path, sync::{Arc, Mutex as StdMutex, Mutex}};
 
 use herdr_client::{
-    ConnectOptions, protocol::{AgentStatus, ClientShellAgent, ClientShellPane, ClientShellSnapshot},
+    ConnectOptions, protocol::{AgentStatus, ClientShellAgent, ClientShellPane, ClientShellSnapshot, ClientSurfaceSize},
 };
 use russh::keys::parse_public_key_base64;
 
@@ -867,20 +867,67 @@ pub struct CompanionConnection {
     profile: HostProfile,
 }
 
+/// The grid the phone asks the daemon to render for this connection.
+/// Units are terminal **cells**, not pixels. Valid range 1..=4096 per side
+/// and 1_000_000 cells in total — the same bounds herdr-client validates
+/// on the wire — anything outside is sanitized to the client's default.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct SurfaceSizeDto {
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// The surface size the connection asks the daemon for: the phone mirrors
+/// the desktop's terminal, so the UI requests a desktop-sized grid and the
+/// fit scales it. `None` (either side) keeps the client default (80×24) so
+/// no existing caller changes behaviour; a value the client's own
+/// validation would refuse falls back to the default too — a bad requested
+/// size must never break the connect.
+fn surface_options(cols: Option<u16>, rows: Option<u16>) -> ConnectOptions {
+    let valid = match (cols, rows) {
+        (Some(c), Some(r)) => {
+            c > 0 && r > 0 && c <= 4096 && r <= 4096 && u32::from(c) * u32::from(r) <= 1_000_000
+        }
+        _ => false,
+    };
+    if valid {
+        ConnectOptions {
+            surface_size: ClientSurfaceSize {
+                cols: cols.unwrap_or(80),
+                rows: rows.unwrap_or(24),
+            },
+            cell_width_px: 0,
+            cell_height_px: 0,
+        }
+    } else {
+        ConnectOptions::default()
+    }
+}
+
 /// Connect off the UI thread. Before any data flows, the host key is probed
 /// and checked against the pins: unknown or mismatched keys come back as a
 /// [`ConnectOutcome::Challenge`] with the real fingerprint and the presented
 /// key blob. Only after the user accepts does the next connect succeed —
 /// nothing is auto-accepted.
+///
+/// `surface` is the grid (terminal cells) the daemon renders for this
+/// connection; the UI passes a desktop-sized grid so the phone mirrors the
+/// desktop's terminal. `None` keeps the client default (80×24).
 #[uniffi::export]
-pub fn connect(profile: HostProfileDto, session: String) -> Result<ConnectOutcome, CompanionError> {
+pub fn connect(
+    profile: HostProfileDto,
+    session: String,
+    surface: Option<SurfaceSizeDto>,
+) -> Result<ConnectOutcome, CompanionError> {
     let profile = profile.into_core();
     let probe = crate::connection::probe_host_key(&profile)?;
     let key_blob = openssh_blob(&probe.key)?;
+    let options = surface.map(|s| surface_options(Some(s.cols), Some(s.rows)))
+        .unwrap_or_else(ConnectOptions::default);
     match PinDecisionRef::from(probe.decision) {
         PinDecisionRef::Match => {
             let connection =
-                Connection::connect(&profile, &session, ConnectOptions::default())?;
+                Connection::connect(&profile, &session, options)?;
             Ok(ConnectOutcome::Connected(Arc::new(CompanionConnection {
                 inner: Mutex::new(Some(connection)),
                 profile,
@@ -1399,6 +1446,40 @@ pub(crate) fn snapshot_to_dto(snapshot: &ClientShellSnapshot) -> SnapshotDto {
 mod tests {
     use super::*;
     use crate::requests::RequestError;
+
+    // --- surface size (S27: the phone mirrors the desktop's terminal) ----------
+
+    #[test]
+    fn no_surface_asked_keeps_the_client_default() {
+        let options = surface_options(None, None);
+        assert_eq!(options.surface_size.cols, 80);
+        assert_eq!(options.surface_size.rows, 24);
+    }
+
+    #[test]
+    fn an_explicit_desktop_size_travels_to_the_options() {
+        let options = surface_options(Some(120), Some(40));
+        assert_eq!(options.surface_size.cols, 120);
+        assert_eq!(options.surface_size.rows, 40);
+    }
+
+    #[test]
+    fn an_invalid_size_falls_back_to_the_default_and_never_breaks_the_connect() {
+        // Zero, oversized, or a half-specified size: the client's own
+        // validation would refuse these, so the core sanitizes them back to
+        // the default instead of failing the connect.
+        for (cols, rows) in [
+            (Some(0u16), Some(40u16)),
+            (Some(120u16), Some(0u16)),
+            (Some(5000u16), Some(40u16)),
+            (Some(2000u16), Some(2000u16)), // area over the 1M-cell guard
+            (Some(120u16), None),
+        ] {
+            let options = surface_options(cols, rows);
+            assert_eq!(options.surface_size.cols, 80, "cols {cols:?}");
+            assert_eq!(options.surface_size.rows, 24, "rows {rows:?}");
+        }
+    }
 
     // A hand-built pane and agent: enough to test the DTO join, without a
     // running host.

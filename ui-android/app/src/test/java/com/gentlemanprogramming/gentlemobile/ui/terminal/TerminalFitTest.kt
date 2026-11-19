@@ -135,6 +135,61 @@ class TerminalFitTest {
             tall.gridHeightPx <= 24 * tall.cellHeightPx + 0.01f)
     }
 
+    // --- the painted advance, not the theoretical one (S27b round 3) ------------
+
+    /** The measured defect, round 3: at 13 px the nominal 0.6 em advance said
+     *  7.8 px/cell — 936 px for 120 columns — but the glyphs painted wider and
+     *  the header line lost its tail past the card edge. The fit must use the
+     *  advance the renderer actually paints (measured over a run of `M`s),
+     *  and leave 8 px of air per side so antialiasing never touches the edge. */
+    @Test
+    fun `the painted advance wins over the theoretical one`() {
+        // Android-measured reality (Paint.measureText over 80 M at 13 px on the
+        // emulator): the painted advance is wider than the nominal 0.6 em.
+        val paintedAdvance = 0.62f
+        val fit = TerminalFit.fit(
+            120,
+            40,
+            974f,
+            1475f,
+            advanceRatio = 0.6f,
+            lineHeightRatio = 1.32f,
+            paintedAdvanceRatio = paintedAdvance,
+        )
+        val cell = fit.cellWidthPx
+        assertTrue(
+            "120 painted cells (${cell * 120f}) must fit 974 - 16 px of air",
+            cell * 120f <= 974f - 16f + 0.01f,
+        )
+    }
+
+    @Test
+    fun `without a painted measurement the nominal ratio still governs`() {
+        val fit = TerminalFit.fit(120, 40, 974f, 1475f, 0.6f, 1.32f)
+        assertTrue(fit.cellWidthPx * 120f <= 974f - 16f + 0.01f)
+    }
+
+    @Test
+    fun `eight pixels of air on every side, never one`() {
+        val fit = TerminalFit.fit(120, 40, 974f, 1475f, 0.6f, 1.32f, paintedAdvanceRatio = 0.6f)
+        assertTrue(fit.gridWidthPx <= 974f - 16f + 0.01f)
+        assertTrue(fit.gridHeightPx <= 1475f - 16f + 0.01f)
+        assertTrue(fit.gridWidthPx + 16f <= 974f)
+    }
+
+    @Test
+    fun `120 columns of the painted advance fit the measured content area`() {
+        // The regression the human pinned: columns x painted cell width must
+        // stay inside content minus 2 x 8 px of air — computed with the PAINTED
+        // advance, so trusting the nominal ratio again fails this test.
+        val paintedAdvance = 0.62f
+        val fit = TerminalFit.fit(120, 40, 974f, 1475f, 0.6f, 1.32f, paintedAdvance)
+        assertTrue(
+            "${fit.cellWidthPx * 120f} must be <= ${974f - 16f}",
+            fit.cellWidthPx * 120f <= 974f - 16f,
+        )
+    }
+
     // --- degenerate inputs never crash or crop ----------------------------------
 
     @Test

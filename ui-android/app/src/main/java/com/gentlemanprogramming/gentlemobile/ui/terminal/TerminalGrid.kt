@@ -114,7 +114,7 @@ private fun cursorKind(shape: Int): String = when (shape) {
 }
 
 /** The four bundled typefaces, resolved once (null → system fallback). */
-private class TerminalTypefaces(
+class TerminalTypefaces(
     val regular: Typeface?,
     val bold: Typeface?,
     val italic: Typeface?,
@@ -122,7 +122,7 @@ private class TerminalTypefaces(
 )
 
 @Composable
-private fun rememberTypefaces(): TerminalTypefaces {
+fun rememberTypefaces(): TerminalTypefaces {
     val context = LocalContext.current
     return remember {
         fun font(id: Int): Typeface? = runCatching { ResourcesCompat.getFont(context, id) }.getOrNull()

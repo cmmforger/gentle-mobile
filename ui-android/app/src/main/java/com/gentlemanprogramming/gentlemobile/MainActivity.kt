@@ -128,6 +128,7 @@ import com.gentlemanprogramming.gentlemobile.core.HostProfileDto
 import com.gentlemanprogramming.gentlemobile.core.PaneDto
 import com.gentlemanprogramming.gentlemobile.core.PaneReadDto
 import com.gentlemanprogramming.gentlemobile.core.SnapshotDto
+import com.gentlemanprogramming.gentlemobile.core.SurfaceSizeDto
 import com.gentlemanprogramming.gentlemobile.core.TabDto
 import com.gentlemanprogramming.gentlemobile.core.UploadProgressListener
 import com.gentlemanprogramming.gentlemobile.core.composePrompt as coreComposePrompt
@@ -198,6 +199,7 @@ import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFit
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMaxSp
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMinSp
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalSurface
+import com.gentlemanprogramming.gentlemobile.ui.terminal.rememberTypefaces
 import com.gentlemanprogramming.gentlemobile.ui.terminal.rememberTerminalCellMetrics
 import java.io.File
 import java.util.concurrent.Executors
@@ -355,6 +357,19 @@ internal val mainHandler = Handler(Looper.getMainLooper())
 
 /** Log tag for supervision evidence: poller registration and stop lines. */
 private const val TAG = "Supervision"
+
+/**
+ * The desktop-size surface the phone asks the host for (S27): the phone
+ * mirrors the desktop's terminal, and a desktop terminal is wider than a
+ * phone screen — 110×40 is a desktop-like grid that VERIFIED fits a Pixel
+ * 6 with the painted advance and 8 px of air per side (120 was measured
+ * overflowing: the painted advance at small sizes is wider than the font
+ * file's nominal 0.6 em). The fit scales the whole frame to the card and
+ * the pinch-zoom reads it. Terminal cells, not pixels; the core
+ * sanitizes anything invalid back to its 80×24 default, so this only
+ * ever changes what the daemon renders.
+ */
+private val DESKTOP_SURFACE = SurfaceSizeDto(cols = 110u, rows = 40u)
 
 private sealed interface UiState {
     /** S24-4: the host list — the app's home when no link is live. */
@@ -1589,7 +1604,7 @@ fun ConnectScreen(
                     }
                     return@execute
                 }
-                var outcome = coreConnect(profile, session)
+                var outcome = coreConnect(profile, session, DESKTOP_SURFACE)
                 // S25-3: a link that carried fp= pinned the host key before
                 // connecting. On a match the question is already answered —
                 // the user compared the fingerprint the host printed when
@@ -1599,7 +1614,7 @@ fun ConnectScreen(
                     when (val verdict = FingerprintCheck.compare(linkFp, outcome.v1.fingerprint)) {
                         is FingerprintCheck.Verdict.Match -> {
                             acceptHostKey(knownHostsPath, profile.host, profile.port, outcome.v1.keyBlob)
-                            outcome = coreConnect(profile, session)
+                            outcome = coreConnect(profile, session, DESKTOP_SURFACE)
                         }
                         is FingerprintCheck.Verdict.Mismatch -> {
                             val message = context.getString(
@@ -3597,6 +3612,23 @@ private fun SessionScreen(
                 val density = LocalDensity.current
                 val cols = surface.width.toInt().coerceAtLeast(1)
                 val rows = surface.height.toInt().coerceAtLeast(1)
+                // Measured advance (S27b): what the font really paints, not
+                // the nominal ratio — measure a run of M's at a reference
+                // size and derive the painted em fraction. The renderer
+                // slots cells with its own paint measurement; this is the
+                // same number, taken here so the fit can trust it.
+                val probePx = 100f
+                // The painted advance measured EXACTLY as the renderer measures:
+                // the same android.graphics.Paint, same typeface, measureText
+                // over a run of M's. One measurement, two users (fit + render),
+                // so they can never disagree again.
+                val typefaces = rememberTypefaces()
+                val painted = remember(metrics, typefaces) {
+                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                    paint.typeface = typefaces.regular ?: android.graphics.Typeface.DEFAULT
+                    paint.textSize = probePx
+                    paint.measureText("M".repeat(80)) / 80f / probePx
+                }
                 // Fit rule (S27-1): ONE font size fits the WHOLE frame —
                 // width first, and if the height then overflows the visible
                 // card, the height fits too. Nothing is cropped and no
@@ -3611,6 +3643,7 @@ private fun SessionScreen(
                     constraints.maxHeight.toFloat(),
                     metrics.advanceRatio,
                     metrics.lineHeightRatio,
+                    paintedAdvanceRatio = painted,
                 )
                 val minPx = with(density) { TerminalFontMinSp.toPx() }
                 val maxPx = with(density) { TerminalFontMaxSp.toPx() }
@@ -3627,7 +3660,8 @@ private fun SessionScreen(
                 Log.i(
                     TAG,
                     "terminal fit: frame=${cols}x${rows} card=${constraints.maxWidth}x${constraints.maxHeight} " +
-                        "metrics a=${metrics.advanceRatio} l=${metrics.lineHeightRatio} fontPx=$effectivePx",
+                        "metrics a=${metrics.advanceRatio} l=${metrics.lineHeightRatio} painted=$painted fontPx=$effectivePx " +
+                        "grid=${cols * metrics.advanceRatio * effectivePx}x${rows * metrics.lineHeightRatio * effectivePx}",
                 )
                 val gridWidthPx = cols * metrics.advanceRatio * effectivePx
                 val gridHeightPx = rows * metrics.lineHeightRatio * effectivePx

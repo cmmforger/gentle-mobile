@@ -854,7 +854,7 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_compose_prompt(`text`: RustBuffer.ByValue,`imageSuffixes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_connect(`profile`: RustBuffer.ByValue,`session`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentlecompanion_core_fn_func_connect(`profile`: RustBuffer.ByValue,`session`: RustBuffer.ByValue,`surface`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_default_sessions_dir(`user`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1005,7 +1005,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_func_compose_prompt() and 0xFFFF) != 26788) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_connect() and 0xFFFF) != 42500) {
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_connect() and 0xFFFF) != 49928) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_default_sessions_dir() and 0xFFFF) != 55063) {
@@ -3341,6 +3341,50 @@ public object FfiConverterTypeSurfaceDto: FfiConverterRustBuffer<SurfaceDto> {
 
 
 
+/**
+ * The grid the phone asks the daemon to render for this connection.
+ * Units are terminal **cells**, not pixels. Valid range 1..=4096 per side
+ * and 1_000_000 cells in total — the same bounds herdr-client validates
+ * on the wire — anything outside is sanitized to the client's default.
+ */
+data class SurfaceSizeDto (
+    val `cols`: kotlin.UShort
+    , 
+    val `rows`: kotlin.UShort
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSurfaceSizeDto: FfiConverterRustBuffer<SurfaceSizeDto> {
+    override fun read(buf: ByteBuffer): SurfaceSizeDto {
+        return SurfaceSizeDto(
+            FfiConverterUShort.read(buf),
+            FfiConverterUShort.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SurfaceSizeDto) = (
+            FfiConverterUShort.allocationSize(value.`cols`) +
+            FfiConverterUShort.allocationSize(value.`rows`)
+    )
+
+    override fun write(value: SurfaceSizeDto, buf: ByteBuffer) {
+            FfiConverterUShort.write(value.`cols`, buf)
+            FfiConverterUShort.write(value.`rows`, buf)
+    }
+}
+
+
+
 data class TabDto (
     val `id`: kotlin.String
     , 
@@ -4700,6 +4744,38 @@ public object FfiConverterOptionalTypeSurfaceDto: FfiConverterRustBuffer<Surface
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeSurfaceSizeDto: FfiConverterRustBuffer<SurfaceSizeDto?> {
+    override fun read(buf: ByteBuffer): SurfaceSizeDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeSurfaceSizeDto.read(buf)
+    }
+
+    override fun allocationSize(value: SurfaceSizeDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeSurfaceSizeDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: SurfaceSizeDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeSurfaceSizeDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
     override fun read(buf: ByteBuffer): List<kotlin.String> {
         val len = buf.getInt()
@@ -5054,15 +5130,20 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
          * [`ConnectOutcome::Challenge`] with the real fingerprint and the presented
          * key blob. Only after the user accepts does the next connect succeed —
          * nothing is auto-accepted.
+         *
+         * `surface` is the grid (terminal cells) the daemon renders for this
+         * connection; the UI passes a desktop-sized grid so the phone mirrors the
+         * desktop's terminal. `None` keeps the client default (80×24).
          */
-    @Throws(CompanionException::class) fun `connect`(`profile`: HostProfileDto, `session`: kotlin.String): ConnectOutcome {
+    @Throws(CompanionException::class) fun `connect`(`profile`: HostProfileDto, `session`: kotlin.String, `surface`: SurfaceSizeDto?): ConnectOutcome {
             return FfiConverterTypeConnectOutcome.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
     UniffiLib.uniffi_gentlecompanion_core_fn_func_connect(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
-        FfiConverterString.lower(`session`),_status)
+        FfiConverterString.lower(`session`),
+        FfiConverterOptionalTypeSurfaceSizeDto.lower(`surface`),_status)
 }
     )
     }
