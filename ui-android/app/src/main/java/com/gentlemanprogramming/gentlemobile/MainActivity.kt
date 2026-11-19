@@ -137,6 +137,7 @@ import com.gentlemanprogramming.gentlemobile.core.listKnownHosts
 import com.gentlemanprogramming.gentlemobile.core.refreshLease
 import com.gentlemanprogramming.gentlemobile.core.releaseLease
 import com.gentlemanprogramming.gentlemobile.core.resumeSession as coreResumeSession
+import com.gentlemanprogramming.gentlemobile.core.startSessionInDir as coreStartSessionInDir
 import com.gentlemanprogramming.gentlemobile.ui.sessions.HeldLease
 import com.gentlemanprogramming.gentlemobile.ui.AgentActivity
 import com.gentlemanprogramming.gentlemobile.ui.AgentRowModel
@@ -150,6 +151,7 @@ import com.gentlemanprogramming.gentlemobile.ui.sessions.ResumedSessionScreen
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsScreen
+import com.gentlemanprogramming.gentlemobile.ui.sessions.StartSessionScreen
 import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
 import com.gentlemanprogramming.gentlemobile.pair.ConnectValidator
 import com.gentlemanprogramming.gentlemobile.pair.FingerprintCheck
@@ -306,6 +308,7 @@ class MainActivity : FragmentActivity() {
                     // its own known_hosts file, named by [KnownHostsFile].
                     val keyPath = File(filesDir, DeviceIdentity.KEY_FILE).absolutePath
                     ConnectScreen(
+                        sessionsDirOverride = devSessionsDirOverride,
                         keyPath = keyPath,
                         appTheme = appTheme,
                         language = language,
@@ -392,10 +395,21 @@ private class ScreenState {
     var resumedTranscript by mutableStateOf<List<com.gentlemanprogramming.gentlemobile.core.TranscriptEntryDto>>(emptyList())
     var resumedMessageCount by mutableStateOf(0UL)
     var resumedReclaimed by mutableStateOf(false)
+    /** S24-5: the live session was started fresh (not resumed) — the header
+     *  says `new`, never `resumed`. */
+    var resumedIsNew by mutableStateOf(false)
     var resumedDraft by mutableStateOf("")
     var resumedSending by mutableStateOf(false)
     var resumedSendError by mutableStateOf<String?>(null)
     var resumedCloseError by mutableStateOf<String?>(null)
+
+    /** S24-5: the start-session screen's state — the sessions the history
+     *  screen already listed (the repositories derive from them, nothing is
+     *  scanned), whether a fresh start is in flight, and the reason a start
+     *  failed (shown on the start screen, never a generic "failed"). */
+    var sessionsForStart by mutableStateOf<List<com.gentlemanprogramming.gentlemobile.core.SessionDto>>(emptyList())
+    var startingSession by mutableStateOf(false)
+    var startSessionError by mutableStateOf<String?>(null)
 
     /** T8c supervision: the four words (connecting, connected, interrupted,
      * failed) and the liveness rule, in one tested place. Screens read this
@@ -530,7 +544,7 @@ private class SessionUi {
 }
 
 /** The screens reachable from the Pair flow; the design shows back buttons. */
-private enum class Route { Main, Settings, Themes, Sessions, Resumed }
+private enum class Route { Main, Settings, Themes, Sessions, StartSession, Resumed }
 
 /** The words a resume or a prompt failure shows: typed refusals keep their
  *  exact message (the core's Display carries the reason), anything else
@@ -743,6 +757,63 @@ fun ConnectScreen(
         }, LEASE_HEARTBEAT_MS)
     }
 
+    /** S24-5: start a fresh session in `dir` (a repository with history, or
+     *  a validated manual path) and open the same transcript + composer the
+     *  resume path uses. The core validates the directory, spawns the child
+     *  without `--session`, and takes the lease under the session id the
+     *  child reports — only once the session exists. A failure reports the
+     *  host's own reason on the start screen and leaves nothing half-open. */
+    fun startFreshSession(
+        state: ScreenState,
+        profile: HostProfileDto,
+        deviceId: String,
+        dir: String,
+        onDone: () -> Unit,
+    ) {
+        if (state.startingSession) return
+        state.startingSession = true
+        state.startSessionError = null
+        executor.execute {
+            try {
+                val token = java.util.UUID.randomUUID().toString()
+                val outcome = coreStartSessionInDir(profile, dir, deviceId, token)
+                mainHandler.post {
+                    state.startingSession = false
+                    // The lease id is the session id the child itself
+                    // reported; the token is the one this call sent.
+                    state.heldLease = HeldLease(outcome.session.sessionId(), token)
+                    scheduleLeaseHeartbeat(state)
+                    state.resumedSession = outcome.session
+                    state.resumedTranscript = outcome.transcript
+                    state.resumedMessageCount = outcome.session.messageCount()
+                    state.resumedReclaimed = false
+                    state.resumedIsNew = true
+                    state.resumedDraft = ""
+                    state.resumedSending = false
+                    state.resumedSendError = null
+                    state.resumedCloseError = null
+                    onDone()
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    state.startingSession = false
+                    // The host's own reason, word for word — no generic
+                    // "failed", and nothing half-open (the core closed the
+                    // child; no lease was ever written for a session that
+                    // never became ours). UniFFI's generated message is the
+                    // bare field list, so the typed directory refusal gets
+                    // its full sentence, in the stored locale.
+                    state.startSessionError = when (e) {
+                        is com.gentlemanprogramming.gentlemobile.core.CompanionException.RpcStartNotADirectory ->
+                            AppLocale.wrapStored(state.appContext)
+                                .getString(R.string.start_dir_missing, e.path)
+                        else -> describeResumeFailure(e)
+                    }
+                }
+            }
+        }
+    }
+
     fun disconnectLive() {
         // T15 (S11): the notification's Disconnect action can land while a
         // session screen is up; the user is disconnecting the connection,
@@ -925,6 +996,7 @@ fun ConnectScreen(
                                 screen.resumedTranscript = outcome.transcript
                                 screen.resumedMessageCount = outcome.session.messageCount()
                                 screen.resumedReclaimed = outcome.reclaimed
+                                screen.resumedIsNew = false
                                 screen.resumedDraft = ""
                                 screen.resumedSending = false
                                 screen.resumedSendError = null
@@ -939,6 +1011,14 @@ fun ConnectScreen(
                         }
                     }
                 },
+                onStartNew = { sessions ->
+                    // S24-5: the repositories derive from what the list
+                    // already read — nothing is scanned or invented.
+                    screen.sessionsForStart = sessions
+                    screen.startSessionError = null
+                    screen.startingSession = false
+                    route = Route.StartSession
+                },
                 onBack = {
                     releaseHeldLease(screen)
                     route = Route.Main
@@ -948,6 +1028,29 @@ fun ConnectScreen(
         }
         // No live profile behind the route (the connection was reset): fall
         // back to the Nodes screen instead of rendering a dead screen.
+        route = Route.Main
+    }
+
+    // S24-5: start a fresh session in a repository with history — the list
+    // shows where the host's sessions already worked, and one accent action
+    // spawns `gentle-shell --mode rpc` in that directory over the pinned
+    // connection. The lease is taken by the core under the session id the
+    // child itself reports, once the session exists.
+    if (route == Route.StartSession) {
+        val startProfile = screen.profile
+        val startDeviceId = screen.deviceLeaseId
+        if (startProfile != null && startDeviceId != null) {
+            StartSessionScreen(
+                sessions = screen.sessionsForStart,
+                starting = screen.startingSession,
+                startError = screen.startSessionError,
+                onStartRepo = { dir -> startFreshSession(screen, startProfile, startDeviceId, dir, onDone = { route = Route.Resumed }) },
+                onStartPath = { dir -> startFreshSession(screen, startProfile, startDeviceId, dir, onDone = { route = Route.Resumed }) },
+                onBack = { route = Route.Sessions },
+            )
+            return
+        }
+        // No live profile behind the route: back to the Nodes screen.
         route = Route.Main
     }
 
@@ -969,6 +1072,7 @@ fun ConnectScreen(
                 messageCount = screen.resumedMessageCount,
                 transcript = screen.resumedTranscript,
                 reclaimed = screen.resumedReclaimed,
+                isNew = screen.resumedIsNew,
                 pendingDialog = resumed.pendingDialog(),
                 draft = screen.resumedDraft,
                 onDraftChange = { screen.resumedDraft = it },

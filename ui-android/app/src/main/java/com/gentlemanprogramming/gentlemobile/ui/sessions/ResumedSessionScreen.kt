@@ -71,6 +71,7 @@ fun ResumedSessionScreen(
     messageCount: ULong,
     transcript: List<TranscriptEntryDto>,
     reclaimed: Boolean,
+    isNew: Boolean,
     pendingDialog: DialogRequestDto?,
     draft: String,
     onDraftChange: (String) -> Unit,
@@ -112,7 +113,13 @@ fun ResumedSessionScreen(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = stringResource(R.string.res_header, sessionId),
+            // S24-5: a session started fresh is labelled `new`, never
+            // `resumed` — the words must not claim a history it has not.
+            text = if (isNew) {
+                stringResource(R.string.res_header_new, sessionId)
+            } else {
+                stringResource(R.string.res_header, sessionId)
+            },
             color = MaterialTheme.colorScheme.onBackground,
             fontSize = 18.sp,
             fontFamily = FontFamily.Monospace,

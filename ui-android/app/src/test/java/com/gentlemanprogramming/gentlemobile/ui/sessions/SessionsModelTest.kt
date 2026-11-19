@@ -4,6 +4,7 @@ import com.gentlemanprogramming.gentlemobile.core.LeaseViewDto
 import com.gentlemanprogramming.gentlemobile.core.SessionDto
 import com.gentlemanprogramming.gentlemobile.ui.theme.KeyValueStore
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -207,5 +208,86 @@ class SessionsModelTest {
 
     private companion object {
         const val OVERRIDE_KEY_STORE_KEY = "sessions_dir_override"
+    }
+
+    // --- S24-5: repositories from history --------------------------------------
+
+    private fun repoSession(cwd: String?, modified: Long) = SessionDto(
+        fileName = "20261120_9f1c2f61.jsonl",
+        sessionId = "9f1c2f61-8a5e-4f6a-9f6b-3c1d2e4f5a6b",
+        cwd = cwd,
+        lastModifiedEpochMs = modified.toULong(),
+        messageCount = 1uL,
+        lease = LeaseViewDto.OPEN,
+    )
+
+    @Test
+    fun repositories_dedupe_by_path_keeping_the_most_recent_use() {
+        val repos = SessionsModel.repositories(
+            listOf(
+                repoSession("/srv/app", 1_000),
+                repoSession("/srv/app", 5_000),
+            ),
+        )
+        assertEquals(1, repos.size)
+        assertEquals("/srv/app", repos[0].path)
+        assertEquals(5_000L, repos[0].lastUsedEpochMs)
+    }
+
+    @Test
+    fun repositories_are_ordered_most_recently_used_first() {
+        val repos = SessionsModel.repositories(
+            listOf(
+                repoSession("/srv/old", 1_000),
+                repoSession("/srv/new", 9_000),
+                repoSession("/srv/mid", 4_000),
+            ),
+        )
+        assertEquals(listOf("/srv/new", "/srv/mid", "/srv/old"), repos.map { it.path })
+    }
+
+    @Test
+    fun the_repository_name_is_the_last_path_segment() {
+        assertEquals("erp-web", SessionsModel.repoName("/mnt/D-SSD/work/projects/erp-web"))
+        // A trailing slash is not part of the name.
+        assertEquals("erp-web", SessionsModel.repoName("/mnt/D-SSD/work/projects/erp-web/"))
+    }
+
+    @Test
+    fun sessions_without_a_usable_cwd_are_skipped() {
+        val repos = SessionsModel.repositories(
+            listOf(
+                repoSession(null, 9_000),
+                repoSession("", 9_000),
+                repoSession("   ", 9_000),
+                repoSession("/srv/app", 3_000),
+            ),
+        )
+        assertEquals(listOf("/srv/app"), repos.map { it.path })
+    }
+
+    @Test
+    fun repositories_are_capped_so_a_huge_history_stays_a_phone_list() {
+        val many = (1..50).map { repoSession("/srv/repo-$it", it.toLong()) }
+        assertEquals(30, SessionsModel.repositories(many).size)
+    }
+
+    // --- S24-5: the manual start path -------------------------------------------
+
+    @Test
+    fun the_manual_start_path_must_be_absolute() {
+        assertTrue(SessionsModel.isValidStartPath("/mnt/x/repo"))
+        // Surrounding whitespace is a typing accident, not a different path.
+        assertTrue(SessionsModel.isValidStartPath(" /mnt/x/repo "))
+        assertFalse(SessionsModel.isValidStartPath("mnt/x/repo"))
+        assertFalse(SessionsModel.isValidStartPath(""))
+        assertFalse(SessionsModel.isValidStartPath("   "))
+        assertFalse(SessionsModel.isValidStartPath("~/repo"))
+        assertFalse(SessionsModel.isValidStartPath("./repo"))
+    }
+
+    @Test
+    fun a_started_session_is_labelled_new_not_resumed() {
+        assertEquals("new · fresh-1", SessionsModel.startedHeader("fresh-1"))
     }
 }

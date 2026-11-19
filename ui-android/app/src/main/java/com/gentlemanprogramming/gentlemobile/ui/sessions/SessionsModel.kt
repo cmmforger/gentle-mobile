@@ -138,6 +138,57 @@ object SessionsModel {
 
     /** The visible note when a resumed transcript is empty. */
     const val EMPTY_TRANSCRIPT_NOTE = "This session has no messages yet."
+
+    // --- S24-5: starting a session from the repositories with history --------
+
+    /** One repository the start screen offers: a working directory that
+     *  already has session history on this host. Nothing is invented — the
+     *  path comes from a session's recorded cwd, the last-used time from the
+     *  most recent session in it. */
+    data class RepoEntry(val path: String, val name: String, val lastUsedEpochMs: Long)
+
+    /** The distinct working directories of the sessions, most recently used
+     *  first, with each directory's last-use time. Sessions without a usable
+     *  cwd are skipped (they name nowhere to start), directories dedupe by
+     *  exact path, and the list is capped so a huge history stays a phone
+     *  list. Nothing is scanned on the host: only what the sessions already
+     *  recorded. */
+    fun repositories(sessions: List<SessionDto>, cap: Int = 30): List<RepoEntry> {
+        val latest = LinkedHashMap<String, Long>()
+        for (session in sessions) {
+            val path = session.cwd?.trim().orEmpty()
+            if (path.isEmpty()) continue
+            val used = session.lastModifiedEpochMs.toLong()
+            val current = latest[path]
+            if (current == null || used > current) latest[path] = used
+        }
+        return latest.entries
+            .sortedByDescending { it.value }
+            .take(cap)
+            .map { (path, used) -> RepoEntry(path, repoName(path), used) }
+    }
+
+    /** The repository's display name: the last path segment. A trailing
+     *  slash is not part of the name; a path that is only slashes keeps its
+     *  name from the trimmed tail. */
+    fun repoName(path: String): String {
+        val trimmed = path.trim().trimEnd('/')
+        return trimmed.substringAfterLast('/').ifBlank { trimmed }.ifBlank { path }
+    }
+
+    /** Whether the typed "Other directory…" path may start a session: it
+     *  must be absolute on the host (it starts with `/`); surrounding
+     *  whitespace is a typing accident, not a different path. Everything
+     *  else — relative, `~`, empty — is refused before any host work. */
+    fun isValidStartPath(raw: String): Boolean {
+        val trimmed = raw.trim()
+        return trimmed.startsWith("/") && trimmed.length > 1
+    }
+
+    /** The started screen's header: `new · <sessionId>`, exactly the id the
+     *  child itself reported at handshake — a fresh session is not a resume,
+     *  and the words must not claim it was. */
+    fun startedHeader(sessionId: String): String = "new · $sessionId"
 }
 
 /** Where the Sessions screen lists from. The default is the core's

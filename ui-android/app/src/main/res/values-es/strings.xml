@@ -202,6 +202,21 @@
     <string name="hist_take">Tomar</string>
     <string name="hist_release">Soltar</string>
 
+    <!-- Iniciar una sesión (S24-5): repositorios con historial -->
+    <string name="start_new">Sesión nueva…</string>
+    <string name="start_title">Iniciar una sesión</string>
+    <string name="start_group">Repositorios con historial</string>
+    <string name="start_empty">Todavía no hay historial acá — “Otra carpeta…” más abajo puede iniciar en cualquier lado del host.</string>
+    <string name="start_row_action">iniciar</string>
+    <string name="start_other">Otra carpeta…</string>
+    <string name="start_other_hint">/ruta/absoluta/en/el/host</string>
+    <string name="start_dir_not_absolute">Escribí una ruta absoluta — empieza con /.</string>
+    <string name="start_start">Iniciar</string>
+    <string name="start_starting">Iniciando el agente…</string>
+    <string name="start_error">La sesión no pudo iniciar: %1$s</string>
+    <string name="start_dir_missing">La carpeta no existe en el host: %1$s</string>
+    <string name="res_header_new">nueva \u00B7 %1$s</string>
+
     <!-- Tiempo relativo -->
     <string name="time_just_now">justo ahora</string>
     <string name="time_min_ago">hace %1$d min</string>

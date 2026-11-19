@@ -45,6 +45,9 @@ use serde_json::{Value, json};
 pub enum RpcError {
     /// The path the UI asked to resume is not a regular file on the host.
     NotAFile { path: String },
+    /// The directory a fresh session should start in does not exist on the
+    /// host, or is not a directory (S24-5).
+    NotADirectory { path: String },
     /// Another device holds a live advisory lease (S18): refused, never
     /// opened.
     AlreadyLeased { detail: String },
@@ -69,6 +72,9 @@ impl std::fmt::Display for RpcError {
         match self {
             RpcError::NotAFile { path } => {
                 write!(formatter, "the session is not a file on the host: {path}")
+            }
+            RpcError::NotADirectory { path } => {
+                write!(formatter, "the directory does not exist on the host: {path}")
             }
             RpcError::AlreadyLeased { detail } => {
                 write!(formatter, "the session is already in use: {detail}")
@@ -178,6 +184,20 @@ pub fn rpc_exec_command(binary_path: &str, session_path: &str) -> String {
         "{} --mode rpc --session {}",
         shell_quote(binary_path),
         shell_quote(session_path)
+    )
+}
+
+/// The exec line for a **fresh** session in `cwd` (S24-5): `cd` first — an
+/// SSH exec starts in the user's home, and the child's working directory is
+/// what Pi records in the new session's header — then `exec` so the shell
+/// is replaced and the SSH channel's stdin/stdout is the child directly
+/// (the same EOF semantics the resume lane relies on, S17a/b), and **no
+/// `--session`**: Pi creates a fresh session file itself.
+pub fn rpc_exec_command_in_dir(binary_path: &str, cwd: &str) -> String {
+    format!(
+        "cd {} && exec {} --mode rpc",
+        shell_quote(cwd),
+        shell_quote(binary_path)
     )
 }
 
@@ -552,6 +572,26 @@ pub async fn spawn_rpc_child(
     Ok(channel.into_stream())
 }
 
+/// Exec a **fresh** `gentle-shell --mode rpc` with its working directory set
+/// to `cwd` on a fresh channel of the pinned connection (no PTY — S17).
+/// `cd` happens on the host, inside the exec line, so the remote login shell
+/// itself places the child in the repository.
+pub async fn spawn_rpc_child_in_dir(
+    ssh: &mut russh::client::Handle<crate::connection::KeyVerifier>,
+    cwd: &str,
+) -> Result<russh::ChannelStream<russh::client::Msg>, RpcError> {
+    let binary = resolve_remote_binary(ssh).await?;
+    let channel = ssh
+        .channel_open_session()
+        .await
+        .map_err(|error| RpcError::SpawnRefused { detail: format!("the RPC channel could not open: {error}") })?;
+    channel
+        .exec(true, rpc_exec_command_in_dir(&binary, cwd).as_str())
+        .await
+        .map_err(|error| RpcError::SpawnRefused { detail: format!("the host refused the RPC exec: {error}") })?;
+    Ok(channel.into_stream())
+}
+
 /// The commands the UI can send a resumed session's driver.
 pub enum RpcCommand {
     /// Append one prompt; the reply completes when the turn settles, with
@@ -575,6 +615,11 @@ pub struct RpcShared {
     pub pending_dialog: Option<DialogRequest>,
     pub closed: bool,
     pub last_error: Option<String>,
+    /// The child's own message count, refreshed from `get_state` after every
+    /// settled turn — the header never keeps a stale handshake number once
+    /// the conversation has moved (S24-5: `0 messages` must not outlive the
+    /// first exchange).
+    pub message_count: Option<u64>,
 }
 
 /// What the driver needs to keep its lease honest (S18).
@@ -741,6 +786,23 @@ pub async fn drive_rpc_session<S>(
                             let _ = reply.send(Err(error));
                         }
                     }
+                    // The child's own count, refreshed while the turn is
+                    // still fresh — a failure here is silent (the header
+                    // keeps the last known number) but never lies forward.
+                    if let Ok(state) = protocol
+                        .request(
+                            "get_state",
+                            json!({}),
+                            Instant::now() + deadlines.response,
+                            &mut |_record| None,
+                        )
+                        .await
+                    {
+                        let count = state.pointer("/data/messageCount").and_then(Value::as_u64);
+                        if let Ok(mut guarded) = shared.lock() {
+                            guarded.message_count = count;
+                        }
+                    }
                 }
             }
             "extension_ui_request" => {
@@ -877,6 +939,168 @@ async fn check_session_file(
         Ok(metadata) => metadata.file_type().is_file(),
         Err(_) => false,
     })
+}
+
+// --- the fresh-start lane (S24-5) ----------------------------------------------
+//
+// A session that does not exist yet cannot take a lease first — there is no
+// session id to lease until the child reports one. The order is therefore:
+// the directory must exist on the host, the child spawns **without
+// `--session`**, the handshake learns the session id the child itself chose,
+// and only then the advisory lease is taken under that id. Every failure
+// before the pump closes the child and leaves nothing half-open: no lease is
+// ever written for a session that never became ours, and the pump releases
+// the lease on every exit path (S18).
+
+/// Check that `cwd` exists and is a directory on the host, over the SFTP
+/// subsystem of the **same** pinned connection the child will use. A missing
+/// path — or one that is a file — is refused before anything spawns.
+async fn check_host_directory(
+    ssh: &mut russh::client::Handle<crate::connection::KeyVerifier>,
+    cwd: &str,
+) -> Result<(), RpcError> {
+    let channel = ssh
+        .channel_open_session()
+        .await
+        .map_err(|error| RpcError::Transport {
+            detail: format!("the directory-probe channel could not open: {error}"),
+        })?;
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .map_err(|error| RpcError::Transport {
+            detail: format!("the host refused the SFTP subsystem for the directory probe: {error}"),
+        })?;
+    let sftp = russh_sftp::client::SftpSession::new(channel.into_stream())
+        .await
+        .map_err(|error| RpcError::Transport {
+            detail: format!("the directory probe could not start: {error}"),
+        })?;
+    let is_dir = matches!(sftp.metadata(cwd).await, Ok(metadata) if metadata.file_type().is_dir());
+    if is_dir {
+        Ok(())
+    } else {
+        Err(RpcError::NotADirectory { path: cwd.to_owned() })
+    }
+}
+
+/// Handshake + lease for a fresh start, in the only safe order: the child
+/// reports its session id, then the lease is taken under it. On a failed
+/// handshake or a refused lease the child is closed here — stdin EOF and a
+/// drained stdout — so a session this device does not hold never keeps
+/// running. The lease closure runs exactly once, only after a good
+/// handshake, and never for a session that was never ours.
+pub async fn complete_fresh_start<S, F, Fut>(
+    protocol: &mut RpcProtocol<S>,
+    deadlines: RpcDeadlines,
+    take_lease: F,
+) -> Result<RpcHandshake, RpcError>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    F: FnOnce(String) -> Fut,
+    Fut: Future<Output = Result<crate::sessions::LeaseTakeOutcome, RpcError>>,
+{
+    let handshake = match rpc_handshake(protocol, None, deadlines).await {
+        Ok(handshake) => handshake,
+        Err(error) => {
+            let _ = protocol.close(deadlines).await;
+            return Err(error);
+        }
+    };
+    if let Err(error) = take_lease(handshake.session_id.clone()).await {
+        let _ = protocol.close(deadlines).await;
+        return Err(error);
+    }
+    Ok(handshake)
+}
+
+/// Map the SFTP lane's lease outcome onto the RPC lane's error — the same
+/// mapping the resume lane uses.
+pub async fn take_lease_for_fresh_start(
+    profile: &crate::profile::HostProfile,
+    session_id: &str,
+    device_id: &str,
+    token: &str,
+) -> Result<crate::sessions::LeaseTakeOutcome, RpcError> {
+    crate::sessions::acquire_lease_over_sftp(profile, session_id, device_id, token)
+        .await
+        .map_err(|error| match error {
+            crate::requests::HubError::Request(crate::requests::RequestError::Refused { code, detail }) => {
+                lease_refusal_to_rpc_error(&code, &detail)
+            }
+            other => RpcError::Transport { detail: other.to_string() },
+        })
+}
+
+/// The whole fresh start (S24-5), designed like [`run_resumed_session`] to
+/// run **inside the driver thread's own runtime**: pinned SSH connection,
+/// host directory check, child spawn without `--session`, handshake, lease
+/// under the child's own session id, then the pump until the session ends.
+/// The handshake result reaches the caller through `announced`.
+pub async fn run_fresh_session(
+    profile: crate::profile::HostProfile,
+    cwd: String,
+    device_id: String,
+    token: String,
+    commands: crossbeam_channel::Receiver<RpcCommand>,
+    shared: Arc<StdMutex<RpcShared>>,
+    announced: crossbeam_channel::Sender<Result<RpcHandshake, RpcError>>,
+    deadlines: RpcDeadlines,
+) {
+    let stop = Arc::new(AtomicBool::new(false));
+    let outcome = async {
+        let mut ssh = crate::requests::connect_pinned_ssh(&profile, &stop)
+            .await
+            .map_err(|error| RpcError::Transport { detail: error.to_string() })?;
+        let prepared = async {
+            check_host_directory(&mut ssh, &cwd).await?;
+            let stream = spawn_rpc_child_in_dir(&mut ssh, &cwd).await?;
+            Ok(RpcProtocol::new(stream))
+        }
+        .await;
+        let mut protocol = match prepared {
+            Ok(protocol) => protocol,
+            Err(error) => {
+                let _ = ssh.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+                return Err(error);
+            }
+        };
+        let handshake = complete_fresh_start(&mut protocol, deadlines, |session_id| {
+            // Borrow the host profile and lease identity; own the session id
+            // the child reported.
+            let profile = &profile;
+            let device_id = &device_id;
+            let token = &token;
+            async move {
+                take_lease_for_fresh_start(profile, &session_id, device_id, token).await
+            }
+        })
+        .await;
+        let handshake = match handshake {
+            Ok(handshake) => handshake,
+            Err(error) => {
+                // complete_fresh_start already closed the child; no lease
+                // was ever written for a session that never became ours.
+                let _ = ssh.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+                return Err(error);
+            }
+        };
+        let _ = announced.send(Ok(handshake.clone()));
+        // The pump owns the rest of the session's life; it releases the
+        // lease on every exit path (S18).
+        let lease = LeaseGuard {
+            profile,
+            session_id: handshake.session_id.clone(),
+            device_id,
+            token,
+        };
+        drive_rpc_session(protocol, commands, shared, lease, deadlines).await;
+        return Ok(handshake);
+    }
+    .await;
+    if let Err(error) = outcome {
+        let _ = announced.send(Err(error));
+    }
 }
 
 #[cfg(test)]
@@ -1224,5 +1448,224 @@ mod tests {
         assert_eq!(answers[0].get("type").and_then(Value::as_str), Some("extension_ui_response"));
         assert_eq!(answers[0].get("id").and_then(Value::as_str), Some("dlg-7"));
         assert_eq!(answers[0].get("value").and_then(Value::as_str), Some("picked"));
+    }
+
+    // --- the fresh-start lane (S24-5) --------------------------------------------------
+
+    #[test]
+    fn a_missing_start_directory_is_named_in_the_error() {
+        let error = RpcError::NotADirectory { path: "/mnt/x/nope".to_owned() };
+        assert!(error.to_string().contains("/mnt/x/nope"));
+        assert!(error.to_string().contains("directory"));
+    }
+
+    #[test]
+    fn the_fresh_exec_line_cds_into_the_directory_and_takes_no_session() {
+        // The exec runs in the user's home by default: `cd` places the child
+        // in the repository so Pi records that cwd in its session header,
+        // and there is no `--session` — Pi creates a fresh session file.
+        assert_eq!(
+            rpc_exec_command_in_dir("/home/u/.local/bin/gentle-shell", "/mnt/x/erp-web"),
+            "cd '/mnt/x/erp-web' && exec '/home/u/.local/bin/gentle-shell' --mode rpc"
+        );
+        // A directory with a quote cannot escape its quoting.
+        assert_eq!(
+            rpc_exec_command_in_dir("/bin/g", "/tmp/it's"),
+            "cd '/tmp/it'\\''s' && exec '/bin/g' --mode rpc"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_fresh_start_takes_the_lease_under_the_childs_own_session_id() {
+        let (client_half, server_half) = tokio::io::duplex(1024);
+        let replies: Arc<dyn Fn(&Value) -> Vec<Value> + Send + Sync> = Arc::new(|command: &Value| {
+            let id = command.get("id").and_then(Value::as_str).unwrap_or("").to_owned();
+            match command.get("type").and_then(Value::as_str) {
+                Some("get_state") => vec![json!({ "type": "response", "id": id, "command": "get_state", "success": true,
+                        "data": { "sessionId": "fresh-1", "messageCount": 0 } })],
+                Some("get_messages") => vec![json!({ "type": "response", "id": id, "command": "get_messages", "success": true,
+                        "data": { "messages": [] } })],
+                _ => Vec::new(),
+            }
+        });
+        responding_server(server_half, replies).await;
+        let mut protocol = RpcProtocol::new(client_half);
+        let seen = Arc::new(StdMutex::new(Vec::<String>::new()));
+        let seen_for_closure = seen.clone();
+        let handshake = complete_fresh_start(&mut protocol, RpcDeadlines::default(), move |session_id| {
+            let seen = seen_for_closure.clone();
+            async move {
+                seen.lock().unwrap().push(session_id);
+                Ok(crate::sessions::LeaseTakeOutcome::Taken)
+            }
+        })
+        .await
+        .expect("the fresh start completed");
+        assert_eq!(handshake.session_id, "fresh-1");
+        assert_eq!(handshake.message_count, 0);
+        assert!(handshake.transcript.is_empty());
+        // The lease was asked for exactly once, under the id the child
+        // itself reported — not an id the client invented.
+        assert_eq!(seen.lock().unwrap().clone(), vec!["fresh-1".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn a_failed_fresh_handshake_closes_the_child_and_never_takes_a_lease() {
+        // The child refused `get_state`: nothing half-open survives — the
+        // child gets stdin EOF, and no lease was ever written.
+        let (client_half, server_half) = tokio::io::duplex(1024);
+        let replies: Arc<dyn Fn(&Value) -> Vec<Value> + Send + Sync> = Arc::new(|command: &Value| {
+            let id = command.get("id").and_then(Value::as_str).unwrap_or("").to_owned();
+            if command.get("type").and_then(Value::as_str) == Some("get_state") {
+                vec![json!({
+                    "type": "response", "id": id, "command": "get_state",
+                    "success": false, "error": "no provider"
+                })]
+            } else {
+                Vec::new()
+            }
+        });
+        responding_server(server_half, replies).await;
+        let mut protocol = RpcProtocol::new(client_half);
+        let lease_asked = Arc::new(StdMutex::new(false));
+        let lease_asked_for_closure = lease_asked.clone();
+        let error = complete_fresh_start(&mut protocol, RpcDeadlines::default(), move |_session_id| {
+            let lease_asked = lease_asked_for_closure.clone();
+            async move {
+                *lease_asked.lock().unwrap() = true;
+                Ok(crate::sessions::LeaseTakeOutcome::Taken)
+            }
+        })
+        .await
+        .expect_err("the handshake refused");
+        assert!(matches!(error, RpcError::CommandRefused { .. }), "{error}");
+        assert!(!*lease_asked.lock().unwrap(), "no lease for a session that never became ours");
+        assert!(protocol.is_eof(), "the child was closed (stdin EOF, stdout drained)");
+    }
+
+    #[tokio::test]
+    async fn a_refused_lease_after_a_fresh_handshake_closes_the_child() {
+        // The child started and reported its session id, but the lease take
+        // failed: the child must not stay running for a session this device
+        // does not hold, and the reason reaches the UI typed.
+        let (client_half, server_half) = tokio::io::duplex(1024);
+        let replies: Arc<dyn Fn(&Value) -> Vec<Value> + Send + Sync> = Arc::new(|command: &Value| {
+            let id = command.get("id").and_then(Value::as_str).unwrap_or("").to_owned();
+            match command.get("type").and_then(Value::as_str) {
+                Some("get_state") => vec![json!({ "type": "response", "id": id, "command": "get_state", "success": true,
+                        "data": { "sessionId": "fresh-2", "messageCount": 0 } })],
+                Some("get_messages") => vec![json!({ "type": "response", "id": id, "command": "get_messages", "success": true,
+                        "data": { "messages": [] } })],
+                _ => Vec::new(),
+            }
+        });
+        responding_server(server_half, replies).await;
+        let mut protocol = RpcProtocol::new(client_half);
+        let seen = Arc::new(StdMutex::new(Vec::<String>::new()));
+        let seen_for_closure = seen.clone();
+        let error = complete_fresh_start(&mut protocol, RpcDeadlines::default(), move |session_id| {
+            let seen = seen_for_closure.clone();
+            async move {
+                seen.lock().unwrap().push(session_id);
+                Err(RpcError::AlreadyLeased { detail: "taken".to_owned() })
+            }
+        })
+        .await
+        .expect_err("the lease take refused");
+        assert_eq!(
+            error,
+            RpcError::AlreadyLeased { detail: "taken".to_owned() }
+        );
+        assert_eq!(seen.lock().unwrap().clone(), vec!["fresh-2".to_owned()]);
+        assert!(protocol.is_eof(), "the child was closed after the refused lease");
+    }
+
+    #[tokio::test]
+    async fn a_settled_turn_refreshes_the_childs_own_message_count() {
+        // S24-5 honesty: after the first exchange, the header must not keep
+        // saying `0 messages`. The driver refreshes the count from the
+        // child's own `get_state` on every settled turn.
+        let (client_half, server_half) = tokio::io::duplex(4096);
+        let replies: Arc<dyn Fn(&Value) -> Vec<Value> + Send + Sync> = Arc::new(|command: &Value| {
+            let id = command.get("id").and_then(Value::as_str).unwrap_or("").to_owned();
+            match command.get("type").and_then(Value::as_str) {
+                Some("prompt") => vec![
+                    json!({ "type": "response", "id": id, "command": "prompt", "success": true }),
+                    json!({ "type": "agent_settled" }),
+                ],
+                Some("get_messages") => vec![json!({ "type": "response", "id": id, "command": "get_messages", "success": true,
+                        "data": { "messages": [
+                            { "role": "user", "content": "hi" },
+                            { "role": "assistant", "content": [{ "type": "text", "text": "hello" }] }
+                        ] } })],
+                Some("get_state") => vec![json!({ "type": "response", "id": id, "command": "get_state", "success": true,
+                        "data": { "sessionId": "s", "messageCount": 2 } })],
+                _ => Vec::new(),
+            }
+        });
+        responding_server(server_half, replies).await;
+        let (commands_tx, commands_rx) = crossbeam_channel::bounded::<RpcCommand>(8);
+        let shared = Arc::new(StdMutex::new(RpcShared::default()));
+        let shared_for_task = shared.clone();
+        // A lease pointing at a refused port: the release at the end of the
+        // pump fails instantly and quietly — the pump's outcome is untouched.
+        let lease = LeaseGuard {
+            profile: crate::profile::HostProfile {
+                host: "127.0.0.1".to_owned(),
+                port: 1,
+                user: "u".to_owned(),
+                identity_path: "/dev/null".into(),
+                known_hosts_path: "/dev/null".into(),
+            },
+            session_id: "s".to_owned(),
+            device_id: "d".to_owned(),
+            token: "t".to_owned(),
+        };
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async move {
+                // The pump runs on a local task: it is not Send (it holds the
+                // dialog closure across awaits) — exactly how the production
+                // driver thread runs it, block_on on its own runtime.
+                let task = tokio::task::spawn_local(drive_rpc_session(
+                    RpcProtocol::new(client_half),
+                    commands_rx,
+                    shared_for_task,
+                    lease,
+                    RpcDeadlines {
+                        response: Duration::from_secs(5),
+                        settle: Duration::from_secs(10),
+                        exit: Duration::from_secs(5),
+                    },
+                ));
+                let (reply_tx, reply_rx) = crossbeam_channel::bounded(1);
+                commands_tx
+                    .send(RpcCommand::Prompt { text: "hi".to_owned(), reply: reply_tx })
+                    .unwrap();
+                // The reply completes at settle. Polling (never a blocking
+                // recv here): this async block drives the pump, so blocking
+                // it would deadlock the very reply being waited for.
+                let transcript = loop {
+                    match reply_rx.try_recv() {
+                        Ok(result) => break result.expect("the turn succeeded"),
+                        Err(crossbeam_channel::TryRecvError::Empty) => {
+                            tokio::time::sleep(Duration::from_millis(50)).await
+                        }
+                        Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                            panic!("the reply channel closed before the turn settled")
+                        }
+                    }
+                };
+                assert_eq!(transcript.len(), 2, "the refreshed transcript came back");
+                assert_eq!(
+                    shared.lock().unwrap().message_count,
+                    Some(2),
+                    "the count is the child's own, not the stale handshake number"
+                );
+                let (close_tx, _close_rx) = crossbeam_channel::bounded(1);
+                commands_tx.send(RpcCommand::Close { reply: close_tx }).unwrap();
+                let _ = task.await;
+            })
+            .await;
     }
 }

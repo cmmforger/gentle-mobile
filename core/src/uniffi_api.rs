@@ -138,6 +138,10 @@ pub enum CompanionError {
     /// The resume path is not a regular file on the host (T17b).
     #[error("the session is not a file on the host: {path}")]
     RpcSessionNotAFile { path: String },
+    /// The directory a fresh session should start in does not exist on the
+    /// host, or is not a directory (S24-5).
+    #[error("the directory does not exist on the host: {path}")]
+    RpcStartNotADirectory { path: String },
     /// A live lease held by another device — refused, never opened (S18).
     #[error("the session is already in use: {detail}")]
     RpcSessionLeasedElsewhere { detail: String },
@@ -489,6 +493,9 @@ impl From<crate::rpc::RpcError> for CompanionError {
     fn from(error: crate::rpc::RpcError) -> Self {
         match error {
             crate::rpc::RpcError::NotAFile { path } => CompanionError::RpcSessionNotAFile { path },
+            crate::rpc::RpcError::NotADirectory { path } => {
+                CompanionError::RpcStartNotADirectory { path }
+            }
             crate::rpc::RpcError::AlreadyLeased { detail } => {
                 CompanionError::RpcSessionLeasedElsewhere { detail }
             }
@@ -645,6 +652,77 @@ pub struct RpcResumeOutcome {
     pub reclaimed: bool,
 }
 
+/// Start a fresh Gentle Shell session in `cwd` (S24-5): the directory must
+/// exist on the host, then `gentle-shell --mode rpc` is spawned **without
+/// `--session`** over a fresh channel of the pinned transport with the
+/// child's working directory set to `cwd`, the handshake learns the session
+/// id the child itself chose, and the advisory lease is taken under that id
+/// — only once the session exists. A missing directory, a missing binary,
+/// a spawn refusal or a failed handshake reports the reason typed and
+/// leaves nothing half-open: no lease is ever written for a session that
+/// never became ours, and the pump releases the lease on every exit path.
+#[uniffi::export]
+pub fn start_session_in_dir(
+    profile: HostProfileDto,
+    cwd: String,
+    device_id: String,
+    token: String,
+) -> Result<RpcResumeOutcome, CompanionError> {
+    let profile = profile.into_core();
+    let deadlines = crate::rpc::RpcDeadlines::default();
+    let shared: Arc<StdMutex<crate::rpc::RpcShared>> =
+        Arc::new(StdMutex::new(crate::rpc::RpcShared::default()));
+    let (commands_tx, commands_rx) = crossbeam_channel::bounded::<crate::rpc::RpcCommand>(8);
+    let (announced_tx, announced_rx) =
+        crossbeam_channel::bounded::<Result<crate::rpc::RpcHandshake, crate::rpc::RpcError>>(1);
+    let shared_for_thread = shared.clone();
+    let handle = std::thread::Builder::new()
+        .name("gentle-rpc".to_owned())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            match runtime {
+                Ok(runtime) => runtime.block_on(crate::rpc::run_fresh_session(
+                    profile,
+                    cwd,
+                    device_id,
+                    token,
+                    commands_rx,
+                    shared_for_thread,
+                    announced_tx,
+                    deadlines,
+                )),
+                Err(error) => {
+                    let _ = announced_tx.send(Err(crate::rpc::RpcError::Transport {
+                        detail: format!("the RPC pump runtime could not start: {error}"),
+                    }));
+                }
+            }
+        })
+        .map_err(|error| CompanionError::Transport {
+            detail: format!("the RPC pump thread could not start: {error}"),
+        })?;
+    let handshake = announced_rx
+        .recv_timeout(deadlines.response + deadlines.exit)
+        .map_err(|_| CompanionError::Timeout {
+            detail: "the RPC session never completed its handshake".to_owned(),
+        })?
+        .map_err(CompanionError::from)?;
+    Ok(RpcResumeOutcome {
+        session: Arc::new(RpcResumedSession {
+            commands: StdMutex::new(Some(commands_tx)),
+            handle: StdMutex::new(Some(handle)),
+            shared,
+            session_id: handshake.session_id,
+            message_count: handshake.message_count,
+            reclaimed: false,
+        }),
+        transcript: handshake.transcript.into_iter().map(TranscriptEntryDto::from).collect(),
+        reclaimed: false,
+    })
+}
+
 #[uniffi::export]
 impl RpcResumedSession {
     /// The session id the child itself reported (T5: the same one the list
@@ -655,7 +733,13 @@ impl RpcResumedSession {
 
     /// The child's own message count at resume time.
     pub fn message_count(&self) -> u64 {
-        self.message_count
+        // The driver refreshes the child's own count after every settled
+        // turn; until the first refresh the handshake number stands.
+        self.shared
+            .lock()
+            .ok()
+            .and_then(|guarded| guarded.message_count)
+            .unwrap_or(self.message_count)
     }
 
     /// Whether the resume reclaimed a stale lease — the visible note.

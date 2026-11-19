@@ -721,6 +721,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_resume_session(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_start_session_in_dir(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected(
@@ -853,6 +855,8 @@ internal object UniffiLib {
     external fun uniffi_gentlecompanion_core_fn_func_release_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_gentlecompanion_core_fn_func_resume_session(`profile`: RustBuffer.ByValue,`sessionPath`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_func_start_session_in_dir(`profile`: RustBuffer.ByValue,`cwd`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_gentlecompanion_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1007,6 +1011,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_resume_session() and 0xFFFF) != 33995) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_start_session_in_dir() and 0xFFFF) != 6110) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect() and 0xFFFF) != 59131) {
@@ -3559,6 +3566,18 @@ sealed class CompanionException: kotlin.Exception() {
     }
     
     /**
+     * The directory a fresh session should start in does not exist on the
+     * host, or is not a directory (S24-5).
+     */
+    class RpcStartNotADirectory(
+        
+        val `path`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "path=${ `path` }"
+    }
+    
+    /**
      * A live lease held by another device — refused, never opened (S18).
      */
     class RpcSessionLeasedElsewhere(
@@ -3667,20 +3686,23 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
             10 -> CompanionException.RpcSessionNotAFile(
                 FfiConverterString.read(buf),
                 )
-            11 -> CompanionException.RpcSessionLeasedElsewhere(
+            11 -> CompanionException.RpcStartNotADirectory(
                 FfiConverterString.read(buf),
                 )
-            12 -> CompanionException.RpcSpawnRefused(
+            12 -> CompanionException.RpcSessionLeasedElsewhere(
                 FfiConverterString.read(buf),
                 )
-            13 -> CompanionException.RpcProtocolGarbage(
+            13 -> CompanionException.RpcSpawnRefused(
                 FfiConverterString.read(buf),
                 )
-            14 -> CompanionException.RpcRefused(
+            14 -> CompanionException.RpcProtocolGarbage(
+                FfiConverterString.read(buf),
+                )
+            15 -> CompanionException.RpcRefused(
                 FfiConverterString.read(buf),
                 FfiConverterString.read(buf),
                 )
-            15 -> CompanionException.RpcSessionClosed()
+            16 -> CompanionException.RpcSessionClosed()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -3739,6 +3761,11 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
                 4UL
             )
             is CompanionException.RpcSessionNotAFile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`path`)
+            )
+            is CompanionException.RpcStartNotADirectory -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
                 + FfiConverterString.allocationSize(value.`path`)
@@ -3829,29 +3856,34 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
                 FfiConverterString.write(value.`path`, buf)
                 Unit
             }
-            is CompanionException.RpcSessionLeasedElsewhere -> {
+            is CompanionException.RpcStartNotADirectory -> {
                 buf.putInt(11)
-                FfiConverterString.write(value.`detail`, buf)
+                FfiConverterString.write(value.`path`, buf)
                 Unit
             }
-            is CompanionException.RpcSpawnRefused -> {
+            is CompanionException.RpcSessionLeasedElsewhere -> {
                 buf.putInt(12)
                 FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
-            is CompanionException.RpcProtocolGarbage -> {
+            is CompanionException.RpcSpawnRefused -> {
                 buf.putInt(13)
                 FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
-            is CompanionException.RpcRefused -> {
+            is CompanionException.RpcProtocolGarbage -> {
                 buf.putInt(14)
+                FfiConverterString.write(value.`detail`, buf)
+                Unit
+            }
+            is CompanionException.RpcRefused -> {
+                buf.putInt(15)
                 FfiConverterString.write(value.`command`, buf)
                 FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
             is CompanionException.RpcSessionClosed -> {
-                buf.putInt(15)
+                buf.putInt(16)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -4817,6 +4849,32 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
         FfiConverterTypeHostProfileDto.lower(`profile`),
         FfiConverterString.lower(`sessionPath`),
         FfiConverterString.lower(`sessionId`),
+        FfiConverterString.lower(`deviceId`),
+        FfiConverterString.lower(`token`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Start a fresh Gentle Shell session in `cwd` (S24-5): the directory must
+         * exist on the host, then `gentle-shell --mode rpc` is spawned **without
+         * `--session`** over a fresh channel of the pinned transport with the
+         * child's working directory set to `cwd`, the handshake learns the session
+         * id the child itself chose, and the advisory lease is taken under that id
+         * — only once the session exists. A missing directory, a missing binary,
+         * a spawn refusal or a failed handshake reports the reason typed and
+         * leaves nothing half-open: no lease is ever written for a session that
+         * never became ours, and the pump releases the lease on every exit path.
+         */
+    @Throws(CompanionException::class) fun `startSessionInDir`(`profile`: HostProfileDto, `cwd`: kotlin.String, `deviceId`: kotlin.String, `token`: kotlin.String): RpcResumeOutcome {
+            return FfiConverterTypeRpcResumeOutcome.lift(
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_start_session_in_dir(
+    
+        
+        FfiConverterTypeHostProfileDto.lower(`profile`),
+        FfiConverterString.lower(`cwd`),
         FfiConverterString.lower(`deviceId`),
         FfiConverterString.lower(`token`),_status)
 }

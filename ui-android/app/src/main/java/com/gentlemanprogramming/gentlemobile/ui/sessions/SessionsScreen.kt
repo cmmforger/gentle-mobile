@@ -79,6 +79,7 @@ fun SessionsScreen(
     onLeaseTaken: (sessionId: String, token: String) -> Unit,
     onLeaseReleased: () -> Unit,
     onResume: (session: SessionDto, sessionsDirOverride: String) -> Unit,
+    onStartNew: (sessions: List<SessionDto>) -> Unit,
     onBack: () -> Unit,
 ) {
     val p = LocalPalette.current
@@ -227,6 +228,17 @@ fun SessionsScreen(
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(8.dp))
+        // S24-5: start a session in a repository the history already knows —
+        // the start screen owns the spawn and the fresh-session lease.
+        Text(
+            text = stringResource(R.string.start_new),
+            color = p.accent,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .clickable { onStartNew(sessions ?: emptyList()) }
+                .padding(vertical = 8.dp),
+        )
 
         when {
             sessions == null && error == null -> Text(

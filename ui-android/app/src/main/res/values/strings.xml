@@ -201,6 +201,21 @@
     <string name="hist_take">Take over</string>
     <string name="hist_release">Release</string>
 
+    <!-- Start a session (S24-5): repositories with history -->
+    <string name="start_new">New session…</string>
+    <string name="start_title">Start a session</string>
+    <string name="start_group">Repositories with history</string>
+    <string name="start_empty">No session history here yet — “Other directory…” below can start anywhere on the host.</string>
+    <string name="start_row_action">start</string>
+    <string name="start_other">Other directory…</string>
+    <string name="start_other_hint">/absolute/path/on/the/host</string>
+    <string name="start_dir_not_absolute">Type an absolute path — it starts with /.</string>
+    <string name="start_start">Start</string>
+    <string name="start_starting">Starting the agent…</string>
+    <string name="start_error">The session could not start: %1$s</string>
+    <string name="start_dir_missing">The directory does not exist on the host: %1$s</string>
+    <string name="res_header_new">new \u00B7 %1$s</string>
+
     <!-- Relative time -->
     <string name="time_just_now">just now</string>
     <string name="time_min_ago">%1$d min ago</string>
