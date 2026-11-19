@@ -1,6 +1,7 @@
 package com.gentlemanprogramming.gentlemobile.pair
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetAddress
@@ -116,5 +117,50 @@ class PairClientTest {
         } finally {
             server.close()
         }
+    }
+
+    @Test
+    fun `an unreachable network is not blamed on a stale pairing`() {
+        // The phone reported "failed to connect … after 10000 ms" and the app told
+        // the human to regenerate the QR, when Tailscale was simply off (S26-1).
+        assertEquals(
+            PairClient.Reach.NETWORK,
+            PairClient.classify(java.net.SocketTimeoutException("failed to connect after 10000 ms")),
+        )
+        assertEquals(
+            PairClient.Reach.NETWORK,
+            PairClient.classify(java.net.NoRouteToHostException("No route to host")),
+        )
+        assertEquals(
+            PairClient.Reach.NETWORK,
+            PairClient.classify(java.net.ConnectException("Network is unreachable")),
+        )
+    }
+
+    @Test
+    fun `a refused connection means the listener is gone, not the network`() {
+        assertEquals(
+            PairClient.Reach.NOT_LISTENING,
+            PairClient.classify(java.net.ConnectException("Connection refused")),
+        )
+    }
+
+    @Test
+    fun `an address the phone cannot resolve is named as such`() {
+        assertEquals(
+            PairClient.Reach.UNKNOWN_HOST,
+            PairClient.classify(java.net.UnknownHostException("no such host")),
+        )
+    }
+
+    @Test
+    fun `the message names the address and never the raw socket text`() {
+        val unreachable = PairClient.defaultUnreachable("100.96.18.28", "40681", PairClient.Reach.NETWORK)
+        assertTrue(unreachable.contains("100.96.18.28:40681"))
+        assertTrue(unreachable.contains("Tailscale"))
+        assertFalse(unreachable.contains("failed to connect to"))
+        assertFalse(unreachable.contains("gentle-mobile-pair"))
+        val listening = PairClient.defaultUnreachable("10.0.2.2", "22", PairClient.Reach.NOT_LISTENING)
+        assertTrue(listening.contains("gentle-mobile pair"))
     }
 }

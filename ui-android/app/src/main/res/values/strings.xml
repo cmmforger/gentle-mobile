@@ -90,6 +90,9 @@
     <string name="nodes_state_row_interrupted">interrupted</string>
     <string name="nodes_state_row_saved">saved</string>
     <string name="hosts_add">Add a host</string>
+    <string name="hosts_rename">Rename</string>
+    <string name="hosts_rename_title">Name this host</string>
+    <string name="hosts_rename_save">Save</string>
     <string name="hosts_empty">No hosts yet — add one to start.</string>
     <string name="nodes_session_history">Session history</string>
     <string name="nodes_session_history_sub">Open a Gentle Shell session that already exists on the host.</string>
@@ -387,7 +390,9 @@
     <string name="dict_failed">Dictation failed (recognizer error %1$d).</string>
 
     <!-- Pairing refusals -->
-    <string name="pair_err_unreachable">Could not reach the pairing endpoint at %1$s — run gentle-mobile pair on the host and start again. (%2$s)</string>
+    <string name="pair_err_network">Can\'t reach %1$s — check that both devices are on the same network, or that Tailscale is connected.</string>
+    <string name="pair_err_not_listening">Reached %1$s but nothing is listening there — run gentle-mobile pair on the host and try again.</string>
+    <string name="pair_err_unknown_host">%1$s is not an address this phone can resolve — check the host in the pairing link.</string>
     <string name="pair_err_token">The host refused the token — this link does not match the running gentle-mobile pair.</string>
     <string name="pair_err_expired">Pairing expired — run gentle-mobile pair on the host and scan or paste the new link.</string>
     <string name="pair_err_used">That pairing was already used — run gentle-mobile pair on the host for a new one.</string>

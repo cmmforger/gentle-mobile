@@ -27,6 +27,32 @@ object PairClient {
 
     const val CONNECT_TIMEOUT_MS = 10_000
 
+    /**
+     * Why the socket never produced an HTTP reply (S26-1). The raw Android text
+     * ("failed to connect to /10.0.0.1 from /10.0.0.2 port 54068 after 10000 ms")
+     * names no cause the human can act on, so failures are classified instead.
+     */
+    enum class Reach {
+        /** No route: wrong network, or Tailscale/VPN down. */
+        NETWORK,
+
+        /** The host answered and nothing is listening on that port. */
+        NOT_LISTENING,
+
+        /** The address is not a host this phone can resolve. */
+        UNKNOWN_HOST,
+    }
+
+    /** Classify a socket failure. Pure, so every case is testable on the JVM. */
+    fun classify(error: Throwable): Reach = when {
+        error is java.net.UnknownHostException -> Reach.UNKNOWN_HOST
+        error is java.net.ConnectException &&
+            error.message?.contains("refused", ignoreCase = true) == true -> Reach.NOT_LISTENING
+        // Timeouts, NoRouteToHostException, ENETUNREACH and EHOSTUNREACH all mean
+        // the packet never reached a listening port: treat them as no route.
+        else -> Reach.NETWORK
+    }
+
     /** Minimal JSON string escaping for the token and the key line. */
     fun jsonEscape(value: String): String {
         val out = StringBuilder(value.length + 8)
@@ -65,7 +91,7 @@ object PairClient {
         pairPort: String,
         token: String,
         publicKeyLine: String,
-        unreachable: (pairHost: String, pairPort: String, reason: String) -> String,
+        unreachable: (pairHost: String, pairPort: String, reach: Reach) -> String,
         refusal: (status: Int, detail: String?) -> String,
     ): Result {
         val body = "{\"token\":\"${jsonEscape(token)}\",\"key\":\"${jsonEscape(publicKeyLine)}\"}"
@@ -83,16 +109,23 @@ object PairClient {
             val reply = readBody(connection)
             parseReply(status, reply, refusal)
         } catch (error: IOException) {
-            Result.Refused(
-                unreachable(pairHost, pairPort, error.message ?: "connection failed"),
-            )
+            Result.Refused(unreachable(pairHost, pairPort, classify(error)))
         }
     }
 
     /** The default (English) unreachable refusal; the pure tests rely on it. */
-    fun defaultUnreachable(pairHost: String, pairPort: String, reason: String): String =
-        "Could not reach the pairing endpoint at $pairHost:$pairPort — " +
-            "run gentle-mobile-pair on the host and start again. ($reason)"
+    fun defaultUnreachable(pairHost: String, pairPort: String, reach: Reach): String =
+        when (reach) {
+            Reach.NETWORK ->
+                "Could not reach $pairHost:$pairPort — check that both devices are on the " +
+                    "same network, or that Tailscale is connected."
+            Reach.NOT_LISTENING ->
+                "Reached $pairHost:$pairPort but nothing is listening there — " +
+                    "run gentle-mobile pair on the host and try again."
+            Reach.UNKNOWN_HOST ->
+                "$pairHost is not an address this phone can resolve — check the host " +
+                    "in the pairing link."
+        }
 
     private fun readBody(connection: HttpURLConnection): String =
         (connection.inputStream ?: connection.errorStream)?.use { it.readBytes() }

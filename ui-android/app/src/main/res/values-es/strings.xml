@@ -91,6 +91,9 @@
     <string name="nodes_state_row_interrupted">interrumpido</string>
     <string name="nodes_state_row_saved">guardado</string>
     <string name="hosts_add">Agregar un equipo</string>
+    <string name="hosts_rename">Cambiar nombre</string>
+    <string name="hosts_rename_title">Poné un nombre a este host</string>
+    <string name="hosts_rename_save">Guardar</string>
     <string name="hosts_empty">Todavía no hay equipos — agregá uno para empezar.</string>
     <string name="nodes_session_history">Historial de sesiones</string>
     <string name="nodes_session_history_sub">Abrí una sesión de Gentle Shell que ya existe en el host.</string>
@@ -388,7 +391,9 @@
     <string name="dict_failed">El dictado falló (error de reconocedor %1$d).</string>
 
     <!-- Rechazos del emparejamiento -->
-    <string name="pair_err_unreachable">No se pudo alcanzar el endpoint de emparejamiento en %1$s — ejecutá gentle-mobile pair en el host y arrancá de nuevo. (%2$s)</string>
+    <string name="pair_err_network">No se puede llegar a %1$s — revisá que los dos equipos estén en la misma red o que Tailscale esté conectado.</string>
+    <string name="pair_err_not_listening">Llegó a %1$s pero no hay nada escuchando ahí — volvé a correr gentle-mobile pair en el host y probá de nuevo.</string>
+    <string name="pair_err_unknown_host">%1$s no es una dirección que este teléfono pueda resolver — revisá el host del enlace de emparejamiento.</string>
     <string name="pair_err_token">El host rechazó el token — este enlace no corresponde al gentle-mobile pair que está corriendo.</string>
     <string name="pair_err_expired">El emparejamiento venció — ejecutá gentle-mobile pair en el host y escaneá o pegá el enlace nuevo.</string>
     <string name="pair_err_used">Ese emparejamiento ya se usó — ejecutá gentle-mobile pair en el host para uno nuevo.</string>

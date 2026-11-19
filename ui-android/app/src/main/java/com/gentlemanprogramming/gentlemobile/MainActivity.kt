@@ -606,6 +606,9 @@ fun ConnectScreen(
     // S24-4: the saved host list lives beside the last-used form: the form
     // prefill stays, and the list is what the app opens on.
     val hostsStore = remember { HostsStore(SharedPreferencesStore(context)) }
+    // S26-5: the host being renamed, and the text being typed for it.
+    var renameTarget by remember { mutableStateOf<SavedHostEntry?>(null) }
+    var renameText by remember { mutableStateOf("") }
     var hostName by remember { mutableStateOf(savedForm.name) }
     var host by remember { mutableStateOf(savedForm.host) }
     var port by remember { mutableStateOf(savedForm.port) }
@@ -641,6 +644,21 @@ fun ConnectScreen(
      *  list is small and local, so a plain read is enough. */
     fun refreshSavedHosts() {
         screen.hosts = hostsStore.load()
+    }
+
+    /** Save a host under the name the human typed (S26-5). A blank name keeps
+     *  the one it had; nothing else about the host changes — not its pins, not
+     *  its port, not its user. */
+    fun applyRename() {
+        val entry = renameTarget ?: return
+        val wanted = renameText.trim().ifEmpty { entry.name }
+        hostsStore.save(entry.copy(name = wanted))
+        if (entry.host == host.trim() && entry.port.trim() == port.trim()) {
+            hostName = wanted
+        }
+        renameTarget = null
+        renameText = ""
+        refreshSavedHosts()
     }
 
     /** The saved host list (S24-4), read once on entry. */
@@ -1413,8 +1431,13 @@ fun ConnectScreen(
             else -> context.getString(R.string.pair_err_other, status) + suffix
         }
     }
-    val pairUnreachable = { pairHost: String, pairPort: String, reason: String ->
-        context.getString(R.string.pair_err_unreachable, "$pairHost:$pairPort", reason)
+    val pairUnreachable = { pairHost: String, pairPort: String, reach: PairClient.Reach ->
+        val where = "$pairHost:$pairPort"
+        when (reach) {
+            PairClient.Reach.NETWORK -> context.getString(R.string.pair_err_network, where)
+            PairClient.Reach.NOT_LISTENING -> context.getString(R.string.pair_err_not_listening, where)
+            PairClient.Reach.UNKNOWN_HOST -> context.getString(R.string.pair_err_unknown_host, pairHost)
+        }
     }
 
     fun applyPairLink(raw: String): Boolean {
@@ -2685,6 +2708,27 @@ fun ConnectScreen(
                                         connectTo(entry)
                                     }
                                 },
+                                renameLabel = stringResource(R.string.hosts_rename),
+                                onRename = {
+                                        renameTarget = entry
+                                        renameText = entry.name
+                                    },
+                            )
+                        }
+                        // S26-5: one small surface for the new name.
+                        renameTarget?.let { target ->
+                            RenameHostDialog(
+                                title = stringResource(R.string.hosts_rename_title),
+                                value = renameText,
+                                fieldLabel = stringResource(R.string.pair_form_name),
+                                saveLabel = stringResource(R.string.hosts_rename_save),
+                                cancelLabel = stringResource(R.string.set_cancel),
+                                onValueChange = { renameText = it },
+                                onSave = { applyRename() },
+                                onCancel = {
+                                    renameTarget = null
+                                    renameText = ""
+                                },
                             )
                         }
                         // S26-2: the host's herdr workspaces — the human's
@@ -2760,6 +2804,27 @@ fun ConnectScreen(
                             state = stringResource(R.string.nodes_state_row_saved),
                             meta = "${entry.user}@${entry.host}:${entry.port}",
                             onOpen = { connectTo(entry) },
+                            renameLabel = stringResource(R.string.hosts_rename),
+                            onRename = {
+                                        renameTarget = entry
+                                        renameText = entry.name
+                                    },
+                        )
+                    }
+                    // S26-5: the same one-surface rename, on this list too.
+                    renameTarget?.let { target ->
+                        RenameHostDialog(
+                            title = stringResource(R.string.hosts_rename_title),
+                            value = renameText,
+                            fieldLabel = stringResource(R.string.pair_form_name),
+                            saveLabel = stringResource(R.string.hosts_rename_save),
+                            cancelLabel = stringResource(R.string.set_cancel),
+                            onValueChange = { renameText = it },
+                            onSave = { applyRename() },
+                            onCancel = {
+                                renameTarget = null
+                                renameText = ""
+                            },
                         )
                     }
                 }
@@ -3334,17 +3399,18 @@ private fun SessionScreen(
             .imePadding()
             .padding(16.dp),
     ) {
-        // Header: back to the agents list, agent name and its cwd.
+        // Header: back to the agents list, agent name and its project. Icons
+        // instead of the words, and the project name only — the full path
+        // belongs inside the session, not in the header (S26-4).
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text(
-                text = stringResource(R.string.inbox_back),
-                color = LocalPalette.current.accent,
-                fontSize = 13.sp,
+            Icon(
+                painter = painterResource(R.drawable.ic_back),
+                contentDescription = stringResource(R.string.inbox_back),
+                tint = LocalPalette.current.accent,
                 modifier = Modifier
-                    .clickable(onClick = onBack)
-                    .padding(vertical = 12.dp),
+                    .size(44.dp)
+                    .clickable(onClick = onBack),
             )
-            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = agent.name,
@@ -3356,7 +3422,7 @@ private fun SessionScreen(
                 )
                 Text(
                     text = listOfNotNull(
-                        agent.cwd,
+                        AgentRowModel.projectTitle(agent.cwd, agent.name),
                         statusWord(agent.status),
                     ).joinToString(" · "),
                     color = LocalPalette.current.muted,
@@ -3366,13 +3432,13 @@ private fun SessionScreen(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                text = stringResource(R.string.session_refresh),
-                color = LocalPalette.current.accent,
-                fontSize = 13.sp,
+            Icon(
+                painter = painterResource(R.drawable.ic_refresh),
+                contentDescription = stringResource(R.string.session_refresh),
+                tint = LocalPalette.current.accent,
                 modifier = Modifier
-                    .clickable(onClick = onRefresh)
-                    .padding(vertical = 12.dp),
+                    .size(44.dp)
+                    .clickable(onClick = onRefresh),
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -3881,6 +3947,71 @@ private fun InboxRow(
  * A row that explains itself (S24-3) passes `state = null` and shows none.
  * The live host's word reads in the accent colour (S24-4): the connected
  * machine is marked, never left looking like the rest. */
+/** Renaming a saved host (S26-5): one field, one save, one cancel. The text is
+ *  the human's; nothing here touches the host's pins, port or user. */
+@Composable
+private fun RenameHostDialog(
+    title: String,
+    value: String,
+    fieldLabel: String,
+    saveLabel: String,
+    cancelLabel: String,
+    onValueChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(LocalPalette.current.surface, RoundedCornerShape(16.dp))
+                .padding(20.dp),
+        ) {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                label = { Text(fieldLabel) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = LocalPalette.current.accent,
+                    unfocusedBorderColor = LocalPalette.current.line,
+                ),
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = cancelLabel,
+                    color = LocalPalette.current.muted,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .clickable(onClick = onCancel)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = saveLabel,
+                    color = LocalPalette.current.accent,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .clickable(onClick = onSave)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun NodeRow(
     name: String,
@@ -3888,6 +4019,8 @@ private fun NodeRow(
     meta: String,
     onOpen: () -> Unit,
     stateAccent: Boolean = false,
+    renameLabel: String? = null,
+    onRename: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -3926,6 +4059,19 @@ private fun NodeRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        // S26-5: renaming a saved host is its own target, not a long press —
+        // with several machines the name is how the human tells them apart.
+        if (onRename != null && !renameLabel.isNullOrBlank()) {
+            Text(
+                text = renameLabel,
+                color = LocalPalette.current.muted,
+                fontSize = 11.sp,
+                modifier = Modifier
+                    .clickable(onClick = onRename)
+                    .padding(start = 12.dp, top = 12.dp, bottom = 12.dp),
+            )
+            Spacer(Modifier.width(8.dp))
         }
         Text(text = "›", color = LocalPalette.current.muted, fontSize = 15.sp)
     }
