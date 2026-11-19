@@ -234,6 +234,10 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
      card must not list projects again — that duplicate is what the rename row was opening.
   5. **Workspace detail.** Its title collides with the status bar clock, so it needs the same back-button header as the rest;
      and tapping a project must go straight into its session, not through an intermediate screen that repeats its name.
+- **S29 — The desktop composer is redundant on the phone, and the phone must stop painting it.**
+  The frame includes pi's own input box (`type, or / for commands` with its `waiting for input` bar). The phone writes through
+  its own composer, so that box is chrome the human cannot use. Decision: **hide the composer rows only**, keep the metrics
+  lines below them (`TPS … tok/s`, `N files · +x −y`), and never hide a row when the marker is not clearly the composer.
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -290,6 +294,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T21 | Continuity (v1.5): list the host's Gentle Shell sessions and resume a closed one, with a guard that refuses a session another process holds | S15 | worker | — |
 | T22 | Third phone test corrections: fit the frame to the phone, wider card, no measurement or `live` lines, quiet header glyphs, project name only, the workspace's tabs, and the full project list with `+` | S27 | worker | — |
 | T23 | Fourth phone test: working tabs via `tab.focus`, accent header glyphs, a surface derived from the card so the frame fills the phone, workspaces nested under their host without duplication, and a workspace screen that enters the session directly | S28 | worker | — |
+| T24 | Hide the desktop composer rows from the phone's frame: detect the composer, drop those rows, shift the rest up, keep the metrics, and take the freed rows as extra conversation (request that many more rows) | S29 | worker | — |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
