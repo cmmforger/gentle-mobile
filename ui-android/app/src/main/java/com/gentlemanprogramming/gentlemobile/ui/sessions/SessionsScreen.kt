@@ -57,6 +57,9 @@ import java.util.UUID
  * core owns (S18: Pi provides no lock, so the guard is ours).
  *
  * Honesty rules on this screen:
+ * * cached listings (S24) are served only while younger than the cache
+ *   TTL — anything older shows the normal loading state; the explicit
+ *   Refresh action and lease mutations always fetch live;
  * * a live lease held elsewhere shows `in use elsewhere` and the row never
  *   offers to open; the take action is refused typed by the core;
  * * a stale lease is reclaimed only through the visible Take action, and
@@ -86,9 +89,16 @@ fun SessionsScreen(
     val context = LocalContext.current
     var sessions by remember { mutableStateOf<List<SessionDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // S24: the in-memory index cache makes re-entering this screen instant.
+    // It is never shown as live: older than the TTL it is not served at all
+    // (the loading state below runs instead), the explicit Refresh action
+    // and every lease mutation bypass it.
+    val cacheKey = SessionsCache.key(profile, sessionsDir)
+    var bypassCache by remember { mutableStateOf(false) }
     // S24-3: the listing can be genuinely slow (the host's session files are
-    // read one by one over SSH), so the state carries a ticking clock: after
-    // two seconds it says it is still working, never frozen.
+    // read over SSH in a bounded concurrent window), so the state carries a
+    // ticking clock: after two seconds it says it is still working, never
+    // frozen.
     var listingStartedAtMs by remember { mutableStateOf(0L) }
     var nowMs by remember { mutableStateOf(0L) }
     var sheetFor by remember { mutableStateOf<SessionDto?>(null) }
@@ -106,6 +116,7 @@ fun SessionsScreen(
             try {
                 val listed = listSessions(profile, sessionsDir, deviceLeaseId)
                 mainHandler.post {
+                    SessionsCache.put(cacheKey, listed, System.currentTimeMillis())
                     sessions = SessionsModel.ordered(listed)
                     error = null
                 }
@@ -116,7 +127,21 @@ fun SessionsScreen(
     }
     LaunchedEffect(reloadNonce) {
         listingStartedAtMs = System.currentTimeMillis()
-        load()
+        // A fresh cache entry is the instant path back into Session history.
+        // Anything else — no entry, past the TTL, or an explicit bypass —
+        // fetches live through the normal loading state.
+        val cached = if (bypassCache) {
+            null
+        } else {
+            SessionsCache.fresh(cacheKey, System.currentTimeMillis())
+        }
+        bypassCache = false
+        if (cached != null) {
+            sessions = SessionsModel.ordered(cached)
+            error = null
+        } else {
+            load()
+        }
     }
     // While the list is loading, tick once a second so the honest elapsed
     // time is visible — a slow host never looks frozen (S24-3).
@@ -152,12 +177,16 @@ fun SessionsScreen(
                             showNote(context.getString(R.string.hist_note_reclaimed), isError = false)
                         }
                     }
+                    // A lease take changed state on the host: the reload is
+                    // live, never served from the cache (S24).
+                    bypassCache = true
                     reloadNonce += 1
                 }
             } catch (e: Exception) {
                 // The core refuses a live lease held elsewhere, typed.
                 mainHandler.post {
                     showNote(context.getString(R.string.hist_note_elsewhere_live), isError = true)
+                    bypassCache = true
                     reloadNonce += 1
                 }
             }
@@ -174,6 +203,8 @@ fun SessionsScreen(
             mainHandler.post {
                 onLeaseReleased()
                 showNote(context.getString(R.string.hist_note_released), isError = false)
+                // A release changed state on the host: live reload (S24).
+                bypassCache = true
                 reloadNonce += 1
             }
         }
@@ -237,6 +268,22 @@ fun SessionsScreen(
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier
                 .clickable { onStartNew(sessions ?: emptyList()) }
+                .padding(vertical = 8.dp),
+        )
+        // S24: the explicit refresh — always a live fetch over SSH, never
+        // the cache, so the user can always ask the host for the truth now.
+        Text(
+            text = stringResource(R.string.session_refresh),
+            color = p.accent,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .clickable {
+                    sessions = null
+                    error = null
+                    bypassCache = true
+                    reloadNonce += 1
+                }
                 .padding(vertical = 8.dp),
         )
 

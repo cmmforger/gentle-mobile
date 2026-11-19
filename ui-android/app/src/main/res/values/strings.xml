@@ -168,7 +168,7 @@
     <string name="hist_title">Session history</string>
     <string name="hist_subtitle">%1$s@%2$s \u00B7 gentle shell</string>
     <string name="hist_listing">Reading the session files over the connection — a host with many sessions can take a while.</string>
-    <string name="hist_listing_slow">Still reading — the host\u2019s sessions are read one file at a time. (%1$d s so far)</string>
+    <string name="hist_listing_slow">Still reading — the host\u2019s session files are being read over the connection. (%1$d s so far)</string>
     <string name="hist_list_error">The sessions could not be listed: %1$s</string>
     <string name="hist_empty">No sessions in this directory.</string>
     <string name="hist_state_free">free</string>

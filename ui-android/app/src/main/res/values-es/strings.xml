@@ -169,7 +169,7 @@
     <string name="hist_title">Historial de sesiones</string>
     <string name="hist_subtitle">%1$s@%2$s \u00B7 gentle shell</string>
     <string name="hist_listing">Leyendo los archivos de sesión por la conexión — un host con muchas sesiones puede tardar un poco.</string>
-    <string name="hist_listing_slow">Sigue leyendo — las sesiones del host se leen de a un archivo por vez. (%1$d s hasta ahora)</string>
+    <string name="hist_listing_slow">Sigue leyendo — los archivos de sesión del host se leen por la conexión. (%1$d s hasta ahora)</string>
     <string name="hist_list_error">No se pudieron listar las sesiones: %1$s</string>
     <string name="hist_empty">No hay sesiones en este directorio.</string>
     <string name="hist_state_free">libre</string>

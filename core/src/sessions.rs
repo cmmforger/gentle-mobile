@@ -63,6 +63,14 @@ pub const MAX_CHEAP_SESSION_BYTES: u64 = 8 * 1024 * 1024;
 /// The prefix read from an oversized session to recover its header.
 const HEADER_READ_BYTES: u64 = 64 * 1024;
 
+/// How many session files the listing reads **concurrently** (S24). Each
+/// per-file step is a chain of SFTP round-trips — metadata, header/content
+/// read, lease check — and every round-trip is a network wait, so a serial
+/// loop over a few hundred sessions takes minutes. A bounded in-flight
+/// window overlaps those waits without flooding the single SFTP channel.
+/// The output order is unaffected: results come back "as discovered".
+pub const LIST_MAX_IN_FLIGHT: usize = 16;
+
 /// A lease that is exactly at the staleness threshold is already stale.
 pub const LEASE_STALE_AFTER_MS: u64 = LEASE_STALE_AFTER_SECS * 1000;
 
@@ -102,6 +110,29 @@ pub fn parse_session_file(
     last_modified_epoch_ms: u64,
     bytes: &[u8],
 ) -> Result<SessionSummary, SessionFileError> {
+    parse_session_bytes(file_name, last_modified_epoch_ms, bytes, true)
+}
+
+/// Parse a **bounded header** read of one session file into the summary the
+/// list shows (S24: oversized sessions are listed without reading the whole
+/// file). Everything the header carries — id, cwd, mtime — is surfaced
+/// exactly as [`parse_session_file`] would; `message_count` is `None`,
+/// because the bytes after the header were never read and a count of the
+/// fragment would read as the whole truth.
+pub fn parse_session_header(
+    file_name: &str,
+    last_modified_epoch_ms: u64,
+    bytes: &[u8],
+) -> Result<SessionSummary, SessionFileError> {
+    parse_session_bytes(file_name, last_modified_epoch_ms, bytes, false)
+}
+
+fn parse_session_bytes(
+    file_name: &str,
+    last_modified_epoch_ms: u64,
+    bytes: &[u8],
+    count_messages: bool,
+) -> Result<SessionSummary, SessionFileError> {
     let _ = file_name;
     let text = std::str::from_utf8(bytes).map_err(|_| SessionFileError::NotASession)?;
     let mut lines = text.lines();
@@ -119,15 +150,19 @@ pub fn parse_session_file(
         .to_owned();
     let cwd = header.get("cwd").and_then(Value::as_str).map(str::to_owned);
     // Message count: every parseable line typed `message`. Unparseable lines
-    // (a torn trailing line is the S17 case) are skipped, never fatal.
+    // (a torn trailing line is the S17 case) are skipped, never fatal. A
+    // header-only parse (oversized file) never counts: the bytes after the
+    // header were not read, so it reports `None` instead of a fragment.
     let mut message_count = 0u64;
-    for line in lines {
-        if line.trim().is_empty() {
-            continue;
-        }
-        if let Ok(entry) = serde_json::from_str::<Value>(line) {
-            if entry.get("type").and_then(Value::as_str) == Some("message") {
-                message_count += 1;
+    if count_messages {
+        for line in lines {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(entry) = serde_json::from_str::<Value>(line) {
+                if entry.get("type").and_then(Value::as_str) == Some("message") {
+                    message_count += 1;
+                }
             }
         }
     }
@@ -135,8 +170,41 @@ pub fn parse_session_file(
         session_id,
         cwd,
         last_modified_epoch_ms,
-        message_count: Some(message_count),
+        message_count: if count_messages { Some(message_count) } else { None },
     })
+}
+
+/// Drive one future per item with at most `limit` in flight, returning
+/// every output **in input order** — the "as discovered" order of the
+/// serial loop. Nothing is dropped: each future is awaited exactly once,
+/// whatever the limit (a limit of 1 degrades to the serial loop). A panic
+/// inside a future is re-raised in the caller, like a plain `await` would.
+pub(crate) async fn bounded_in_flight<Fut>(futures: Vec<Fut>, limit: usize) -> Vec<Fut::Output>
+where
+    Fut: Future<Output: Send> + Send + 'static,
+{
+    assert!(limit >= 1, "the in-flight limit must be at least one");
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(limit));
+    let handles: Vec<tokio::task::JoinHandle<Fut::Output>> = futures
+        .into_iter()
+        .map(|fut| {
+            let semaphore = semaphore.clone();
+            tokio::spawn(async move {
+                // The permit is acquired *before* the future is polled, so
+                // at most `limit` futures ever run at the same time.
+                let _permit = semaphore.acquire_owned().await;
+                fut.await
+            })
+        })
+        .collect();
+    let mut out = Vec::with_capacity(handles.len());
+    for handle in handles {
+        match handle.await {
+            Ok(value) => out.push(value),
+            Err(join_error) => std::panic::resume_unwind(join_error.into_panic()),
+        }
+    }
+    out
 }
 
 /// A parsed advisory lease. `device_id` and `token` are pid-less — the token
@@ -483,13 +551,32 @@ async fn write_lease(
 
 /// List the sessions in `sessions_dir` over the SFTP lane, each with its
 /// lease view. Files that are not sessions are skipped; the list itself
-/// only fails when the transport fails.
+/// only fails when the transport fails. Per-file reads run in a bounded
+/// in-flight window of [`LIST_MAX_IN_FLIGHT`] (S24); the output keeps the
+/// "as discovered" order of the serial walk.
 pub async fn list_sessions_over_sftp(
     profile: &HostProfile,
     sessions_dir: &str,
     our_device_id: &str,
 ) -> Result<Vec<HostSession>, HubError> {
+    list_sessions_over_sftp_with_limit(profile, sessions_dir, our_device_id, LIST_MAX_IN_FLIGHT)
+        .await
+}
+
+/// [`list_sessions_over_sftp`] with the in-flight window made explicit —
+/// the measurement harness passes 1 to reproduce the old serial cost on
+/// the same host, the same files and the same code path.
+pub async fn list_sessions_over_sftp_with_limit(
+    profile: &HostProfile,
+    sessions_dir: &str,
+    our_device_id: &str,
+    max_in_flight: usize,
+) -> Result<Vec<HostSession>, HubError> {
     let (mut ssh, sftp) = connect_sftp(profile).await?;
+    // One SFTP session is shared by every concurrent per-file read: it is
+    // internally an Arc'd, id-multiplexed raw session (russh-sftp pipelines
+    // concurrent requests over the one channel).
+    let sftp = std::sync::Arc::new(sftp);
     let listing = async {
         // The host clock anchors every lease decision; the phone's clock is
         // never trusted.
@@ -551,38 +638,71 @@ pub async fn list_sessions_over_sftp(
                 }
             }
         }
+        // Per-file work (S24): metadata + read + parse + lease check for
+        // every candidate, overlapped in a bounded in-flight window. Each
+        // future owns clones of the shared SFTP session and anchors, so the
+        // window needs no shared mutable state. Output order is the
+        // candidates' "as discovered" order.
+        let per_file: Vec<_> = candidates
+            .into_iter()
+            .map(|(file_name, path)| {
+                let sftp = sftp.clone();
+                let home = home.clone();
+                let device_id = our_device_id.to_owned();
+                async move {
+                    let metadata = match sftp.metadata(&path).await {
+                        Ok(metadata) => metadata,
+                        Err(_) => return Ok(None),
+                    };
+                    let last_modified_epoch_ms = metadata
+                        .modified()
+                        .ok()
+                        .map(|time| {
+                            time.duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or(std::time::Duration::ZERO)
+                                .as_millis() as u64
+                        })
+                        .unwrap_or(0);
+                    // Count messages only while it is cheap; an oversized
+                    // session is listed with its header alone and reports no
+                    // count at all (never a truncated number, S24).
+                    let (bytes, count_messages) = if metadata.len() <= MAX_CHEAP_SESSION_BYTES {
+                        match sftp.read(&path).await {
+                            Ok(bytes) => (bytes, true),
+                            Err(_) => return Ok(None),
+                        }
+                    } else {
+                        match bounded_header_read(&sftp, &path).await {
+                            Ok(bytes) => (bytes, false),
+                            Err(_) => return Ok(None),
+                        }
+                    };
+                    let summary = if count_messages {
+                        parse_session_file(&file_name, last_modified_epoch_ms, &bytes)
+                    } else {
+                        parse_session_header(&file_name, last_modified_epoch_ms, &bytes)
+                    };
+                    let summary = match summary {
+                        Ok(summary) => summary,
+                        Err(SessionFileError::NotASession) => return Ok(None),
+                    };
+                    let lease_bytes = read_lease_bytes(&sftp, &home, &summary.session_id).await?;
+                    let lease = lease_view(lease_bytes.as_deref(), now, &device_id);
+                    Ok(Some(HostSession { file_name, summary, lease }))
+                }
+            })
+            .collect();
+        let results = bounded_in_flight(per_file, max_in_flight).await;
         let mut out = Vec::new();
-        for (file_name, path) in candidates {
-            let metadata = match sftp.metadata(&path).await {
-                Ok(metadata) => metadata,
-                Err(_) => continue,
-            };
-            let last_modified_epoch_ms = metadata
-                .modified()
-                .ok()
-                .map(|time| {
-                    time.duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or(std::time::Duration::ZERO)
-                        .as_millis() as u64
-                })
-                .unwrap_or(0);
-            // Count messages only while it is cheap; an oversized session is
-            // listed with its header alone (message_count stays None).
-            let bytes = if metadata.len() <= MAX_CHEAP_SESSION_BYTES {
-                sftp.read(&path).await.ok()
-            } else {
-                bounded_header_read(&sftp, &path).await.ok()
-            };
-            let Some(bytes) = bytes else {
-                continue;
-            };
-            let summary = match parse_session_file(&file_name, last_modified_epoch_ms, &bytes) {
-                Ok(summary) => summary,
-                Err(SessionFileError::NotASession) => continue,
-            };
-            let lease_bytes = read_lease_bytes(&sftp, &home, &summary.session_id).await?;
-            let lease = lease_view(lease_bytes.as_deref(), now, our_device_id);
-            out.push(HostSession { file_name, summary, lease });
+        for result in results {
+            match result {
+                Ok(Some(session)) => out.push(session),
+                // Not a session (or unreadable): skipped, never fatal.
+                Ok(None) => {}
+                // A lease check that failed on the transport fails the
+                // listing, exactly as the serial loop did.
+                Err(error) => return Err(error),
+            }
         }
         Ok(out)
     }
@@ -992,5 +1112,95 @@ mod tests {
         assert_eq!(lease.acquired_at_epoch_ms, now_ms());
         assert_eq!(lease.heartbeat_at_epoch_ms, now_ms());
         assert_eq!(lease.device_id, "dm-us");
+    }
+
+    // --- bounded in-flight listing (S24) --------------------------------------
+
+    /// Tracks the peak number of futures observed inside the measured
+    /// section, so a test can prove the window never exceeds its limit
+    /// (and, with a second assertion, that the window actually overlapped).
+    fn peak_tracker() -> (std::sync::Arc<std::sync::atomic::AtomicUsize>, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::AtomicUsize;
+        (
+            std::sync::Arc::new(AtomicUsize::new(0)),
+            std::sync::Arc::new(AtomicUsize::new(0)),
+        )
+    }
+
+    #[tokio::test]
+    async fn bounded_in_flight_keeps_every_entry_in_input_order() {
+        // 200 simulated session reads: nothing may be dropped, and the
+        // output must come back "as discovered" — the same order the
+        // serial loop produced.
+        let futures: Vec<_> = (0..200u64).map(|i| async move { i * 2 }).collect();
+        let outputs = bounded_in_flight(futures, LIST_MAX_IN_FLIGHT).await;
+        let expected: Vec<u64> = (0..200).map(|i| i * 2).collect();
+        assert_eq!(outputs.len(), expected.len(), "no entry may be dropped");
+        assert_eq!(outputs, expected);
+    }
+
+    #[tokio::test]
+    async fn bounded_in_flight_never_exceeds_the_in_flight_limit() {
+        use std::sync::atomic::Ordering;
+        let (in_flight, peak) = peak_tracker();
+        let futures: Vec<_> = (0..64u32)
+            .map(|_| {
+                let in_flight = in_flight.clone();
+                let peak = peak.clone();
+                async move {
+                    let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(now, Ordering::SeqCst);
+                    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                    in_flight.fetch_sub(1, Ordering::SeqCst);
+                }
+            })
+            .collect();
+        bounded_in_flight(futures, LIST_MAX_IN_FLIGHT).await;
+        let peak = peak.load(Ordering::SeqCst);
+        assert!(
+            peak <= LIST_MAX_IN_FLIGHT,
+            "peak in flight {peak} exceeded the limit {LIST_MAX_IN_FLIGHT}"
+        );
+        assert!(peak > 1, "peak in flight {peak}: the reads never overlapped");
+    }
+
+    #[tokio::test]
+    async fn a_limit_of_one_is_a_serial_loop() {
+        use std::sync::atomic::Ordering;
+        let (in_flight, peak) = peak_tracker();
+        let futures: Vec<_> = (0..8u32)
+            .map(|_| {
+                let in_flight = in_flight.clone();
+                let peak = peak.clone();
+                async move {
+                    let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(now, Ordering::SeqCst);
+                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                    in_flight.fetch_sub(1, Ordering::SeqCst);
+                }
+            })
+            .collect();
+        let outputs = bounded_in_flight(futures, 1).await;
+        assert_eq!(outputs.len(), 8);
+        assert_eq!(peak.load(Ordering::SeqCst), 1);
+    }
+
+    // --- oversized sessions report no count (S24) ------------------------------
+
+    #[test]
+    fn an_oversized_session_reports_no_message_count() {
+        // An oversized session is listed from its bounded header alone: the
+        // count the header happens to contain is a truncated number, and a
+        // truncated number reads as the whole truth. The summary must say
+        // it does not know (None), as SessionSummary already documents.
+        let header = r#"{"type":"session","version":3,"id":"9f1c2f61-8a5e-4f6a-9f6b-3c1d2e4f5a6b","timestamp":"2026-11-20T11:00:00.000Z","cwd":"/mnt/D-SSD/work/projects/erp-web"}"#;
+        let first_message = r#"{"type":"message","id":"a1b2c3d4","parentId":null,"timestamp":"2026-11-20T11:00:01.000Z","message":{"role":"user","content":"hello","timestamp":1763630401000}}"#;
+        let bytes = format!("{header}\n{first_message}\n").into_bytes();
+        let summary =
+            parse_session_header("s.jsonl", now_ms(), &bytes).expect("the header parses");
+        assert_eq!(summary.session_id, SESSION_ID);
+        assert_eq!(summary.cwd.as_deref(), Some("/mnt/D-SSD/work/projects/erp-web"));
+        assert_eq!(summary.last_modified_epoch_ms, now_ms());
+        assert_eq!(summary.message_count, None);
     }
 }
