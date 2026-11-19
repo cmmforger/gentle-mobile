@@ -36,8 +36,8 @@ android {
         applicationId = "com.gentlemanprogramming.gentlemobile"
         minSdk = 29
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
 
         // Ship only the ABIs the core is built for: a real phone is arm64-v8a,
         // the emulator is x86_64. Everything else only adds bytes.
