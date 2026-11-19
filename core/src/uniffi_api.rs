@@ -98,6 +98,9 @@ pub struct AgentDto {
     /// The pane the agent lives in: the address both `read_pane` and
     /// `prompt_agent` take (the daemon's `agent.prompt` targets accept panes).
     pub pane_id: String,
+    /// The workspace the agent's pane belongs to — the key the inbox filters
+    /// by when one workspace is selected (S26-2).
+    pub workspace_id: String,
 }
 
 /// One full snapshot in plain DTOs.
@@ -1003,6 +1006,79 @@ impl CompanionConnection {
             .map_err(CompanionError::from)
     }
 
+    /// The host's workspace list (S26-2): one row per workspace, with the
+    /// branch from the repo behind it (a per-workspace `worktree.list`,
+    /// measured read-only; a `not_git_worktree` refusal means no branch,
+    /// never a failure) and the agent count joined from the latest snapshot.
+    pub fn list_workspaces(&self) -> Result<Vec<WorkspaceRowDto>, CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        let workspaces = connection.workspace_list().map_err(CompanionError::from)?;
+        let counts = connection
+            .snapshot()
+            .map(|snapshot| workspace_agent_counts(&snapshot.agents))
+            .unwrap_or_default();
+        let mut rows = Vec::with_capacity(workspaces.len());
+        for workspace in workspaces {
+            let workspace_id = workspace.id.clone();
+            // A refusal (not_git_worktree) means "no branch", never a screen
+            // failure; transport failures still fail the screen honestly.
+            let branch = connection.worktree_branch(&workspace_id).map_err(CompanionError::from)?;
+            rows.push(WorkspaceRowDto {
+                id: workspace.id,
+                number: workspace.number,
+                label: workspace.label,
+                focused: workspace.focused,
+                status: status_dto_from_wire(&workspace.agent_status),
+                branch,
+                agent_count: counts.get(&workspace_id).copied().unwrap_or(0),
+            });
+        }
+        Ok(rows)
+    }
+
+    /// Focus one workspace on the host (S26-2): the daemon switches to it,
+    /// exactly as tapping it in the herdr TUI does. `Ok(())` means the
+    /// daemon confirmed (`workspace_info`); a refusal names why.
+    pub fn focus_workspace(&self, workspace_id: String) -> Result<(), CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        connection.workspace_focus(&workspace_id).map_err(CompanionError::from)
+    }
+
+    /// Create a workspace on the host in `cwd` (S26-3). The path must have
+    /// been validated first (`checkHostDir`): measured live, the daemon
+    /// does **not** refuse a missing directory — it silently falls back to
+    /// `$HOME`. `Ok` carries the created workspace and its root pane.
+    pub fn create_workspace(
+        &self,
+        cwd: String,
+        label: Option<String>,
+    ) -> Result<WorkspaceCreatedDto, CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        let created = connection
+            .workspace_create(&cwd, label.as_deref())
+            .map_err(CompanionError::from)?;
+        Ok(WorkspaceCreatedDto {
+            workspace_id: created.workspace.id,
+            label: created.workspace.label,
+            pane_id: created.root_pane_id,
+        })
+    }
+
     /// Upload one attachment to the host over the SFTP subsystem — a fresh
     /// pinned SSH session per upload, into the host's
     /// `~/.local/state/gentle-mobile/uploads/`. Progress is reported per
@@ -1062,6 +1138,30 @@ pub fn accept_host_key(
 pub struct KnownHostDto {
     pub spec: String,
     pub fingerprint: String,
+}
+
+/// Check one absolute path on the host over the SFTP lane (S26-3): exists,
+/// is a directory, is readable, and whether it carries a `.git` marker.
+/// One-shot pinned session per check, same lane as the lease work.
+#[uniffi::export]
+pub fn check_host_dir(profile: HostProfileDto, path: String) -> Result<DirCheckDto, CompanionError> {
+    let profile = profile.into_core();
+    let check = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| CompanionError::Transport {
+            detail: format!("the path-check runtime could not start: {error}"),
+        })?
+        .block_on(crate::paths::check_host_dir_over_sftp(&profile, &path))?;
+    Ok(DirCheckDto {
+        verdict: match check.verdict {
+            crate::paths::DirVerdict::Ok => DirVerdictDto::Ok,
+            crate::paths::DirVerdict::Missing => DirVerdictDto::Missing,
+            crate::paths::DirVerdict::NotADirectory => DirVerdictDto::NotADirectory,
+            crate::paths::DirVerdict::NoPermission => DirVerdictDto::NoPermission,
+        },
+        is_git_repo: check.is_git_repo,
+    })
 }
 
 /// List the pinned hosts from the app's known_hosts store. Junk lines and
@@ -1141,6 +1241,71 @@ pub(crate) fn status_dto(status: AgentStatus) -> AgentStatusDto {
     }
 }
 
+/// The daemon's wire `agent_status` word (the request lane's
+/// `workspace.list` carries it as a plain string) to the DTO word. Anything
+/// unknown stays `Unknown` — never invented into a word the host did not
+/// send.
+pub(crate) fn status_dto_from_wire(word: &str) -> AgentStatusDto {
+    match word {
+        "idle" => AgentStatusDto::Idle,
+        "working" => AgentStatusDto::Working,
+        "blocked" => AgentStatusDto::Blocked,
+        "done" => AgentStatusDto::Done,
+        _ => AgentStatusDto::Unknown,
+    }
+}
+
+/// `pane_id → agent count` per workspace, from the snapshot's agents —
+/// the count the workspace row shows.
+pub(crate) fn workspace_agent_counts(agents: &[ClientShellAgent]) -> HashMap<String, u64> {
+    let mut counts: HashMap<String, u64> = HashMap::new();
+    for agent in agents {
+        *counts.entry(agent.workspace_id.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+/// One row of the host's workspace list (S26-2): the human's own label, the
+/// branch when the repo behind the workspace has one, the aggregate state
+/// word, and how many agents work in it.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct WorkspaceRowDto {
+    pub id: String,
+    pub number: u64,
+    pub label: String,
+    pub focused: bool,
+    pub status: AgentStatusDto,
+    /// The branch the workspace's checkout is on; `None` when the host gave
+    /// no branch (no git repo, or the daemon could not say).
+    pub branch: Option<String>,
+    pub agent_count: u64,
+}
+
+/// A workspace created through the `+` flow (S26-3): its id, its label, and
+/// the root pane the agents will appear in.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct WorkspaceCreatedDto {
+    pub workspace_id: String,
+    pub label: String,
+    pub pane_id: Option<String>,
+}
+
+/// The verdict of a host-path check over SFTP (S26-3): the plain-sentence
+/// rejections map from these words in the UI.
+#[derive(uniffi::Enum, Debug, Clone, PartialEq, Eq)]
+pub enum DirVerdictDto {
+    Ok,
+    Missing,
+    NotADirectory,
+    NoPermission,
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct DirCheckDto {
+    pub verdict: DirVerdictDto,
+    pub is_git_repo: bool,
+}
+
 /// `pane_id → cwd` for agent lookup, preferring the pane's foreground cwd.
 pub(crate) fn pane_cwds(panes: &[ClientShellPane]) -> HashMap<&str, Option<&str>> {
     panes
@@ -1175,6 +1340,7 @@ pub(crate) fn agent_dto(agent: &ClientShellAgent, cwd: Option<&str>) -> AgentDto
         cwd: cwd.map(str::to_owned),
         focused: agent.focused,
         pane_id: agent.pane_id.clone(),
+        workspace_id: agent.workspace_id.clone(),
     }
 }
 
@@ -1323,6 +1489,38 @@ mod tests {
         let dto = agent_dto(&blank, None);
         assert_eq!(dto.name, "pi", "a blank name falls back to the kind");
         assert_eq!(dto.cwd, None);
+    }
+
+    #[test]
+    fn agent_dto_carries_its_workspace_id() {
+        // S26-2: the inbox filters by workspace, so the DTO must carry the
+        // workspace the vendored snapshot already names.
+        let dto = agent_dto(&agent("a1", "p1", Some("x"), AgentStatus::Idle), None);
+        assert_eq!(dto.workspace_id, "ws1");
+    }
+
+    #[test]
+    fn wire_agent_status_words_map_to_the_dto_word() {
+        // Measured live: `workspace.list` carries agent_status as a plain
+        // string. Only the daemon's own words map; anything else stays
+        // unknown, never invented.
+        assert_eq!(status_dto_from_wire("idle"), AgentStatusDto::Idle);
+        assert_eq!(status_dto_from_wire("working"), AgentStatusDto::Working);
+        assert_eq!(status_dto_from_wire("blocked"), AgentStatusDto::Blocked);
+        assert_eq!(status_dto_from_wire("done"), AgentStatusDto::Done);
+        assert_eq!(status_dto_from_wire("unknown"), AgentStatusDto::Unknown);
+        assert_eq!(status_dto_from_wire(""), AgentStatusDto::Unknown);
+        assert_eq!(status_dto_from_wire("something-new"), AgentStatusDto::Unknown);
+    }
+
+    #[test]
+    fn workspace_agent_counts_count_by_workspace() {
+        let mut other = agent("a2", "p9", None, AgentStatus::Idle);
+        other.workspace_id = "w9".to_owned();
+        let counts = workspace_agent_counts(&[agent("a1", "p1", None, AgentStatus::Idle), other]);
+        assert_eq!(counts.get("ws1"), Some(&1));
+        assert_eq!(counts.get("w9"), Some(&1));
+        assert_eq!(counts.get("w8"), None, "a workspace without agents has no entry");
     }
 
     #[test]

@@ -423,6 +423,96 @@ impl Connection {
         })
     }
 
+    /// The host's workspace list over the request channel (`workspace.list`,
+    /// S26-2). Shapes measured live on protocol 22.
+    pub fn workspace_list(
+        &self,
+    ) -> std::result::Result<Vec<crate::requests::HostWorkspace>, crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_WORKSPACE_LIST,
+            crate::requests::workspace_list_params(),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_workspace_list(&value)
+                .map_err(crate::requests::HubError::Request)
+        })
+    }
+
+    /// The branch the repo behind one workspace is on
+    /// (`worktree.list {workspace_id}` — measured read-only without
+    /// `trust_repository`). A refusal means "no branch" (`Ok(None)`), never
+    /// a screen failure; transport failures still propagate.
+    pub fn worktree_branch(
+        &self,
+        workspace_id: &str,
+    ) -> std::result::Result<Option<String>, crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_WORKTREE_LIST,
+            crate::requests::worktree_list_params(workspace_id),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_worktree_branch(&value, workspace_id)
+                .map_err(crate::requests::HubError::Request)
+        })
+        .or_else(|error| match error {
+            crate::requests::HubError::Request(crate::requests::RequestError::Refused { .. }) => {
+                Ok(None)
+            }
+            other => Err(other),
+        })
+    }
+
+    /// Create a workspace on the host (`workspace.create`, S26-3). The
+    /// caller must validate the path first: measured live, the daemon falls
+    /// back to `$HOME` for a missing directory instead of refusing.
+    pub fn workspace_create(
+        &self,
+        cwd: &str,
+        label: Option<&str>,
+    ) -> std::result::Result<crate::requests::WorkspaceCreated, crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_WORKSPACE_CREATE,
+            crate::requests::workspace_create_params(cwd, label),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_workspace_created(&value)
+                .map_err(crate::requests::HubError::Request)
+        })
+    }
+
+    /// Focus one workspace (`workspace.focus`, S26-2): the daemon's own
+    /// switch, exactly what tapping the workspace in the herdr TUI does.
+    pub fn workspace_focus(&self, workspace_id: &str) -> std::result::Result<(), crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_WORKSPACE_FOCUS,
+            crate::requests::workspace_focus_params(workspace_id),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_workspace_focus(&value)
+                .map_err(crate::requests::HubError::Request)
+        })
+    }
+
     /// Disconnect cleanly: stop the vendored client, close the SSH connection,
     /// and join every thread. The event stream ends with an
     /// [`Event::Disconnected`].

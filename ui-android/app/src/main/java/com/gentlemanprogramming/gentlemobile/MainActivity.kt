@@ -148,6 +148,8 @@ import com.gentlemanprogramming.gentlemobile.ui.locale.LocaleStore
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.gentlemanprogramming.gentlemobile.ui.sessions.ResumedSessionScreen
+import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel
+import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesScreen
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsScreen
@@ -411,6 +413,31 @@ private class ScreenState {
     var startingSession by mutableStateOf(false)
     var startSessionError by mutableStateOf<String?>(null)
 
+    /** S26-2: the host's workspaces, the screen's rows and their loading
+     *  state. `null` rows mean "not loaded yet" — an empty list is the
+     *  daemon's own answer, never a read we failed. */
+    var workspaces by mutableStateOf<List<com.gentlemanprogramming.gentlemobile.core.WorkspaceRowDto>?>(null)
+    var workspacesLoading by mutableStateOf(false)
+    var workspacesError by mutableStateOf<String?>(null)
+
+    /** S26-2: the workspace the inbox is filtered to, with the human's own
+     *  label for the header. `null` shows every agent — the way back. */
+    var workspaceFilter by mutableStateOf<String?>(null)
+    var workspaceFilterLabel by mutableStateOf<String?>(null)
+
+    /** S26-3: the `+` flow — path check in flight, its measured verdict
+     *  (the git note rides in the DTO), the create in flight, and the
+     *  reason a create failed. */
+    var addChecking by mutableStateOf(false)
+    var addVerdict by mutableStateOf<com.gentlemanprogramming.gentlemobile.core.DirCheckDto?>(null)
+    var creatingWorkspace by mutableStateOf(false)
+    var createWorkspaceError by mutableStateOf<String?>(null)
+
+    /** S26-3: the recent paths the `+` field offers, derived from the
+     *  sessions the host already recorded (nothing scanned). */
+    var recentPaths by mutableStateOf<List<com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel.RepoEntry>>(emptyList())
+    var recentLoading by mutableStateOf(false)
+
     /** T8c supervision: the four words (connecting, connected, interrupted,
      * failed) and the liveness rule, in one tested place. Screens read this
      * machine instead of a separate interrupted flag that can drift from
@@ -544,7 +571,7 @@ private class SessionUi {
 }
 
 /** The screens reachable from the Pair flow; the design shows back buttons. */
-private enum class Route { Main, Settings, Themes, Sessions, StartSession, Resumed }
+private enum class Route { Main, Settings, Themes, Sessions, StartSession, Resumed, Workspaces }
 
 /** The words a resume or a prompt failure shows: typed refusals keep their
  *  exact message (the core's Display carries the reason), anything else
@@ -814,6 +841,129 @@ fun ConnectScreen(
         }
     }
 
+    /** S26-2: read the host's workspaces over the request lane — one
+     *  `workspace.list` plus one read-only `worktree.list` per workspace
+     *  for the branch. The list is re-read on every screen entry and after
+     *  every successful `+`. */
+    fun loadWorkspaces(state: ScreenState, connection: CompanionConnection) {
+        if (state.workspacesLoading) return
+        state.workspacesLoading = true
+        state.workspacesError = null
+        executor.execute {
+            try {
+                val rows = connection.listWorkspaces()
+                mainHandler.post {
+                    state.workspaces = rows
+                    state.workspacesLoading = false
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    state.workspacesLoading = false
+                    state.workspacesError = describe(AppLocale.wrapStored(state.appContext), e)
+                }
+            }
+        }
+    }
+
+    /** S26-2: tapping a workspace row — focus it on the host (the daemon's
+     *  own switch, exactly what tapping it in the herdr TUI does) and open
+     *  the inbox filtered to that workspace's agents. A focus refusal is
+     *  shown when the workspaces screen is next visited, but the filtered
+     *  inbox still opens: the filter is local truth, the focus is the
+     *  host's. */
+    fun openWorkspace(state: ScreenState, connection: CompanionConnection, row: com.gentlemanprogramming.gentlemobile.core.WorkspaceRowDto) {
+        executor.execute {
+            val failure = try {
+                connection.focusWorkspace(row.id)
+                null
+            } catch (e: Exception) {
+                describe(AppLocale.wrapStored(state.appContext), e)
+            }
+            mainHandler.post {
+                if (failure != null) state.workspacesError = failure
+                state.workspaceFilter = row.id
+                state.workspaceFilterLabel = row.label
+                // The inbox renders on the Main route; staying on the
+                // workspaces route would keep the list on screen.
+                route = Route.Main
+                state.inboxOpen = true
+            }
+        }
+    }
+
+    /** S26-3: the `+` flow — validate the typed path over SFTP (exists,
+     *  a directory, readable; whether it is git), then create the
+     *  workspace. The verdict is always shown, never skipped: measured
+     *  live, the daemon silently falls back to `$HOME` for a missing
+     *  directory, so the validation is the guard. A non-git directory may
+     *  still be added — a workspace does not require git. */
+    fun addProject(state: ScreenState, connection: CompanionConnection, profile: HostProfileDto, rawPath: String) {
+        if (state.addChecking || state.creatingWorkspace) return
+        val path = rawPath.trim()
+        state.addChecking = true
+        state.addVerdict = null
+        state.createWorkspaceError = null
+        executor.execute {
+            try {
+                val verdict = com.gentlemanprogramming.gentlemobile.core.checkHostDir(profile, path)
+                mainHandler.post {
+                    state.addChecking = false
+                    state.addVerdict = verdict
+                    if (verdict.verdict == com.gentlemanprogramming.gentlemobile.core.DirVerdictDto.OK) {
+                        state.creatingWorkspace = true
+                        executor.execute {
+                            try {
+                                connection.createWorkspace(path, WorkspacesModel.workspaceLabel(path))
+                                mainHandler.post {
+                                    state.creatingWorkspace = false
+                                    loadWorkspaces(state, connection)
+                                }
+                            } catch (e: Exception) {
+                                mainHandler.post {
+                                    state.creatingWorkspace = false
+                                    state.createWorkspaceError = describe(AppLocale.wrapStored(state.appContext), e)
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    state.addChecking = false
+                    state.createWorkspaceError = describe(AppLocale.wrapStored(state.appContext), e)
+                }
+            }
+        }
+    }
+
+    /** S26-3: the recent paths the `+` field offers — the working
+     *  directories the host's sessions already recorded, served from the
+     *  sessions cache when it is fresh, read over SFTP otherwise (the same
+     *  listing the Session history screen uses, never a scan). */
+    fun loadRecentPaths(state: ScreenState, profile: HostProfileDto, deviceLeaseId: String) {
+        if (state.recentLoading) return
+        val sessionsDir = sessionsDirOverride ?: defaultSessionsDir(profile.user)
+        val cacheKey = com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsCache.key(profile, sessionsDir)
+        val cached = com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsCache.fresh(cacheKey, System.currentTimeMillis())
+        if (cached != null) {
+            state.recentPaths = com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel.repositories(cached)
+            return
+        }
+        state.recentLoading = true
+        executor.execute {
+            try {
+                val listed = com.gentlemanprogramming.gentlemobile.core.listSessions(profile, sessionsDir, deviceLeaseId)
+                mainHandler.post {
+                    com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsCache.put(cacheKey, listed, System.currentTimeMillis())
+                    state.recentPaths = com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel.repositories(listed)
+                    state.recentLoading = false
+                }
+            } catch (_: Exception) {
+                mainHandler.post { state.recentLoading = false }
+            }
+        }
+    }
+
     fun disconnectLive() {
         // T15 (S11): the notification's Disconnect action can land while a
         // session screen is up; the user is disconnecting the connection,
@@ -1028,6 +1178,54 @@ fun ConnectScreen(
         }
         // No live profile behind the route (the connection was reset): fall
         // back to the Nodes screen instead of rendering a dead screen.
+        route = Route.Main
+    }
+
+    // S26-2: the host's workspaces — the human's repositories with their
+    // branch, state and agent count, and the `+` that starts a project in a
+    // path that has no history yet (S26-3). Loading and every action ride
+    // the live connection's request lane; nothing here invents a row.
+    if (route == Route.Workspaces) {
+        val currentUi = screen.ui
+        if (currentUi is UiState.Connected) {
+            val wsProfile = screen.profile
+            val wsDeviceId = screen.deviceLeaseId
+            LaunchedEffect(Unit) {
+                loadWorkspaces(screen, currentUi.connection)
+            }
+            WorkspacesScreen(
+                rows = screen.workspaces,
+                loading = screen.workspacesLoading,
+                error = screen.workspacesError,
+                addChecking = screen.addChecking,
+                addVerdict = screen.addVerdict,
+                creating = screen.creatingWorkspace,
+                createError = screen.createWorkspaceError,
+                recentPaths = screen.recentPaths,
+                recentLoading = screen.recentLoading,
+                onOpen = { row -> openWorkspace(screen, currentUi.connection, row) },
+                onAddPath = { path ->
+                    screen.addVerdict = null
+                    screen.createWorkspaceError = null
+                    if (wsProfile != null) {
+                        addProject(screen, currentUi.connection, wsProfile, path)
+                    }
+                },
+                onRecentOpened = {
+                    if (wsProfile != null && wsDeviceId != null) {
+                        loadRecentPaths(screen, wsProfile, wsDeviceId)
+                    }
+                },
+                onBack = {
+                    // Leaving the screen keeps the list cached in the state:
+                    // re-entering re-reads it, but a mid-add pause does not
+                    // wipe what the human typed.
+                    route = Route.Main
+                },
+            )
+            return
+        }
+        // No live connection behind the route: back to the host list.
         route = Route.Main
     }
 
@@ -2272,7 +2470,17 @@ fun ConnectScreen(
                             color = LocalPalette.current.accent,
                             fontSize = 20.sp,
                             modifier = Modifier
-                                .clickable { screen.inboxOpen = false }
+                                .clickable {
+                                    // Back to where the inbox was opened from
+                                    // (S26-2): a filtered inbox came from the
+                                    // workspaces screen, the plain inbox from
+                                    // the host row.
+                                    if (screen.workspaceFilter != null) {
+                                        route = Route.Workspaces
+                                    } else {
+                                        screen.inboxOpen = false
+                                    }
+                                }
                                 .semantics { contentDescription = backToHosts }
                                 .padding(horizontal = 12.dp, vertical = 12.dp),
                         )
@@ -2294,12 +2502,47 @@ fun ConnectScreen(
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace,
                         )
-                        snapshot.agents.isEmpty() -> Text(
-                            text = stringResource(R.string.inbox_no_agents),
-                            color = LocalPalette.current.muted,
-                            fontSize = 13.sp,
-                        )
                         else -> {
+                            // S26-2: the workspace filter — only the chosen
+                            // workspace's agents, with the obvious way back
+                            // to all of them.
+                            val agents = WorkspacesModel.agentsInWorkspace(
+                                snapshot.agents,
+                                screen.workspaceFilter,
+                            )
+                            if (screen.workspaceFilter != null) {
+                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.ws_filter_showing,
+                                            screen.workspaceFilterLabel ?: "",
+                                        ),
+                                        color = LocalPalette.current.muted,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.ws_filter_all),
+                                        color = LocalPalette.current.accentEdge,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier
+                                            .heightIn(min = 44.dp)
+                                            .clickable {
+                                                screen.workspaceFilter = null
+                                                screen.workspaceFilterLabel = null
+                                            }
+                                            .padding(horizontal = 12.dp),
+                                    )
+                                }
+                            }
+                            when {
+                                agents.isEmpty() -> Text(
+                                    text = stringResource(R.string.inbox_no_agents),
+                                    color = LocalPalette.current.muted,
+                                    fontSize = 13.sp,
+                                )
+                                else -> {
                             // `unknown` is not on the board; it keeps its own
                             // honest group last rather than lying as idle.
                             // S24-6: human words in sentence case, and the
@@ -2308,33 +2551,33 @@ fun ConnectScreen(
                             listOf(
                                 Triple(
                                     stringResource(R.string.inbox_group_needs_you),
-                                    snapshot.agents.filter { it.status == AgentStatusDto.BLOCKED },
+                                    agents.filter { it.status == AgentStatusDto.BLOCKED },
                                     true,
                                 ),
                                 Triple(
                                     stringResource(R.string.inbox_group_done),
-                                    snapshot.agents.filter { it.status == AgentStatusDto.DONE },
+                                    agents.filter { it.status == AgentStatusDto.DONE },
                                     false,
                                 ),
                                 Triple(
                                     stringResource(R.string.inbox_group_working),
-                                    snapshot.agents.filter { it.status == AgentStatusDto.WORKING },
+                                    agents.filter { it.status == AgentStatusDto.WORKING },
                                     false,
                                 ),
                                 Triple(
                                     stringResource(R.string.inbox_group_idle),
-                                    snapshot.agents.filter { it.status == AgentStatusDto.IDLE },
+                                    agents.filter { it.status == AgentStatusDto.IDLE },
                                     false,
                                 ),
                                 Triple(
                                     stringResource(R.string.inbox_group_unknown),
-                                    snapshot.agents.filter { it.status == AgentStatusDto.UNKNOWN },
+                                    agents.filter { it.status == AgentStatusDto.UNKNOWN },
                                     false,
                                 ),
-                            ).forEach { (label, agents, needsYou) ->
-                                if (agents.isNotEmpty()) {
-                                    GroupLabel(groupLabelWithCount(label, agents.size), uppercase = false)
-                                    agents.forEach { agent ->
+                            ).forEach { (label, groupAgents, needsYou) ->
+                                if (groupAgents.isNotEmpty()) {
+                                    GroupLabel(groupLabelWithCount(label, groupAgents.size), uppercase = false)
+                                    groupAgents.forEach { agent ->
                                         InboxRow(
                                             agent,
                                             activity = screen.activity,
@@ -2344,6 +2587,8 @@ fun ConnectScreen(
                                             },
                                         )
                                     }
+                                }
+                            }
                                 }
                             }
                         }
@@ -2430,6 +2675,11 @@ fun ConnectScreen(
                                 meta = "${entry.user}@${entry.host}:${entry.port}",
                                 onOpen = {
                                     if (live) {
+                                        // The plain host row opens every agent
+                                        // (S26-2): a workspace filter chosen
+                                        // earlier must not leak into it.
+                                        screen.workspaceFilter = null
+                                        screen.workspaceFilterLabel = null
                                         screen.inboxOpen = true
                                     } else {
                                         connectTo(entry)
@@ -2437,6 +2687,16 @@ fun ConnectScreen(
                                 },
                             )
                         }
+                        // S26-2: the host's herdr workspaces — the human's
+                        // repositories, with branch and state. The clear
+                        // entry for "navigate my repositories", beside the
+                        // other host-level surfaces, not buried in Settings.
+                        NodeRow(
+                            name = stringResource(R.string.nodes_workspaces),
+                            state = null,
+                            meta = stringResource(R.string.nodes_workspaces_sub),
+                            onOpen = { route = Route.Workspaces },
+                        )
                         // T17a (S15): the host's Gentle Shell sessions, listed
                         // over SFTP and lease-guarded — the entry point the
                         // continuity flow starts from. S24-3: plain language —

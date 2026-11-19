@@ -95,6 +95,32 @@
     <string name="nodes_session_history">Historial de sesiones</string>
     <string name="nodes_session_history_sub">Abrí una sesión de Gentle Shell que ya existe en el host.</string>
 
+    <!-- Workspaces (S26-2): los workspaces de herdr en el host, los repositorios del humano -->
+    <string name="nodes_workspaces">Espacios de trabajo</string>
+    <string name="nodes_workspaces_sub">Tus repositorios en este equipo — rama, estado y agentes.</string>
+    <string name="ws_title">Espacios de trabajo</string>
+    <string name="ws_reading">Leyendo los espacios de trabajo del host…</string>
+    <string name="ws_error">No se pudieron leer los espacios de trabajo: %1$s</string>
+    <string name="ws_empty">Todavía no hay espacios de trabajo en este host — agregá un proyecto abajo.</string>
+    <string name="ws_agents_one">1 agente</string>
+    <string name="ws_agents_many">%1$d agentes</string>
+    <string name="ws_focused">en pantalla</string>
+    <string name="ws_add">Agregar un proyecto</string>
+    <string name="ws_add_action">Agregar</string>
+    <string name="ws_add_hint">/ruta/absoluta/en/el/host</string>
+    <string name="ws_add_working">Verificando la ruta en el host…</string>
+    <string name="ws_add_creating">Creando el espacio de trabajo…</string>
+    <string name="ws_add_failed">No se pudo crear el espacio de trabajo: %1$s</string>
+    <string name="ws_recent">Rutas recientes</string>
+    <string name="ws_recent_reading">Leyendo el historial de sesiones para las rutas recientes…</string>
+    <string name="ws_path_missing">La ruta no existe en el host: %1$s</string>
+    <string name="ws_not_a_directory">Esa ruta es un archivo, no un directorio: %1$s</string>
+    <string name="ws_no_permission">Sin permiso para abrir ese directorio en el host: %1$s</string>
+    <string name="ws_is_git">repositorio git</string>
+    <string name="ws_not_git">no es un repositorio git — se puede agregar igual</string>
+    <string name="ws_filter_all">Todos los espacios</string>
+    <string name="ws_filter_showing">Mostrando los agentes de %1$s</string>
+
     <!-- Grupos de la bandeja de agentes -->
     <string name="inbox_back">Agentes</string>
     <string name="inbox_group_needs_you">Te necesita</string>

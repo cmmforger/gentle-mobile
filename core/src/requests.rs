@@ -109,6 +109,182 @@ pub const METHOD_PANE_READ: &str = "pane.read";
 pub const METHOD_AGENT_PROMPT: &str = "agent.prompt";
 pub const METHOD_PANE_SEND_KEYS: &str = "pane.send_keys";
 
+// --- Workspace request mappings (S26-2, S26-3) ------------------------------
+
+/// `workspace.list` takes no parameters (the daemon's `EmptyParams`).
+pub fn workspace_list_params() -> Value {
+    Value::Object(serde_json::Map::new())
+}
+
+/// Map a `workspace.list` reply to the rows the screen shows. A reply
+/// without its `workspaces` array is a [`RequestError::BadResponse`], never
+/// an empty list (an empty list must come from the daemon saying so).
+pub fn parse_workspace_list(
+    response: &Value,
+) -> std::result::Result<Vec<HostWorkspace>, RequestError> {
+    if let Some(refused) = RequestError::refused_from(response) {
+        return Err(refused);
+    }
+    let result = response
+        .get("result")
+        .ok_or_else(|| RequestError::BadResponse { detail: "reply has no result".to_owned() })?;
+    let rows = result
+        .get("workspaces")
+        .and_then(Value::as_array)
+        .ok_or_else(|| RequestError::BadResponse {
+            detail: "the workspace list has no workspaces array".to_owned(),
+        })?;
+    rows.iter()
+        .map(|row| {
+            Ok(HostWorkspace {
+                id: string_field(row, "workspace_id", "workspace row")?,
+                number: row
+                    .get("number")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| bad_row("workspace row", "number"))?,
+                label: string_field(row, "label", "workspace row")?,
+                focused: row.get("focused").and_then(Value::as_bool).unwrap_or(false),
+                pane_count: row
+                    .get("pane_count")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| bad_row("workspace row", "pane_count"))?,
+                agent_status: row
+                    .get("agent_status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_owned(),
+            })
+        })
+        .collect()
+}
+
+fn string_field(row: &Value, name: &str, what: &str) -> std::result::Result<String, RequestError> {
+    row.get(name)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| bad_row(what, name))
+}
+
+fn bad_row(what: &str, field: &str) -> RequestError {
+    RequestError::BadResponse { detail: format!("{what} has no {field}") }
+}
+
+/// `workspace.create` parameters: the absolute host directory and the
+/// label. Measured live: a bad `cwd` does **not** fail — the daemon falls
+/// back to `$HOME` — so the caller must validate the path (over SFTP)
+/// before ever sending this request.
+pub fn workspace_create_params(cwd: &str, label: Option<&str>) -> Value {
+    let mut params = serde_json::Map::new();
+    params.insert("cwd".to_owned(), json!(cwd));
+    if let Some(label) = label {
+        params.insert("label".to_owned(), json!(label));
+    }
+    Value::Object(params)
+}
+
+/// Map a `workspace.create` reply: `workspace_created` carries the
+/// workspace and its root pane.
+pub fn parse_workspace_created(
+    response: &Value,
+) -> std::result::Result<WorkspaceCreated, RequestError> {
+    if let Some(refused) = RequestError::refused_from(response) {
+        return Err(refused);
+    }
+    let workspace = response
+        .get("result")
+        .and_then(|result| result.get("workspace"))
+        .ok_or_else(|| {
+            RequestError::BadResponse { detail: "the create reply has no workspace".to_owned() }
+        })?;
+    Ok(WorkspaceCreated {
+        workspace: parse_workspace_row(workspace)?,
+        root_pane_id: response
+            .get("result")
+            .and_then(|result| result.get("root_pane"))
+            .and_then(|pane| pane.get("pane_id"))
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    })
+}
+
+fn parse_workspace_row(row: &Value) -> std::result::Result<HostWorkspace, RequestError> {
+    Ok(HostWorkspace {
+        id: string_field(row, "workspace_id", "workspace")?,
+        number: row.get("number").and_then(Value::as_u64).ok_or_else(|| bad_row("workspace", "number"))?,
+        label: string_field(row, "label", "workspace")?,
+        focused: row.get("focused").and_then(Value::as_bool).unwrap_or(false),
+        pane_count: row.get("pane_count").and_then(Value::as_u64).ok_or_else(|| bad_row("workspace", "pane_count"))?,
+        agent_status: row.get("agent_status").and_then(Value::as_str).unwrap_or("unknown").to_owned(),
+    })
+}
+
+/// `workspace.focus` parameters: the workspace id (the daemon's
+/// `WorkspaceTarget`).
+pub fn workspace_focus_params(workspace_id: &str) -> Value {
+    json!({ "workspace_id": workspace_id })
+}
+
+/// Map a `workspace.focus` reply: the daemon answers `workspace_info`.
+pub fn parse_workspace_focus(response: &Value) -> std::result::Result<(), RequestError> {
+    if let Some(refused) = RequestError::refused_from(response) {
+        return Err(refused);
+    }
+    let result_type = response
+        .get("result")
+        .and_then(|result| result.get("type"))
+        .and_then(Value::as_str);
+    match result_type {
+        Some("workspace_info") => Ok(()),
+        Some(other) => Err(RequestError::BadResponse {
+            detail: format!("the focus reply was `{other}`, not `workspace_info`"),
+        }),
+        None => Err(RequestError::BadResponse {
+            detail: "the focus reply has no result type".to_owned(),
+        }),
+    }
+}
+
+/// `worktree.list` parameters: one workspace id — the daemon inspects the
+/// git repository behind that workspace's panes. Sent **without**
+/// `trust_repository`: measured read-only, and the app must never silently
+/// trust the human's repositories.
+pub fn worktree_list_params(workspace_id: &str) -> Value {
+    json!({ "workspace_id": workspace_id })
+}
+
+/// The branch a workspace's repository is on, from the `worktree.list`
+/// reply. The worktree the workspace itself opened wins; with exactly one
+/// worktree in the reply the repo root's branch stands in. `Ok(None)` when
+/// the reply names no branch for this workspace.
+pub fn parse_worktree_branch(
+    response: &Value,
+    workspace_id: &str,
+) -> std::result::Result<Option<String>, RequestError> {
+    if let Some(refused) = RequestError::refused_from(response) {
+        return Err(refused);
+    }
+    let worktrees = response
+        .get("result")
+        .and_then(|result| result.get("worktrees"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RequestError::BadResponse { detail: "the worktree list has no worktrees".to_owned() }
+        })?;
+    let ours = |worktree: &Value| {
+        worktree
+            .get("open_workspace_id")
+            .and_then(Value::as_str)
+            .is_some_and(|opened| opened == workspace_id)
+    };
+    if let Some(own) = worktrees.iter().find(|worktree| ours(worktree)) {
+        return Ok(own.get("branch").and_then(Value::as_str).map(str::to_owned));
+    }
+    if worktrees.len() == 1 {
+        return Ok(worktrees[0].get("branch").and_then(Value::as_str).map(str::to_owned));
+    }
+    Ok(None)
+}
+
 impl RequestError {
     /// From a JSON reply envelope: `Some` when the daemon answered with an
     /// error object.
@@ -134,6 +310,37 @@ pub struct PaneRead {
     pub pane_id: String,
     pub text: String,
     pub truncated: bool,
+}
+
+/// The workspace methods the workspaces screen needs, in their wire
+/// spelling (S26-2, S26-3). All live on the daemon's API socket, the same
+/// streamlocal request lane as `pane.read` and `agent.prompt`.
+pub const METHOD_WORKSPACE_LIST: &str = "workspace.list";
+pub const METHOD_WORKSPACE_CREATE: &str = "workspace.create";
+pub const METHOD_WORKSPACE_FOCUS: &str = "workspace.focus";
+pub const METHOD_WORKTREE_LIST: &str = "worktree.list";
+
+/// One workspace as `workspace.list` reports it. Shapes measured live on
+/// protocol 22 (`herdr api schema --json` + a raw socket call): every field
+/// except `worktree`/`tokens` is required; `agent_status` is the daemon's
+/// aggregate word for the workspace (`idle`/`working`/`blocked`/`done`/
+/// `unknown`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostWorkspace {
+    pub id: String,
+    pub number: u64,
+    pub label: String,
+    pub focused: bool,
+    pub pane_count: u64,
+    pub agent_status: String,
+}
+
+/// A created workspace: the workspace itself plus its root pane's id (the
+/// pane `agent.list` and the inbox address agents by).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceCreated {
+    pub workspace: HostWorkspace,
+    pub root_pane_id: Option<String>,
 }
 
 /// `pane.read` parameters: the pane's visible text, plain, ANSI stripped, so
@@ -793,6 +1000,307 @@ fn agent_prompt_refusals_carry_the_daemons_code() {
             RequestError::Refused { code: got, .. } => assert_eq!(got, code),
             other => panic!("expected RequestError::Refused for {code}, got {other:?}"),
         }
+    }
+}
+
+// --- Workspace requests (S26-2, S26-3) -----------------------------------
+
+/// The measured `workspace.list` success shape (raw socket call, protocol
+/// 22): `result` is tagged `workspace_list`, rows carry the required
+/// `WorkspaceInfo` fields; `worktree`/`tokens` are optional and absent on
+/// this host's workspaces.
+fn workspace_list_response() -> Value {
+    json!({
+        "id": "cli:workspace:list",
+        "result": {
+            "type": "workspace_list",
+            "workspaces": [
+                {
+                    "workspace_id": "wN",
+                    "number": 1,
+                    "label": "ERP-WEBV2",
+                    "focused": false,
+                    "pane_count": 3,
+                    "tab_count": 3,
+                    "active_tab_id": "wN:tB",
+                    "agent_status": "unknown"
+                },
+                {
+                    "workspace_id": "w1F",
+                    "number": 8,
+                    "label": "gentle-mobile",
+                    "focused": true,
+                    "pane_count": 3,
+                    "tab_count": 3,
+                    "active_tab_id": "w1F:t1",
+                    "agent_status": "done"
+                }
+            ]
+        }
+    })
+}
+
+#[test]
+fn workspace_list_params_are_empty() {
+    assert_eq!(workspace_list_params(), json!({}));
+}
+
+#[test]
+fn workspace_list_parses_the_measured_sample() {
+    let rows = parse_workspace_list(&workspace_list_response()).expect("must parse");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].id, "wN");
+    assert_eq!(rows[0].number, 1);
+    assert_eq!(rows[0].label, "ERP-WEBV2");
+    assert!(!rows[0].focused);
+    assert_eq!(rows[0].pane_count, 3);
+    assert_eq!(rows[0].agent_status, "unknown");
+    assert_eq!(rows[1].id, "w1F");
+    assert_eq!(rows[1].label, "gentle-mobile");
+    assert!(rows[1].focused);
+    assert_eq!(rows[1].agent_status, "done");
+}
+
+#[test]
+fn workspace_list_refusal_maps_to_typed_code() {
+    let error = parse_workspace_list(&refused_response("error_response", "daemon down"))
+        .expect_err("a refusal is an error");
+    match error {
+        RequestError::Refused { code, detail } => {
+            assert_eq!(code, "error_response");
+            assert_eq!(detail, "daemon down");
+        }
+        other => panic!("expected RequestError::Refused, got {other:?}"),
+    }
+}
+
+#[test]
+fn workspace_list_without_its_array_is_a_bad_response() {
+    // An empty list must come from the daemon saying so, never from a
+    // reply we failed to read: a missing array is a shape drift.
+    let error = parse_workspace_list(&json!({"id": "x", "result": {"type": "workspace_list"}}))
+        .expect_err("no workspaces array must not parse");
+    assert!(matches!(error, RequestError::BadResponse { .. }), "{error:?}");
+}
+
+#[test]
+fn workspace_create_params_carry_cwd_and_label() {
+    let params = workspace_create_params("/srv/repo", Some("repo"));
+    assert_eq!(params["cwd"], json!("/srv/repo"));
+    assert_eq!(params["label"], json!("repo"));
+    // No label: the field is omitted (nullable), not sent as a string.
+    let params = workspace_create_params("/srv/repo", None);
+    assert_eq!(params["cwd"], json!("/srv/repo"));
+    assert!(params.get("label").is_none() || params["label"].is_null());
+}
+
+/// The measured `workspace.create` success shape (my scratch repo, t36).
+fn workspace_created_response() -> Value {
+    json!({
+        "id": "companion-1",
+        "result": {
+            "type": "workspace_created",
+            "workspace": {
+                "workspace_id": "w1H",
+                "number": 10,
+                "label": "t36-repo",
+                "focused": false,
+                "pane_count": 1,
+                "tab_count": 1,
+                "active_tab_id": "w1H:t1",
+                "agent_status": "unknown"
+            },
+            "tab": {"tab_id": "w1H:t1", "workspace_id": "w1H", "number": 1,
+                     "label": "1", "focused": false, "pane_count": 1,
+                     "agent_status": "unknown"},
+            "root_pane": {
+                "pane_id": "w1H:p1",
+                "workspace_id": "w1H",
+                "tab_id": "w1H:t1",
+                "cwd": "/mnt/WD-Black/test_tmp/gentle-companion/t36-repo"
+            }
+        }
+    })
+}
+
+#[test]
+fn workspace_created_parses_workspace_and_root_pane() {
+    let created = parse_workspace_created(&workspace_created_response()).expect("must parse");
+    assert_eq!(created.workspace.id, "w1H");
+    assert_eq!(created.workspace.label, "t36-repo");
+    assert_eq!(created.workspace.pane_count, 1);
+    assert_eq!(created.root_pane_id.as_deref(), Some("w1H:p1"));
+}
+
+#[test]
+fn workspace_create_refusal_maps_to_typed_code() {
+    // Measured live: a permission-denied directory is refused with the
+    // daemon's own code, not a fallback or a success.
+    let error = parse_workspace_created(&refused_response(
+        "workspace_create_failed",
+        "Permission denied (os error 13)",
+    ))
+    .expect_err("a refusal is an error");
+    match error {
+        RequestError::Refused { code, detail } => {
+            assert_eq!(code, "workspace_create_failed");
+            assert_eq!(detail, "Permission denied (os error 13)");
+        }
+        other => panic!("expected RequestError::Refused, got {other:?}"),
+    }
+}
+
+#[test]
+fn workspace_created_without_a_workspace_is_a_bad_response() {
+    let error = parse_workspace_created(&json!({
+        "id": "companion-1",
+        "result": {"type": "workspace_created"}
+    }))
+    .expect_err("no workspace must not parse");
+    assert!(matches!(error, RequestError::BadResponse { .. }), "{error:?}");
+}
+
+#[test]
+fn workspace_focus_params_carry_the_workspace_id() {
+    let params = workspace_focus_params("w1H");
+    assert_eq!(params, json!({"workspace_id": "w1H"}));
+}
+
+#[test]
+fn workspace_focus_accepts_the_workspace_info_result() {
+    // Measured live: the focus reply is the focused workspace info.
+    let reply = json!({
+        "id": "companion-1",
+        "result": {
+            "type": "workspace_info",
+            "workspace": {
+                "workspace_id": "w1H", "number": 10, "label": "t36-repo",
+                "focused": true, "pane_count": 1, "tab_count": 1,
+                "active_tab_id": "w1H:t1", "agent_status": "unknown"
+            }
+        }
+    });
+    assert!(parse_workspace_focus(&reply).is_ok(), "workspace_info is a focus");
+    let error = parse_workspace_focus(&json!({"id": "x", "result": {"type": "ok"}}))
+        .expect_err("an unknown result shape is not a focus proof");
+    assert!(matches!(error, RequestError::BadResponse { .. }), "{error:?}");
+}
+
+#[test]
+fn workspace_focus_refusal_names_the_workspace_code() {
+    // Measured live: `workspace_not_found` for an unknown id.
+    let error = parse_workspace_focus(&refused_response(
+        "workspace_not_found",
+        "workspace wZZZ not found",
+    ))
+    .expect_err("a refusal is an error");
+    match error {
+        RequestError::Refused { code, .. } => assert_eq!(code, "workspace_not_found"),
+        other => panic!("expected RequestError::Refused, got {other:?}"),
+    }
+}
+
+#[test]
+fn worktree_list_params_carry_the_workspace_id_and_no_trust() {
+    let params = worktree_list_params("w1H");
+    assert_eq!(params["workspace_id"], json!("w1H"));
+    // trust_repository must not be sent: measured read-only without it,
+    // and the app must never silently trust the human's repositories.
+    assert!(params.get("trust_repository").is_none());
+}
+
+/// The measured `worktree.list` success shape for a git-backed workspace.
+fn worktree_list_response() -> Value {
+    json!({
+        "id": "companion-1",
+        "result": {
+            "type": "worktree_list",
+            "source": {
+                "repo_key": "/srv/repo/.git",
+                "repo_name": "repo",
+                "repo_root": "/srv/repo",
+                "source_checkout_path": "/srv/repo",
+                "source_workspace_id": "w1H"
+            },
+            "worktrees": [
+                {
+                    "path": "/srv/repo",
+                    "branch": "master",
+                    "is_bare": false,
+                    "is_detached": false,
+                    "is_prunable": false,
+                    "is_linked_worktree": false,
+                    "open_workspace_id": "w1H",
+                    "label": "repo"
+                }
+            ]
+        }
+    })
+}
+
+#[test]
+fn worktree_branch_maps_the_open_worktree() {
+    let branch =
+        parse_worktree_branch(&worktree_list_response(), "w1H").expect("must parse");
+    assert_eq!(branch.as_deref(), Some("master"));
+}
+
+#[test]
+fn worktree_branch_of_another_workspace_is_none_when_the_list_is_empty() {
+    // No worktrees in the reply: no branch to name.
+    let mut response = worktree_list_response();
+    response["result"]["worktrees"] = json!([]);
+    let branch = parse_worktree_branch(&response, "wN").expect("must parse");
+    assert_eq!(branch, None);
+}
+
+#[test]
+fn a_single_worktree_opened_elsewhere_still_names_its_branch() {
+    // The daemon derived the worktree list from THIS workspace's own panes,
+    // so a repo with one worktree is unambiguous even when another
+    // workspace has it open: the branch is what this checkout is on.
+    let mut response = worktree_list_response();
+    response["result"]["worktrees"][0]["open_workspace_id"] = json!("wZZ");
+    let branch = parse_worktree_branch(&response, "w1H").expect("must parse");
+    assert_eq!(branch.as_deref(), Some("master"));
+}
+
+#[test]
+fn worktree_branch_falls_back_to_a_single_worktree() {
+    // A repo with one worktree but opened from another workspace id: the
+    // repo root's branch still names what the checkout is on.
+    let mut response = worktree_list_response();
+    response["result"]["worktrees"][0]["open_workspace_id"] = json!("wZZ");
+    let branch = parse_worktree_branch(&response, "w1H").expect("must parse");
+    assert_eq!(branch.as_deref(), Some("master"));
+}
+
+#[test]
+fn worktree_branch_is_none_when_two_worktrees_and_none_is_ours() {
+    let mut response = worktree_list_response();
+    let second = response["result"]["worktrees"][0].clone();
+    response["result"]["worktrees"].as_array_mut().unwrap().push(second);
+    response["result"]["worktrees"][0]["open_workspace_id"] = json!("wZZ");
+    response["result"]["worktrees"][1]["open_workspace_id"] = json!("wYY");
+    let branch = parse_worktree_branch(&response, "w1H").expect("must parse");
+    assert_eq!(branch, None, "with two worktrees we cannot guess the branch");
+}
+
+#[test]
+fn worktree_refusals_carry_the_daemons_code() {
+    // Measured live: a non-git directory is refused with `not_git_worktree`
+    // — the typed refusal the caller maps to "no branch".
+    let error = parse_worktree_branch(
+        &refused_response(
+            "not_git_worktree",
+            "Herdr worktree actions require a path inside a Git work tree",
+        ),
+        "w1H",
+    )
+    .expect_err("a refusal is an error");
+    match error {
+        RequestError::Refused { code, .. } => assert_eq!(code, "not_git_worktree"),
+        other => panic!("expected RequestError::Refused, got {other:?}"),
     }
 }
 

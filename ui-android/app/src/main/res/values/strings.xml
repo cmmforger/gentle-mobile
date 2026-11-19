@@ -94,6 +94,32 @@
     <string name="nodes_session_history">Session history</string>
     <string name="nodes_session_history_sub">Open a Gentle Shell session that already exists on the host.</string>
 
+    <!-- Workspaces (S26-2): the host's herdr workspaces, the human's repositories -->
+    <string name="nodes_workspaces">Workspaces</string>
+    <string name="nodes_workspaces_sub">Your repositories on this host — branch, state and agents.</string>
+    <string name="ws_title">Workspaces</string>
+    <string name="ws_reading">Reading the host\u2019s workspaces…</string>
+    <string name="ws_error">The workspaces could not be read: %1$s</string>
+    <string name="ws_empty">No workspaces on this host yet — add a project below.</string>
+    <string name="ws_agents_one">1 agent</string>
+    <string name="ws_agents_many">%1$d agents</string>
+    <string name="ws_focused">on screen</string>
+    <string name="ws_add">Add a project</string>
+    <string name="ws_add_action">Add</string>
+    <string name="ws_add_hint">/absolute/path/on/the/host</string>
+    <string name="ws_add_working">Checking the path on the host…</string>
+    <string name="ws_add_creating">Creating the workspace…</string>
+    <string name="ws_add_failed">The workspace could not be created: %1$s</string>
+    <string name="ws_recent">Recent paths</string>
+    <string name="ws_recent_reading">Reading the session history for recent paths…</string>
+    <string name="ws_path_missing">The path does not exist on the host: %1$s</string>
+    <string name="ws_not_a_directory">That path is a file, not a directory: %1$s</string>
+    <string name="ws_no_permission">No permission to open that directory on the host: %1$s</string>
+    <string name="ws_is_git">git repository</string>
+    <string name="ws_not_git">not a git repository — it can still be added</string>
+    <string name="ws_filter_all">All workspaces</string>
+    <string name="ws_filter_showing">Showing the agents of %1$s</string>
+
     <!-- Agent inbox groups -->
     <string name="inbox_back">Agents</string>
     <string name="inbox_group_needs_you">Needs you</string>

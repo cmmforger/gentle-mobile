@@ -23,6 +23,7 @@
 pub mod backoff;
 pub mod connection;
 pub mod error;
+pub mod paths;
 pub mod pin;
 pub mod profile;
 pub mod requests;

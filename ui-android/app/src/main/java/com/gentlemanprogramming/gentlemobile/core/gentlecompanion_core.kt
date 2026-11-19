@@ -701,6 +701,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_acquire_lease(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_check_host_dir(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_compose_prompt(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_connect(
@@ -723,11 +725,17 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_start_session_in_dir(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_create_workspace(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_workspace(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_latest_surface(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_list_workspaces(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_probe_liveness(
     ): Int
@@ -788,11 +796,17 @@ internal object UniffiLib {
     ): Long
     external fun uniffi_gentlecompanion_core_fn_free_companionconnection(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_create_workspace(`ptr`: Long,`cwd`: RustBuffer.ByValue,`label`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_disconnect(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_focus_workspace(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_is_disconnected(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_latest_surface(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_list_workspaces(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_probe_liveness(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -835,6 +849,8 @@ internal object UniffiLib {
     external fun uniffi_gentlecompanion_core_fn_func_accept_host_key(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_func_acquire_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_func_check_host_dir(`profile`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_compose_prompt(`text`: RustBuffer.ByValue,`imageSuffixes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -983,6 +999,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_func_acquire_lease() and 0xFFFF) != 59390) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_check_host_dir() and 0xFFFF) != 18356) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_compose_prompt() and 0xFFFF) != 26788) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1016,13 +1035,22 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_func_start_session_in_dir() and 0xFFFF) != 6110) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_create_workspace() and 0xFFFF) != 39001) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect() and 0xFFFF) != 59131) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_workspace() and 0xFFFF) != 20849) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected() and 0xFFFF) != 51113) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_latest_surface() and 0xFFFF) != 1162) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_list_workspaces() and 0xFFFF) != 53467) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_probe_liveness() and 0xFFFF) != 41447) {
@@ -1565,9 +1593,24 @@ public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
 public interface CompanionConnectionInterface {
     
     /**
+     * Create a workspace on the host in `cwd` (S26-3). The path must have
+     * been validated first (`checkHostDir`): measured live, the daemon
+     * does **not** refuse a missing directory — it silently falls back to
+     * `$HOME`. `Ok` carries the created workspace and its root pane.
+     */
+    fun `createWorkspace`(`cwd`: kotlin.String, `label`: kotlin.String?): WorkspaceCreatedDto
+    
+    /**
      * Disconnect cleanly and drop the connection.
      */
     fun `disconnect`()
+    
+    /**
+     * Focus one workspace on the host (S26-2): the daemon switches to it,
+     * exactly as tapping it in the herdr TUI does. `Ok(())` means the
+     * daemon confirmed (`workspace_info`); a refusal names why.
+     */
+    fun `focusWorkspace`(`workspaceId`: kotlin.String)
     
     /**
      * True once the connection is over, however it ended.
@@ -1582,6 +1625,14 @@ public interface CompanionConnectionInterface {
      * connection's own baseline.
      */
     fun `latestSurface`(): SurfaceDto?
+    
+    /**
+     * The host's workspace list (S26-2): one row per workspace, with the
+     * branch from the repo behind it (a per-workspace `worktree.list`,
+     * measured read-only; a `not_git_worktree` refusal means no branch,
+     * never a failure) and the agent count joined from the latest snapshot.
+     */
+    fun `listWorkspaces`(): List<WorkspaceRowDto>
     
     /**
      * Ping the host now instead of trusting a socket that may have died
@@ -1740,6 +1791,28 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
 
     
     /**
+     * Create a workspace on the host in `cwd` (S26-3). The path must have
+     * been validated first (`checkHostDir`): measured live, the daemon
+     * does **not** refuse a missing directory — it silently falls back to
+     * `$HOME`. `Ok` carries the created workspace and its root pane.
+     */
+    @Throws(CompanionException::class)override fun `createWorkspace`(`cwd`: kotlin.String, `label`: kotlin.String?): WorkspaceCreatedDto {
+            return FfiConverterTypeWorkspaceCreatedDto.lift(
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_create_workspace(
+        it,
+        
+        FfiConverterString.lower(`cwd`),
+        FfiConverterOptionalString.lower(`label`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Disconnect cleanly and drop the connection.
      */override fun `disconnect`()
         = 
@@ -1748,6 +1821,25 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
     UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_disconnect(
         it,
         _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Focus one workspace on the host (S26-2): the daemon switches to it,
+     * exactly as tapping it in the herdr TUI does. `Ok(())` means the
+     * daemon confirmed (`workspace_info`); a refusal names why.
+     */
+    @Throws(CompanionException::class)override fun `focusWorkspace`(`workspaceId`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_focus_workspace(
+        it,
+        
+        FfiConverterString.lower(`workspaceId`),_status)
 }
     }
     
@@ -1781,6 +1873,26 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
     callWithHandle {
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_latest_surface(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The host's workspace list (S26-2): one row per workspace, with the
+     * branch from the repo behind it (a per-workspace `worktree.list`,
+     * measured read-only; a `not_git_worktree` refusal means no branch,
+     * never a failure) and the agent count joined from the latest snapshot.
+     */
+    @Throws(CompanionException::class)override fun `listWorkspaces`(): List<WorkspaceRowDto> {
+            return FfiConverterSequenceTypeWorkspaceRowDto.lift(
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_list_workspaces(
         it,
         _status)
 }
@@ -2454,6 +2566,12 @@ data class AgentDto (
      * `prompt_agent` take (the daemon's `agent.prompt` targets accept panes).
      */
     val `paneId`: kotlin.String
+    , 
+    /**
+     * The workspace the agent's pane belongs to — the key the inbox filters
+     * by when one workspace is selected (S26-2).
+     */
+    val `workspaceId`: kotlin.String
     
 ){
     
@@ -2476,6 +2594,7 @@ public object FfiConverterTypeAgentDto: FfiConverterRustBuffer<AgentDto> {
             FfiConverterOptionalString.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -2485,7 +2604,8 @@ public object FfiConverterTypeAgentDto: FfiConverterRustBuffer<AgentDto> {
             FfiConverterTypeAgentStatusDto.allocationSize(value.`status`) +
             FfiConverterOptionalString.allocationSize(value.`cwd`) +
             FfiConverterBoolean.allocationSize(value.`focused`) +
-            FfiConverterString.allocationSize(value.`paneId`)
+            FfiConverterString.allocationSize(value.`paneId`) +
+            FfiConverterString.allocationSize(value.`workspaceId`)
     )
 
     override fun write(value: AgentDto, buf: ByteBuffer) {
@@ -2495,6 +2615,7 @@ public object FfiConverterTypeAgentDto: FfiConverterRustBuffer<AgentDto> {
             FfiConverterOptionalString.write(value.`cwd`, buf)
             FfiConverterBoolean.write(value.`focused`, buf)
             FfiConverterString.write(value.`paneId`, buf)
+            FfiConverterString.write(value.`workspaceId`, buf)
     }
 }
 
@@ -2675,6 +2796,44 @@ public object FfiConverterTypeDialogRequestDto: FfiConverterRustBuffer<DialogReq
             FfiConverterOptionalString.write(value.`message`, buf)
             FfiConverterOptionalString.write(value.`placeholder`, buf)
             FfiConverterSequenceString.write(value.`options`, buf)
+    }
+}
+
+
+
+data class DirCheckDto (
+    val `verdict`: DirVerdictDto
+    , 
+    val `isGitRepo`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDirCheckDto: FfiConverterRustBuffer<DirCheckDto> {
+    override fun read(buf: ByteBuffer): DirCheckDto {
+        return DirCheckDto(
+            FfiConverterTypeDirVerdictDto.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DirCheckDto) = (
+            FfiConverterTypeDirVerdictDto.allocationSize(value.`verdict`) +
+            FfiConverterBoolean.allocationSize(value.`isGitRepo`)
+    )
+
+    override fun write(value: DirCheckDto, buf: ByteBuffer) {
+            FfiConverterTypeDirVerdictDto.write(value.`verdict`, buf)
+            FfiConverterBoolean.write(value.`isGitRepo`, buf)
     }
 }
 
@@ -3362,6 +3521,53 @@ public object FfiConverterTypeUploadPlanDto: FfiConverterRustBuffer<UploadPlanDt
 
 
 
+/**
+ * A workspace created through the `+` flow (S26-3): its id, its label, and
+ * the root pane the agents will appear in.
+ */
+data class WorkspaceCreatedDto (
+    val `workspaceId`: kotlin.String
+    , 
+    val `label`: kotlin.String
+    , 
+    val `paneId`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceCreatedDto: FfiConverterRustBuffer<WorkspaceCreatedDto> {
+    override fun read(buf: ByteBuffer): WorkspaceCreatedDto {
+        return WorkspaceCreatedDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WorkspaceCreatedDto) = (
+            FfiConverterString.allocationSize(value.`workspaceId`) +
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterOptionalString.allocationSize(value.`paneId`)
+    )
+
+    override fun write(value: WorkspaceCreatedDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`workspaceId`, buf)
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterOptionalString.write(value.`paneId`, buf)
+    }
+}
+
+
+
 data class WorkspaceDto (
     val `id`: kotlin.String
     , 
@@ -3405,6 +3611,78 @@ public object FfiConverterTypeWorkspaceDto: FfiConverterRustBuffer<WorkspaceDto>
             FfiConverterULong.write(value.`number`, buf)
             FfiConverterString.write(value.`label`, buf)
             FfiConverterBoolean.write(value.`focused`, buf)
+    }
+}
+
+
+
+/**
+ * One row of the host's workspace list (S26-2): the human's own label, the
+ * branch when the repo behind the workspace has one, the aggregate state
+ * word, and how many agents work in it.
+ */
+data class WorkspaceRowDto (
+    val `id`: kotlin.String
+    , 
+    val `number`: kotlin.ULong
+    , 
+    val `label`: kotlin.String
+    , 
+    val `focused`: kotlin.Boolean
+    , 
+    val `status`: AgentStatusDto
+    , 
+    /**
+     * The branch the workspace's checkout is on; `None` when the host gave
+     * no branch (no git repo, or the daemon could not say).
+     */
+    val `branch`: kotlin.String?
+    , 
+    val `agentCount`: kotlin.ULong
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWorkspaceRowDto: FfiConverterRustBuffer<WorkspaceRowDto> {
+    override fun read(buf: ByteBuffer): WorkspaceRowDto {
+        return WorkspaceRowDto(
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterTypeAgentStatusDto.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WorkspaceRowDto) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterULong.allocationSize(value.`number`) +
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterBoolean.allocationSize(value.`focused`) +
+            FfiConverterTypeAgentStatusDto.allocationSize(value.`status`) +
+            FfiConverterOptionalString.allocationSize(value.`branch`) +
+            FfiConverterULong.allocationSize(value.`agentCount`)
+    )
+
+    override fun write(value: WorkspaceRowDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterULong.write(value.`number`, buf)
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterBoolean.write(value.`focused`, buf)
+            FfiConverterTypeAgentStatusDto.write(value.`status`, buf)
+            FfiConverterOptionalString.write(value.`branch`, buf)
+            FfiConverterULong.write(value.`agentCount`, buf)
     }
 }
 
@@ -3993,6 +4271,46 @@ public object FfiConverterTypeConnectOutcome : FfiConverterRustBuffer<ConnectOut
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
+/**
+ * The verdict of a host-path check over SFTP (S26-3): the plain-sentence
+ * rejections map from these words in the UI.
+ */
+
+enum class DirVerdictDto {
+    
+    OK,
+    MISSING,
+    NOT_A_DIRECTORY,
+    NO_PERMISSION;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDirVerdictDto: FfiConverterRustBuffer<DirVerdictDto> {
+    override fun read(buf: ByteBuffer) = try {
+        DirVerdictDto.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: DirVerdictDto) = 4UL
+
+    override fun write(value: DirVerdictDto, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
     }
 }
 
@@ -4627,6 +4945,34 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<List<WorkspaceRowDto>> {
+    override fun read(buf: ByteBuffer): List<WorkspaceRowDto> {
+        val len = buf.getInt()
+        return List<WorkspaceRowDto>(len) {
+            FfiConverterTypeWorkspaceRowDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WorkspaceRowDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWorkspaceRowDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WorkspaceRowDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWorkspaceRowDto.write(it, buf)
+        }
+    }
+}
         /**
          * Pin the presented key for `host:port`. The `key_blob` comes from the
          * challenge, so the pin records the exact key the user was shown. It may be
@@ -4661,6 +5007,24 @@ public object FfiConverterSequenceTypeWorkspaceDto: FfiConverterRustBuffer<List<
         FfiConverterString.lower(`sessionId`),
         FfiConverterString.lower(`deviceId`),
         FfiConverterString.lower(`token`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Check one absolute path on the host over the SFTP lane (S26-3): exists,
+         * is a directory, is readable, and whether it carries a `.git` marker.
+         * One-shot pinned session per check, same lane as the lease work.
+         */
+    @Throws(CompanionException::class) fun `checkHostDir`(`profile`: HostProfileDto, `path`: kotlin.String): DirCheckDto {
+            return FfiConverterTypeDirCheckDto.lift(
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_check_host_dir(
+    
+        
+        FfiConverterTypeHostProfileDto.lower(`profile`),
+        FfiConverterString.lower(`path`),_status)
 }
     )
     }
