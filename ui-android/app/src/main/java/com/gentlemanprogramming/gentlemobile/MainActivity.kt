@@ -125,8 +125,10 @@ import com.gentlemanprogramming.gentlemobile.core.CompanionException
 import com.gentlemanprogramming.gentlemobile.core.ConnectOutcome
 import com.gentlemanprogramming.gentlemobile.core.KnownHostDto
 import com.gentlemanprogramming.gentlemobile.core.HostProfileDto
+import com.gentlemanprogramming.gentlemobile.core.PaneDto
 import com.gentlemanprogramming.gentlemobile.core.PaneReadDto
 import com.gentlemanprogramming.gentlemobile.core.SnapshotDto
+import com.gentlemanprogramming.gentlemobile.core.TabDto
 import com.gentlemanprogramming.gentlemobile.core.UploadProgressListener
 import com.gentlemanprogramming.gentlemobile.core.composePrompt as coreComposePrompt
 import com.gentlemanprogramming.gentlemobile.core.planUpload as corePlanUpload
@@ -183,6 +185,7 @@ import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentState
 import com.gentlemanprogramming.gentlemobile.ui.session.DictationController
 import com.gentlemanprogramming.gentlemobile.ui.session.DictationState
 import com.gentlemanprogramming.gentlemobile.ui.session.SessionComposer
+import com.gentlemanprogramming.gentlemobile.ui.session.WorkspaceTabsModel
 import com.gentlemanprogramming.gentlemobile.ui.session.rememberDictationSession
 import com.gentlemanprogramming.gentlemobile.ui.settings.ThemePickerScreen
 import com.gentlemanprogramming.gentlemobile.ui.splash.SplashScreen
@@ -191,12 +194,11 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.GentleMobileTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import com.gentlemanprogramming.gentlemobile.ui.theme.ThemeStore
-import com.gentlemanprogramming.gentlemobile.ui.terminal.SurfaceStats
+import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFit
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMaxSp
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMinSp
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalSurface
 import com.gentlemanprogramming.gentlemobile.ui.terminal.rememberTerminalCellMetrics
-import com.gentlemanprogramming.gentlemobile.ui.terminal.surfaceStats
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -482,7 +484,14 @@ private class SessionUi {
     var readError by mutableStateOf<String?>(null)
     /** The latest grid from the surface stream; `null` until the host rendered one. */
     var surface by mutableStateOf<SurfaceDto?>(null)
-    var surfaceStats by mutableStateOf<SurfaceStats?>(null)
+    /** The workspace's own tabs (S27-7): from the snapshot the daemon keeps
+     *  sending while the session is open — the strip's rows and the
+     *  pane→tab map a tap needs. Empty until the first snapshot. */
+    var tabs by mutableStateOf<List<TabDto>>(emptyList())
+    var panes by mutableStateOf<List<PaneDto>>(emptyList())
+    /** The agent whose pane lives in each tab — what a tab tap can make
+     *  visible. Tabs without an agent have no entry. */
+    var tabAgents by mutableStateOf<Map<String, AgentDto>>(emptyMap())
     var draft by mutableStateOf("")
     var sending by mutableStateOf(false)
     var sendError by mutableStateOf<String?>(null)
@@ -541,7 +550,10 @@ private class SessionUi {
         pane = null
         readError = null
         surface = null
-        surfaceStats = null
+        // Tabs ride the snapshot: a fresh store means a fresh strip.
+        tabs = emptyList()
+        panes = emptyList()
+        tabAgents = emptyMap()
         // A dead connection cannot keep a recognizer: any dictation in
         // flight is cancelled honestly (its partial is never committed).
         if (dictationController.state is DictationState.Listening ||
@@ -1726,6 +1738,9 @@ fun ConnectScreen(
             screen.ui = UiState.Session(connection, agent)
             pollPane(screen, sessionUi, connection, agent.paneId, generation)
             pollSurface(screen, sessionUi, connection, agent.paneId, generation)
+            // S27-7: the strip's rows ride the snapshot, polled while the
+            // session is open, scoped to this agent's workspace.
+            pollWorkspaceTabs(screen, sessionUi, connection, agent.workspaceId, agent.paneId, generation)
         }
     }
 
@@ -2588,7 +2603,10 @@ fun ConnectScreen(
                                     false,
                                 ),
                                 Triple(
-                                    stringResource(R.string.inbox_group_idle),
+                                    // S27-8: the word `Idle` never renders —
+                                    // idle agents list quietly after Working,
+                                    // with no group label of their own.
+                                    "",
                                     agents.filter { it.status == AgentStatusDto.IDLE },
                                     false,
                                 ),
@@ -2599,7 +2617,9 @@ fun ConnectScreen(
                                 ),
                             ).forEach { (label, groupAgents, needsYou) ->
                                 if (groupAgents.isNotEmpty()) {
-                                    GroupLabel(groupLabelWithCount(label, groupAgents.size), uppercase = false)
+                                    if (label.isNotEmpty()) {
+                                        GroupLabel(groupLabelWithCount(label, groupAgents.size), uppercase = false)
+                                    }
                                     groupAgents.forEach { agent ->
                                         InboxRow(
                                             agent,
@@ -2854,6 +2874,9 @@ fun ConnectScreen(
                     agent = current.agent,
                     sessionUi = sessionUi,
                     supervision = screen.machine.state,
+                    tabs = sessionUi.tabs,
+                    panes = sessionUi.panes,
+                    tabAgents = sessionUi.tabAgents,
                     terminalFontPx = terminalFontPx,
                     onFontPxChange = { terminalFontPx = it },
                     onBack = {
@@ -2870,6 +2893,16 @@ fun ConnectScreen(
                     onRefresh = {
                         val generation = screen.generation
                         requestPaneRead(screen, sessionUi, current.connection, current.agent.paneId, generation)
+                    },
+                    // S27-7: a tab tap makes it the visible one. The app
+                    // renders agent panes, so the tab's agent opens here —
+                    // the exact path the inbox row takes. A tab without an
+                    // agent is not tappable (the strip leaves it quiet).
+                    onTabSelected = { tab ->
+                        val target = sessionUi.tabAgents[tab.id]
+                        if (target != null && target.paneId != current.agent.paneId) {
+                            openAgentSession(UiState.Connected(current.connection, snapshot = null), target)
+                        }
                     },
                     onSend = { prompt ->
                         val connection = current.connection
@@ -3179,7 +3212,6 @@ private fun pollSurface(
                         (previous == null || surface.revision != previous.revision)
                     ) {
                         sessionUi.surface = surface
-                        sessionUi.surfaceStats = surfaceStats(surface)
                     }
                 }
                 val ended = try {
@@ -3217,6 +3249,72 @@ private fun pollSurface(
         }
     }
     runOnce()
+}
+
+/** Tabs polling (S27-7): while a session is open, read the daemon's
+ *  snapshot every 500 ms so the card's top strip carries the current
+ *  workspace's own tabs — the data the snapshot already includes
+ *  (`tab.list {workspace_id}` rows on the wire, measured from
+ *  `herdr api schema --json`) — plus the pane→tab map a tap needs. Stops
+ *  with the session, like the surface poller.
+ */
+private const val TABS_POLL_MS = 500L
+
+private fun pollWorkspaceTabs(
+    screen: ScreenState,
+    sessionUi: SessionUi,
+    connection: CompanionConnection,
+    workspaceId: String,
+    paneId: String,
+    generation: Int,
+) {
+    val slot = screen.pollers.register()
+    Log.i(TAG, "tabs poller registered, active=${screen.pollers.count}")
+    fun runOnce() {
+        executor.execute {
+            var reschedule = false
+            try {
+                val snapshot = try {
+                    connection.snapshot()
+                } catch (_: Exception) {
+                    null
+                }
+                mainHandler.post {
+                    if (screen.generation != generation) return@post
+                    if (snapshot != null) {
+                        sessionUi.tabs = WorkspaceTabsModel.tabsOfWorkspace(snapshot.tabs, workspaceId)
+                        sessionUi.panes = snapshot.panes
+                        sessionUi.tabAgents = WorkspaceTabsModel.tabAgentsByTab(snapshot.panes, snapshot.agents)
+                    }
+                }
+                reschedule = !ended(connection)
+            } finally {
+                if (!reschedule) {
+                    slot.close()
+                    Log.i(TAG, "tabs poller stopped, active=${screen.pollers.count}")
+                }
+            }
+            if (reschedule) {
+                mainHandler.postDelayed({
+                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+                        runOnce()
+                    } else {
+                        slot.close()
+                        Log.i(TAG, "tabs poller stopped, active=${screen.pollers.count}")
+                    }
+                }, TABS_POLL_MS)
+            }
+        }
+    }
+    runOnce()
+}
+
+/** True while the connection is still alive — the shared end check the
+ *  pollers use, so a dead link stops every loop the same way. */
+private fun ended(connection: CompanionConnection): Boolean = try {
+    connection.isDisconnected()
+} catch (_: Exception) {
+    true
 }
 
 /** One immediate read, off the poll cadence — the manual refresh button. */
@@ -3331,10 +3429,16 @@ private fun SessionScreen(
     agent: AgentDto,
     sessionUi: SessionUi,
     supervision: SupervisionState,
+    // S27-7: the workspace's own tabs — the strip's rows, the pane→tab map,
+    // and the agent each tab can make visible.
+    tabs: List<TabDto>,
+    panes: List<PaneDto>,
+    tabAgents: Map<String, AgentDto>,
     terminalFontPx: Float,
     onFontPxChange: (Float) -> Unit,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
+    onTabSelected: (TabDto) -> Unit,
     onRetry: () -> Unit,
     onSend: (String) -> Unit,
     onSendKeys: (List<String>) -> Unit,
@@ -3397,71 +3501,71 @@ private fun SessionScreen(
             // would cover the field the user is typing into.
             .safeDrawingPadding()
             .imePadding()
-            .padding(16.dp),
+            // S27-2: the terminal card loses the side padding — the frame
+            // uses the phone's width minus a hair (4 dp each side); the
+            // header, extra keys and composer keep their own inset below.
+            .padding(horizontal = 4.dp, vertical = 12.dp),
     ) {
-        // Header: back to the agents list, agent name and its project. Icons
-        // instead of the words, and the project name only — the full path
-        // belongs inside the session, not in the header (S26-4).
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Icon(
-                painter = painterResource(R.drawable.ic_back),
-                contentDescription = stringResource(R.string.inbox_back),
-                tint = LocalPalette.current.accent,
+        // Header: back to the agents list, the project's name. Icons instead
+        // of the words; the title is the project name — never the agent
+        // name/kind, so a screen never reads `pi` (S27-5). The glyphs are
+        // small and muted (S27-4); the 44 dp touch target stays.
+        Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp),
+        ) {
+            Box(
                 modifier = Modifier
                     .size(44.dp)
                     .clickable(onClick = onBack),
-            )
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_back),
+                    contentDescription = stringResource(R.string.inbox_back),
+                    tint = LocalPalette.current.muted,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = agent.name,
+                    text = AgentRowModel.sessionTitle(agent.cwd, agent.name),
                     color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = listOfNotNull(
-                        AgentRowModel.projectTitle(agent.cwd, agent.name),
-                        statusWord(agent.status),
-                    ).joinToString(" · "),
-                    color = LocalPalette.current.muted,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                statusWord(agent.status)?.let { word ->
+                    Text(
+                        text = word,
+                        color = LocalPalette.current.muted,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            Icon(
-                painter = painterResource(R.drawable.ic_refresh),
-                contentDescription = stringResource(R.string.session_refresh),
-                tint = LocalPalette.current.accent,
+            Box(
                 modifier = Modifier
                     .size(44.dp)
                     .clickable(onClick = onRefresh),
-            )
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_refresh),
+                    contentDescription = stringResource(R.string.session_refresh),
+                    tint = LocalPalette.current.muted,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
         Spacer(Modifier.height(8.dp))
-        Text(
-            // The liveness word is the machine's, never assumed: only a
-            // connected connection may claim live (T8c).
-            text = if (interrupted == null) {
-                stringResource(
-                    R.string.session_live_line,
-                    stringResource(R.string.status_live),
-                )
-            } else {
-                stringResource(
-                    R.string.session_not_live_line,
-                    stringResource(R.string.status_not_live),
-                )
-            },
-            color = if (interrupted == null) LocalPalette.current.muted else LocalPalette.current.error,
-            fontSize = 11.sp,
-            letterSpacing = 0.8.sp,
-        )
+        // S27-6: no liveness line — the space belongs to the terminal. When
+        // the connection dropped, the interrupted notice alone says so and
+        // offers Retry; a live link says nothing.
         if (interrupted != null) {
-            Spacer(Modifier.height(8.dp))
             InterruptedNotice(reason = interrupted.reason, onRetry = onRetry)
         }
 
@@ -3469,8 +3573,19 @@ private fun SessionScreen(
         // first surface arrives (or if the host never sends one) the pane's
         // visible text shows here instead — never a silently empty view.
         Spacer(Modifier.height(8.dp))
+        // S27-7: the card's top strip — the current workspace's own tabs,
+        // in the daemon's order, the visible one marked. A tap makes that
+        // tab the visible one; no more numbered bar that does nothing.
+        if (tabs.isNotEmpty()) {
+            WorkspaceTabStrip(
+                tabs = tabs,
+                currentTabId = WorkspaceTabsModel.currentTabId(panes, agent.paneId),
+                tabAgents = tabAgents,
+                onTabSelected = onTabSelected,
+            )
+            Spacer(Modifier.height(4.dp))
+        }
         val surface = sessionUi.surface
-        val surfaceStats = sessionUi.surfaceStats
         val readError = sessionUi.readError
         if (surface != null) {
             val metrics = rememberTerminalCellMetrics()
@@ -3482,17 +3597,38 @@ private fun SessionScreen(
                 val density = LocalDensity.current
                 val cols = surface.width.toInt().coerceAtLeast(1)
                 val rows = surface.height.toInt().coerceAtLeast(1)
-                // Fit rule: shrink the font until ALL columns fit the
-                // measured box, using the advance ratio measured from the
-                // bundled font (the same measurement the renderer slots
-                // cells with). Below the readability floor the font stops
-                // shrinking and the grid scrolls horizontally instead —
-                // the right edge is never silently clipped.
-                val fitPx = constraints.maxWidth / (cols * metrics.advanceRatio)
+                // Fit rule (S27-1): ONE font size fits the WHOLE frame —
+                // width first, and if the height then overflows the visible
+                // card, the height fits too. Nothing is cropped and no
+                // horizontal scrolling is needed to read a line; the cell
+                // aspect stays intact because one size drives both
+                // dimensions. A pinch overrides the fit only until the
+                // frame's size changes, then the fit rules again.
+                val fit = TerminalFit.fit(
+                    cols,
+                    rows,
+                    constraints.maxWidth.toFloat(),
+                    constraints.maxHeight.toFloat(),
+                    metrics.advanceRatio,
+                    metrics.lineHeightRatio,
+                )
                 val minPx = with(density) { TerminalFontMinSp.toPx() }
                 val maxPx = with(density) { TerminalFontMaxSp.toPx() }
-                val effectivePx = (if (terminalFontPx > 0f) terminalFontPx else fitPx)
-                    .coerceIn(minPx, maxPx)
+                LaunchedEffect(cols, rows) {
+                    if (terminalFontPx > 0f) onFontPxChange(0f)
+                }
+                val effectivePx = if (terminalFontPx > 0f) {
+                    terminalFontPx.coerceIn(minPx, maxPx)
+                } else {
+                    fit.fontPx
+                }
+                // Geometry to logcat only (S24-9 precedent): the fit's own
+                // numbers, never on the screen.
+                Log.i(
+                    TAG,
+                    "terminal fit: frame=${cols}x${rows} card=${constraints.maxWidth}x${constraints.maxHeight} " +
+                        "metrics a=${metrics.advanceRatio} l=${metrics.lineHeightRatio} fontPx=$effectivePx",
+                )
                 val gridWidthPx = cols * metrics.advanceRatio * effectivePx
                 val gridHeightPx = rows * metrics.lineHeightRatio * effectivePx
 
@@ -3512,8 +3648,6 @@ private fun SessionScreen(
                 LaunchedEffect(surface.revision, effectivePx, gridHeightPx, viewSize) {
                     if (pinnedToBottom.value) vScroll.scrollTo(vScroll.maxValue)
                 }
-                val atBottom = vScroll.maxValue == 0 ||
-                    vScroll.value >= vScroll.maxValue - cellHalfPx
 
                 // Pinch only changes the font size; one-finger drags belong
                 // to the scroll (canPan = false keeps the transform detector
@@ -3522,83 +3656,28 @@ private fun SessionScreen(
                     val current = if (terminalFontPx > 0f) terminalFontPx else effectivePx
                     onFontPxChange((current * zoomChange).coerceIn(minPx, maxPx))
                 }
-                val statsLine = surfaceStats?.let {
-                    stringResource(
-                        R.string.session_stats_line,
-                        it.cols,
-                        it.rows,
-                        it.drawnCells,
-                        it.distinctColours,
-                    ) +
-                        (it.wideSymbol?.let { w -> stringResource(R.string.session_stats_wide, w) } ?: "") +
-                        (if (it.cursorVisible) stringResource(R.string.session_stats_cursor) else "")
-                } ?: ""
-                Column(Modifier.fillMaxSize()) {
-                    if (statsLine.isNotEmpty()) {
-                        Text(
-                            text = statsLine,
-                            color = LocalPalette.current.muted,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .onSizeChanged { viewSize = it }
-                            .verticalScroll(vScroll)
-                            .horizontalScroll(hScroll)
-                            .transformable(transformState, canPan = { false }),
-                    ) {
-                        // The canvas covers the whole viewport when the grid
-                        // fits (background everywhere) and the grid's own size
-                        // when it overflows: scrolling then reveals the rest —
-                        // nothing is clipped.
-                        val canvasWidthPx = maxOf(gridWidthPx, viewSize.width.toFloat())
-                        val canvasHeightPx = maxOf(gridHeightPx, viewSize.height.toFloat())
-                        TerminalSurface(
-                            surface = surface,
-                            fontSizePx = effectivePx,
-                            modifier = Modifier.size(
-                                with(density) { canvasWidthPx.toDp() },
-                                with(density) { canvasHeightPx.toDp() },
-                            ),
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    // Footer: the fit is checkable at a glance — grid size,
-                    // live font size, and which scroll paths are active.
-                    val fontSp = with(density) { effectivePx.toSp() }.value
-                    Text(
-                        text = buildString {
-                            append(cols)
-                            append("×")
-                            append(rows)
-                            append(" · ")
-                            append("%.1f".format(fontSp))
-                            append(stringResource(R.string.session_stats_sp))
-                            if (gridWidthPx > viewSize.width + 0.5f) {
-                                append(stringResource(R.string.session_stats_scroll))
-                            }
-                            if (gridHeightPx > viewSize.height + 0.5f) {
-                                append(
-                                    if (atBottom) {
-                                        stringResource(R.string.session_stats_at_bottom)
-                                    } else {
-                                        stringResource(R.string.session_stats_scrolled)
-                                    },
-                                )
-                            }
-                        },
-                        color = LocalPalette.current.muted,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(8.dp))
+                        .onSizeChanged { viewSize = it }
+                        .verticalScroll(vScroll)
+                        .horizontalScroll(hScroll)
+                        .transformable(transformState, canPan = { false }),
+                ) {
+                    // The canvas covers the whole viewport when the grid
+                    // fits (background everywhere) and the grid's own size
+                    // when a manual pinch overflows: scrolling then reveals
+                    // the rest — nothing is clipped.
+                    val canvasWidthPx = maxOf(gridWidthPx, viewSize.width.toFloat())
+                    val canvasHeightPx = maxOf(gridHeightPx, viewSize.height.toFloat())
+                    TerminalSurface(
+                        surface = surface,
+                        fontSizePx = effectivePx,
+                        modifier = Modifier.size(
+                            with(density) { canvasWidthPx.toDp() },
+                            with(density) { canvasHeightPx.toDp() },
+                        ),
                     )
                 }
             }
@@ -3643,7 +3722,7 @@ private fun SessionScreen(
         // accepts (measured: esc, tab, enter, up, down, and ctrl+/alt+
         // compositions), so all are enabled; Ctrl and Alt are sticky.
         Spacer(Modifier.height(8.dp))
-        ExtraKeyRow(sessionUi, onSendKeys)
+        ExtraKeyRow(sessionUi, onSendKeys, modifier = Modifier.padding(horizontal = 12.dp))
 
         // Composer: a prompt, sent through the daemon's own agent.prompt.
         // One row — the field with the send action beside it — so the
@@ -3655,6 +3734,7 @@ private fun SessionScreen(
         // The send prompt is the draft plus the confirmed uploads' suffix
         // lines, composed by the core so the contract lives in one place.
         SessionComposer(
+            modifier = Modifier.padding(horizontal = 12.dp),
             draft = sessionUi.draft,
             onDraftChange = { sessionUi.draft = it },
             attachments = sessionUi.attachments,
@@ -4141,6 +4221,55 @@ private fun InterruptedNotice(reason: String, onRetry: () -> Unit) {
 }
 
 /**
+ * The workspace's own tab strip (S27-7): the session card's top strip
+ * shows the tabs of the workspace the human is in — from the snapshot the
+ * daemon already sends (`tab.list {workspace_id}` rows on the wire,
+ * measured from `herdr api schema --json`) — in the daemon's order, with
+ * the visible one marked. Tapping a tab makes it the visible one: the app
+ * renders agent panes, so a tab hosting an agent opens that agent's
+ * session; a tab without an agent has nothing this screen can render yet
+ * and reads quiet instead of pretending to be tappable.
+ */
+@Composable
+private fun WorkspaceTabStrip(
+    tabs: List<TabDto>,
+    currentTabId: String?,
+    tabAgents: Map<String, AgentDto>,
+    onTabSelected: (TabDto) -> Unit,
+) {
+    val p = LocalPalette.current
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+    ) {
+        tabs.forEach { tab ->
+            val isCurrent = tab.id == currentTabId
+            val hasAgent = tabAgents.containsKey(tab.id)
+            val label = tab.label.ifBlank { tab.number.toString() }
+            Text(
+                text = label,
+                color = when {
+                    isCurrent -> p.accent
+                    hasAgent -> MaterialTheme.colorScheme.onBackground
+                    else -> p.muted
+                },
+                fontSize = 12.sp,
+                fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .heightIn(min = 44.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(enabled = hasAgent && !isCurrent) { onTabSelected(tab) }
+                    .padding(horizontal = 10.dp, vertical = 12.dp),
+            )
+        }
+    }
+}
+
+/**
  * The extra-key row (board 04): Esc, Tab, Ctrl, Alt, arrows, Enter, sitting
  * above the composer. Every chip sends the daemon's own `pane.send_keys`
  * through the core — one request per press, `Ok(())` only on the daemon's
@@ -4153,7 +4282,11 @@ private fun InterruptedNotice(reason: String, onRetry: () -> Unit) {
  * pretending the key landed.
  */
 @Composable
-private fun ExtraKeyRow(sessionUi: SessionUi, onSendKeys: (List<String>) -> Unit) {
+private fun ExtraKeyRow(
+    sessionUi: SessionUi,
+    onSendKeys: (List<String>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     fun compose(key: String): List<String> {
         val modifiers = listOfNotNull(
             "ctrl".takeIf { sessionUi.ctrlSticky },
@@ -4170,7 +4303,7 @@ private fun ExtraKeyRow(sessionUi: SessionUi, onSendKeys: (List<String>) -> Unit
         sessionUi.altSticky = false
     }
 
-    Column {
+    Column(modifier = modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             // Sticky toggles first, in the board's order.
             ExtraKeyChip("Esc", enabled = true, sending = sessionUi.keySending) { press("esc") }
@@ -4260,9 +4393,12 @@ private fun ExtraKeyChip(
     }
 }
 
+/** The agent's status word for the session header (S27-5/S27-8): human
+ *  words, never the agent kind, and `Idle` never renders — an idle agent's
+ *  header shows just the project name. */
 @Composable
-private fun statusWord(status: AgentStatusDto): String = when (status) {
-    AgentStatusDto.IDLE -> stringResource(R.string.status_idle)
+private fun statusWord(status: AgentStatusDto): String? = when (status) {
+    AgentStatusDto.IDLE -> null
     AgentStatusDto.WORKING -> stringResource(R.string.status_working)
     AgentStatusDto.BLOCKED -> stringResource(R.string.status_needs_you)
     AgentStatusDto.DONE -> stringResource(R.string.status_done)

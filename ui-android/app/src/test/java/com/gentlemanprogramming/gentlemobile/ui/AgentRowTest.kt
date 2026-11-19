@@ -36,6 +36,19 @@ class AgentRowTest {
         assertEquals("review", AgentRowModel.projectTitle("   ", "review"))
     }
 
+    // --- sessionTitle (S27-5): the session screen's title is the project
+    //     name, never the agent name/kind — a screen must never read `pi`.
+
+    @Test
+    fun the_session_title_is_the_project_name_not_the_agent_kind() {
+        assertEquals("gentle-mobile", AgentRowModel.sessionTitle("/home/erickfm/personal/projects/gentle-mobile", "pi"))
+    }
+
+    @Test
+    fun without_a_cwd_the_session_title_falls_back_to_the_agent_name() {
+        assertEquals("review", AgentRowModel.sessionTitle(null, "review"))
+    }
+
     // --- secondaryKind (S24-8) ----------------------------------------------------
 
     @Test

@@ -319,7 +319,8 @@ private fun WorkspaceRow(row: WorkspaceRowDto, onOpen: () -> Unit) {
             Text(
                 text = listOfNotNull(
                     row.branch,
-                    stringResource(WorkspacesModel.statusWordRes(row.status)),
+                    // S27-8: an idle workspace says nothing — no word `Idle`.
+                    WorkspacesModel.statusWordRes(row.status)?.let { stringResource(it) },
                     agentsWord,
                 ).joinToString(" \u00B7 "),
                 color = p.muted,

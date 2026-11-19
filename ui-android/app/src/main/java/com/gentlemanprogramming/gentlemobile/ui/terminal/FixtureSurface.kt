@@ -42,9 +42,6 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 private const val COLS = 80
 private const val ROWS = 24
 
-/** Below this the glyphs stop being readable on a phone; scroll instead. */
-private const val MIN_READABLE_FONT_PX = 10f
-
 private val FG = 0x02F6EFF3u
 private val FG_MUTED = 0x02A78E9Bu
 private val FG_ACCENT = 0x02FF76C3u
@@ -111,15 +108,22 @@ fun FixtureTerminal(debugInfo: Boolean = false) {
             .background(LocalPalette.current.bg)
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
-        // Fit first, but never below a readable size: past that the grid scrolls
-        // horizontally instead of shrinking into illegibility.
-        val fitPx = maxWidth.value / (COLS * TERMINAL_FONT_RATIO)
-        val fontSizePx = fitPx.coerceIn(MIN_READABLE_FONT_PX, 24f)
-        val needsScroll = fitPx < MIN_READABLE_FONT_PX
+        // The same fit rule the session screen uses (S27-1): the WHOLE
+        // 80x24 frame fits the box — width first, then the height — never
+        // cropped, no horizontal scrolling.
+        val fit = TerminalFit.fit(
+            COLS,
+            ROWS,
+            maxWidth.value,
+            maxHeight.value,
+            TERMINAL_FONT_RATIO,
+            TERMINAL_LINE_RATIO,
+        )
+        val fontSizePx = fit.fontPx
         // Off the screen (S24-9): the numbers live in logcat, or behind the
         // fixture_debug extra for a geometry check — never as app UI.
-        val geometry = "fixture · $COLS×$ROWS · font ${"%.1f".format(fontSizePx)}px" +
-            if (needsScroll) " · scroll" else ""
+        val geometry = "fixture · $COLS×$ROWS · font ${"%.1f".format(fontSizePx)}px · cell " +
+            "${"%.1f".format(fit.cellWidthPx)}x${"%.1f".format(fit.cellHeightPx)}px"
         androidx.compose.runtime.LaunchedEffect(geometry) {
             android.util.Log.i("Fixture", geometry)
         }
@@ -132,18 +136,12 @@ fun FixtureTerminal(debugInfo: Boolean = false) {
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            val scroll = if (needsScroll) {
-                Modifier.horizontalScroll(rememberScrollState())
-            } else {
-                Modifier
-            }
             TerminalSurface(
                 surface = fixtureSurface(),
                 fontSizePx = fontSizePx,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .then(scroll),
+                    .weight(1f),
             )
             Spacer(Modifier.height(8.dp))
             // The real session composer, not a lookalike: the fixture exists

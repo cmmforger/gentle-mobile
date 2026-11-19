@@ -65,10 +65,16 @@ val TerminalDefaultBackground = Color(0xFF0A0609)
  */
 const val TERMINAL_FONT_RATIO = 0.6f
 
-/** Readability floor for the terminal font, in sp: when fitting all the
- * grid's columns would shrink the font below this, the font stops
- * shrinking and the grid scrolls horizontally instead — the right edge is
- * never silently clipped. */
+/** Line span of the bundled JetBrains Mono as a fraction of the font size
+ *  (paint ascent+descent, measured on device at text size 100: 1.32). The
+ *  fixture's fit uses this constant; the session screen measures the same
+ *  span at runtime via [rememberTerminalCellMetrics]. */
+const val TERMINAL_LINE_RATIO = 1.32f
+
+/** Readability floor for a manual pinch, in sp: pinching never shrinks
+ *  the font below this. The fit itself is not floored — the whole frame
+ *  must be visible (S27-1), so the fit may go arbitrarily small — but an
+ *  explicit zoom never lands below a readable size. */
 val TerminalFontMinSp = 10.sp
 
 /** Pinch zoom ceiling, in sp. */
@@ -105,41 +111,6 @@ private fun cursorKind(shape: Int): String = when (shape) {
     3, 4 -> "underline"
     5, 6 -> "bar"
     else -> "block"
-}
-
-/** Paintable facts about one surface, computed once per revision. */
-data class SurfaceStats(
-    val cols: Int,
-    val rows: Int,
-    val drawnCells: Int,
-    val distinctColours: Int,
-    val wideSymbol: String?,
-    val cursorVisible: Boolean,
-)
-
-/** Compute the stats the meta line and the verification report need.
- * "Drawn" means non-blank: a cell whose glyph carries visible ink — a
- * space-only cell is blank, however wide its padding. */
-fun surfaceStats(surface: SurfaceDto): SurfaceStats {
-    val colours = HashSet<Int>(64)
-    var drawn = 0
-    var wide: String? = null
-    for (cell in surface.cells) {
-        colours.add(cell.fg.toInt())
-        colours.add(cell.bg.toInt())
-        if (!cell.skip && cell.symbol.isNotBlank()) {
-            drawn++
-            if (wide == null && cell.wide) wide = cell.symbol
-        }
-    }
-    return SurfaceStats(
-        cols = surface.width.toInt(),
-        rows = surface.height.toInt(),
-        drawnCells = drawn,
-        distinctColours = colours.size,
-        wideSymbol = wide,
-        cursorVisible = surface.cursor?.visible == true,
-    )
 }
 
 /** The four bundled typefaces, resolved once (null → system fallback). */

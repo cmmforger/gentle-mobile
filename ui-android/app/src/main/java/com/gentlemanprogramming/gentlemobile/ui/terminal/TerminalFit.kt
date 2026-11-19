@@ -1,0 +1,67 @@
+package com.gentlemanprogramming.gentlemobile.ui.terminal
+
+/**
+ * The fit rule from the third phone test (S27-1): the whole frame must be
+ * visible on the card — width first, and if the height then overflows the
+ * visible card, the height fits too (fit both, like Moshi). Nothing is
+ * cropped and no horizontal scrolling is needed to read a line.
+ *
+ * One font size drives both dimensions, so the cell grid's aspect is kept
+ * by construction: cell width is `fontPx * advanceRatio` and cell height is
+ * `fontPx * lineHeightRatio` — the same ratios the renderer measures from
+ * the bundled font ([rememberTerminalCellMetrics]), which is what makes
+ * the fit arithmetic and the drawn grid agree exactly.
+ *
+ * Pure arithmetic so the rule is unit-tested without a UI runtime
+ * (TerminalFitTest).
+ */
+object TerminalFit {
+
+    /** The fit for one frame in one card: the font size in pixels, the cell
+     *  size it produces, and the frame's own grid size. */
+    class Result(
+        val cols: Int,
+        val rows: Int,
+        val fontPx: Float,
+        val cellWidthPx: Float,
+        val cellHeightPx: Float,
+    ) {
+        /** The whole grid's on-screen size — the size [TerminalSurface] is
+         *  given, so everything the host rendered is visible at once. */
+        val gridWidthPx: Float get() = cols * cellWidthPx
+        val gridHeightPx: Float get() = rows * cellHeightPx
+    }
+
+    /** Never smaller than a pixel: a zero- or negative-sized card (measured
+     *  before layout) still yields a drawable, positive font instead of a
+     *  crash or an invisible grid. */
+    private const val MIN_FONT_PX = 1f
+
+    /**
+     * The font size that fits the whole `cols x rows` frame into the card.
+     * Width and height are both honoured: the binding side (the smaller of
+     * the two bounds) wins, so a tall frame on a wide card shrinks to the
+     * height and a wide frame on a short card shrinks to the width.
+     */
+    fun fit(
+        cols: Int,
+        rows: Int,
+        cardWidthPx: Float,
+        cardHeightPx: Float,
+        advanceRatio: Float,
+        lineHeightRatio: Float,
+    ): Result {
+        val c = cols.coerceAtLeast(1)
+        val r = rows.coerceAtLeast(1)
+        val widthBound = if (cardWidthPx > 0f) cardWidthPx / (c * advanceRatio) else Float.MAX_VALUE
+        val heightBound = if (cardHeightPx > 0f) cardHeightPx / (r * lineHeightRatio) else Float.MAX_VALUE
+        val fontPx = minOf(widthBound, heightBound).coerceAtLeast(MIN_FONT_PX)
+        return Result(
+            cols = c,
+            rows = r,
+            fontPx = fontPx,
+            cellWidthPx = fontPx * advanceRatio,
+            cellHeightPx = fontPx * lineHeightRatio,
+        )
+    }
+}

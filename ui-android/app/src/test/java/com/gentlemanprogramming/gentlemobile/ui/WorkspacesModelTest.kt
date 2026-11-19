@@ -53,12 +53,18 @@ class WorkspacesModelTest {
 
     // --- statusWordRes (S26-2) ---------------------------------------------------
 
+    /** S27-8: the word `Idle` never renders — an idle workspace's row meta
+     *  carries just the branch and the agent count, quietly. */
     @Test
-    fun every_workspace_status_maps_to_its_human_word() {
+    fun an_idle_workspace_says_nothing() {
+        assertNull(WorkspacesModel.statusWordRes(AgentStatusDto.IDLE))
+    }
+
+    @Test
+    fun every_other_workspace_status_maps_to_its_human_word() {
         assertEquals(R.string.status_needs_you, WorkspacesModel.statusWordRes(AgentStatusDto.BLOCKED))
         assertEquals(R.string.status_done, WorkspacesModel.statusWordRes(AgentStatusDto.DONE))
         assertEquals(R.string.status_working, WorkspacesModel.statusWordRes(AgentStatusDto.WORKING))
-        assertEquals(R.string.status_idle, WorkspacesModel.statusWordRes(AgentStatusDto.IDLE))
         assertEquals(R.string.status_unknown, WorkspacesModel.statusWordRes(AgentStatusDto.UNKNOWN))
     }
 

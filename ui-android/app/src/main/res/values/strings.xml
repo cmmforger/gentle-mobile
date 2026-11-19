@@ -127,43 +127,25 @@
     <string name="inbox_back">Agents</string>
     <string name="inbox_group_needs_you">Needs you</string>
     <string name="inbox_group_done">Done</string>
-    <string name="inbox_group_working">Working</string>
-    <string name="inbox_group_idle">Idle</string>
-    <string name="inbox_group_unknown">Unknown</string>
+    <string name="inbox_group_working">Working</string>    <string name="inbox_group_unknown">Unknown</string>
     <string name="inbox_group_count">%1$s \u00B7 %2$d</string>
     <string name="inbox_no_agents">No agents are running on this host right now.</string>
     <string name="inbox_interrupted_title">Connection interrupted.</string>
     <string name="inbox_interrupted_suffix">%1$s — what is on screen is the last information received.</string>
     <string name="inbox_retry_now">Retry now</string>
 
-    <!-- Agent status words -->
-    <string name="status_idle">idle</string>
-    <string name="status_working">working</string>
+    <!-- Agent status words -->    <string name="status_working">working</string>
     <string name="status_needs_you">needs you</string>
     <string name="status_done">done</string>
     <string name="status_unknown">unknown</string>
-    <string name="status_live">live</string>
-    <string name="status_not_live">not live</string>
-
     <!-- Agent session screen -->
-    <string name="session_refresh">Refresh</string>
-    <string name="session_live_line">%1$s \u00B7 what the agent shows right now</string>
-    <string name="session_not_live_line">%1$s \u00B7 this is what the screen showed before the connection dropped</string>
-    <string name="session_reading_pane">Reading the pane\u2026</string>
+    <string name="session_refresh">Refresh</string>    <string name="session_reading_pane">Reading the pane\u2026</string>
     <string name="session_pane_empty">(the pane shows no text right now)</string>
     <string name="session_pane_truncated">The host left out older rows.</string>
     <string name="session_no_camera_app">no camera app is available on this device</string>
     <string name="session_no_gallery_app">no gallery app is available on this device</string>
     <string name="session_reason_link_down">the connection was down while the app was away</string>
     <string name="session_reason_host_closed">the host closed the connection</string>
-    <string name="session_stats_line">%1$d\u00D7%2$d \u00B7 %3$d drawn cells \u00B7 %4$d colours</string>
-    <string name="session_stats_wide">\u00B7 wide \u0022%1$s\u0022</string>
-    <string name="session_stats_cursor">\u00B7 cursor</string>
-    <string name="session_stats_scroll">\u00B7 scroll \u2194</string>
-    <string name="session_stats_at_bottom">\u00B7 at bottom</string>
-    <string name="session_stats_scrolled">\u00B7 scrolled</string>
-    <string name="session_stats_sp">sp</string>
-
     <!-- Composer -->
     <string name="comp_sent">Sent — the host confirmed the submission.</string>
     <string name="comp_listening">Listening\u2026</string>

@@ -22,6 +22,15 @@ object AgentRowModel {
             ?: fallbackName
 
     /**
+     * The session screen's title (S27-5): the **project name** the human
+     * recognises — never the agent name/kind, so a screen never reads
+     * `pi`. The same rule the inbox rows use ([projectTitle]), reused —
+     * not a second implementation.
+     */
+    fun sessionTitle(cwd: String?, fallbackName: String): String =
+        projectTitle(cwd, fallbackName)
+
+    /**
      * The agent's kind as the row's secondary line carries it (S24-8): kept
      * only when it differs from `pi` — the default kind must not repeat
      * beside every row. Blank or missing kinds are not shown either.

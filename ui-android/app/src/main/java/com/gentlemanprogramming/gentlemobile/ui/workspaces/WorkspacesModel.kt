@@ -33,11 +33,13 @@ object WorkspacesModel {
 
     /**
      * The row's state word resource: the same human words the inbox groups
-     * and the session header use (S24-6), never a raw wire word.
+     * and the session header use (S24-6), never a raw wire word. The word
+     * `Idle` never renders (S27-8): an idle workspace says nothing, its row
+     * meta stays branch · agent count.
      */
     @StringRes
-    fun statusWordRes(status: AgentStatusDto): Int = when (status) {
-        AgentStatusDto.IDLE -> R.string.status_idle
+    fun statusWordRes(status: AgentStatusDto): Int? = when (status) {
+        AgentStatusDto.IDLE -> null
         AgentStatusDto.WORKING -> R.string.status_working
         AgentStatusDto.BLOCKED -> R.string.status_needs_you
         AgentStatusDto.DONE -> R.string.status_done

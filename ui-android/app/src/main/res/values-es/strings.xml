@@ -128,43 +128,25 @@
     <string name="inbox_back">Agentes</string>
     <string name="inbox_group_needs_you">Te necesita</string>
     <string name="inbox_group_done">Terminado</string>
-    <string name="inbox_group_working">Trabajando</string>
-    <string name="inbox_group_idle">En espera</string>
-    <string name="inbox_group_unknown">Desconocido</string>
+    <string name="inbox_group_working">Trabajando</string>    <string name="inbox_group_unknown">Desconocido</string>
     <string name="inbox_group_count">%1$s \u00B7 %2$d</string>
     <string name="inbox_no_agents">No hay agentes corriendo en este host ahora mismo.</string>
     <string name="inbox_interrupted_title">Conexión interrumpida.</string>
     <string name="inbox_interrupted_suffix">%1$s — lo que se ve en pantalla es lo último que se recibió.</string>
     <string name="inbox_retry_now">Reintentar ahora</string>
 
-    <!-- Palabras de estado de un agente -->
-    <string name="status_idle">en espera</string>
-    <string name="status_working">trabajando</string>
+    <!-- Palabras de estado de un agente -->    <string name="status_working">trabajando</string>
     <string name="status_needs_you">te necesita</string>
     <string name="status_done">terminado</string>
     <string name="status_unknown">desconocido</string>
-    <string name="status_live">en vivo</string>
-    <string name="status_not_live">sin conexión</string>
-
     <!-- Pantalla de sesión de un agente -->
-    <string name="session_refresh">Actualizar</string>
-    <string name="session_live_line">%1$s \u00B7 lo que el agente muestra ahora mismo</string>
-    <string name="session_not_live_line">%1$s \u00B7 esto es lo que se veía antes de que se cortara la conexión</string>
-    <string name="session_reading_pane">Leyendo el panel\u2026</string>
+    <string name="session_refresh">Actualizar</string>    <string name="session_reading_pane">Leyendo el panel\u2026</string>
     <string name="session_pane_empty">(el panel no muestra texto ahora mismo)</string>
     <string name="session_pane_truncated">El host dejó fuera las filas más viejas.</string>
     <string name="session_no_camera_app">no hay una app de cámara en este dispositivo</string>
     <string name="session_no_gallery_app">no hay una app de galería en este dispositivo</string>
     <string name="session_reason_link_down">la conexión estaba cortada mientras la app estaba en segundo plano</string>
     <string name="session_reason_host_closed">el host cerró la conexión</string>
-    <string name="session_stats_line">%1$d\u00D7%2$d \u00B7 %3$d celdas dibujadas \u00B7 %4$d colores</string>
-    <string name="session_stats_wide">\u00B7 ancho \u0022%1$s\u0022</string>
-    <string name="session_stats_cursor">\u00B7 cursor</string>
-    <string name="session_stats_scroll">\u00B7 desplazar \u2194</string>
-    <string name="session_stats_at_bottom">\u00B7 al final</string>
-    <string name="session_stats_scrolled">\u00B7 desplazado</string>
-    <string name="session_stats_sp">sp</string>
-
     <!-- Compositor -->
     <string name="comp_sent">Enviado — el host confirmó el envío.</string>
     <string name="comp_listening">Escuchando\u2026</string>
