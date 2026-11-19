@@ -249,6 +249,11 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   5. **Attachments**: some images render inline and some come out as an empty block with only the `[Image#N] png · …` label. A
      format or size the phone cannot decode must say so instead of drawing nothing. And the upload error must read `Upload failed`
      — short, no sentence cut with an ellipsis.
+- **S31 — The phone mirrors the desktop; the desktop is never reshaped.** Decision taken on the fifth test, after reading the daemon's
+  source: herdr has **no scaling of its own** — a client that claims its surface makes the tab reflow its PTY to the client's size.
+  So the phone must NOT claim it: it asks for the pane's **real** size, paints that whole grid, and scales it to the card itself.
+  Consequences: the desktop is untouched while the phone is connected, the framing fights of T23–T25 disappear at the root, and
+  **pinch-zoom is the reading path, not an extra**, because a 186-column pane is about 5 px per cell on a phone.
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -307,6 +312,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T23 | Fourth phone test: working tabs via `tab.focus`, accent header glyphs, a surface derived from the card so the frame fills the phone, workspaces nested under their host without duplication, and a workspace screen that enters the session directly | S28 | worker | — |
 | T24 | Hide the desktop composer rows from the phone's frame: detect the composer, drop those rows, shift the rest up, keep the metrics, and take the freed rows as extra conversation (request that many more rows) | S29 | worker | — |
 | T25 | Fifth phone test: reduce the top padding, fix the pane/painted width mismatch on a warm rebind, route prompts to the visible pane, drop the Sent note, re-fit the card when the keyboard opens, and make attachment failures honest and short | S30 | worker | — |
+| T26 | Mirror mode: read the pane's real size, ask for exactly that, never activate the surface, and scale the whole grid to the card with pinch-zoom as the reading path; write to the split the human is looking at; and a `+` that picks a disk (all the machine's disks) and browses to a folder to create the workspace | S31 | worker | — |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
