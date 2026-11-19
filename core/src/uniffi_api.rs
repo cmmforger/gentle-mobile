@@ -1101,6 +1101,56 @@ impl CompanionConnection {
         connection.workspace_focus(&workspace_id).map_err(CompanionError::from)
     }
 
+    /// Focus one tab of the current workspace (S28-1): the daemon's own
+    /// `tab.focus {tab_id}` on the request lane. Verified live on protocol
+    /// 22: a tab with no agent is focusable — the daemon answers
+    /// `tab_info` either way, and the surface stream (which renders the
+    /// focused pane) follows, so the phone's visible pane follows.
+    pub fn focus_tab(&self, tab_id: String) -> Result<(), CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        connection.tab_focus(&tab_id).map_err(CompanionError::from)
+    }
+
+    /// Ask the daemon to re-render at a new surface size (S28-3): the grid
+    /// the phone's terminal card derived from its own geometry. The core
+    /// adds no opinion of its own — the client's validation refuses a size
+    /// it would never render, so an oversized ask fails here, not on screen.
+    pub fn resize_surface(&self, cols: u16, rows: u16) -> Result<(), CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        connection
+            .resize_surface(cols, rows)
+            .map_err(|error| CompanionError::Transport { detail: error.to_string() })
+    }
+
+    /// Activate (or release) this client's surface control — measured in
+    /// the daemon's own source: without an activated surface a resize only
+    /// reshapes the client's projection and the pane's PTY keeps the
+    /// desktop's width, so the phone paints a narrow frame over wide lines
+    /// and text disappears. Every reflow activates first; leaving the
+    /// session screen releases, handing the geometry control back to the
+    /// desktop's own view.
+    pub fn set_surface_active(&self, active: bool) -> Result<(), CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        connection
+            .set_surface_active(active)
+            .map_err(|error| CompanionError::Transport { detail: error.to_string() })
+    }
+
     /// Create a workspace on the host in `cwd` (S26-3). The path must have
     /// been validated first (`checkHostDir`): measured live, the daemon
     /// does **not** refuse a missing directory — it silently falls back to

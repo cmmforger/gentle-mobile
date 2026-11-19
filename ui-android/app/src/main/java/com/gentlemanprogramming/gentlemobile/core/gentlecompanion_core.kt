@@ -729,6 +729,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_tab(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_workspace(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected(
@@ -743,7 +745,11 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_resize_surface(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_send_keys(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_set_surface_active(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot(
     ): Int
@@ -800,6 +806,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_disconnect(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_focus_tab(`ptr`: Long,`tabId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_focus_workspace(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_is_disconnected(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -814,7 +822,11 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_read_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_resize_surface(`ptr`: Long,`cols`: Short,`rows`: Short,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_send_keys(`ptr`: Long,`paneId`: RustBuffer.ByValue,`keys`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_set_surface_active(`ptr`: Long,`active`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_snapshot(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1041,6 +1053,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect() and 0xFFFF) != 59131) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_tab() and 0xFFFF) != 25907) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_workspace() and 0xFFFF) != 20849) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1062,7 +1077,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane() and 0xFFFF) != 52004) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_resize_surface() and 0xFFFF) != 45568) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_send_keys() and 0xFFFF) != 26307) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_set_surface_active() and 0xFFFF) != 47277) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot() and 0xFFFF) != 47863) {
@@ -1606,6 +1627,15 @@ public interface CompanionConnectionInterface {
     fun `disconnect`()
     
     /**
+     * Focus one tab of the current workspace (S28-1): the daemon's own
+     * `tab.focus {tab_id}` on the request lane. Verified live on protocol
+     * 22: a tab with no agent is focusable — the daemon answers
+     * `tab_info` either way, and the surface stream (which renders the
+     * focused pane) follows, so the phone's visible pane follows.
+     */
+    fun `focusTab`(`tabId`: kotlin.String)
+    
+    /**
      * Focus one workspace on the host (S26-2): the daemon switches to it,
      * exactly as tapping it in the herdr TUI does. `Ok(())` means the
      * daemon confirmed (`workspace_info`); a refusal names why.
@@ -1656,6 +1686,14 @@ public interface CompanionConnectionInterface {
     fun `readPane`(`paneId`: kotlin.String): PaneReadDto
     
     /**
+     * Ask the daemon to re-render at a new surface size (S28-3): the grid
+     * the phone's terminal card derived from its own geometry. The core
+     * adds no opinion of its own — the client's validation refuses a size
+     * it would never render, so an oversized ask fails here, not on screen.
+     */
+    fun `resizeSurface`(`cols`: kotlin.UShort, `rows`: kotlin.UShort)
+    
+    /**
      * Send one batch of key presses to the agent's pane — the extra-key
      * row's method. `keys` are the daemon's own key names (`esc`, `tab`,
      * `enter`, `up`, `down`, single characters, and `ctrl+`/`alt+`
@@ -1664,6 +1702,17 @@ public interface CompanionConnectionInterface {
      * why, so a chip never claims a press that did not land.
      */
     fun `sendKeys`(`paneId`: kotlin.String, `keys`: List<kotlin.String>)
+    
+    /**
+     * Activate (or release) this client's surface control — measured in
+     * the daemon's own source: without an activated surface a resize only
+     * reshapes the client's projection and the pane's PTY keeps the
+     * desktop's width, so the phone paints a narrow frame over wide lines
+     * and text disappears. Every reflow activates first; leaving the
+     * session screen releases, handing the geometry control back to the
+     * desktop's own view.
+     */
+    fun `setSurfaceActive`(`active`: kotlin.Boolean)
     
     /**
      * The most recent full snapshot in plain DTOs, or `None` until the host
@@ -1828,6 +1877,27 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
 
     
     /**
+     * Focus one tab of the current workspace (S28-1): the daemon's own
+     * `tab.focus {tab_id}` on the request lane. Verified live on protocol
+     * 22: a tab with no agent is focusable — the daemon answers
+     * `tab_info` either way, and the surface stream (which renders the
+     * focused pane) follows, so the phone's visible pane follows.
+     */
+    @Throws(CompanionException::class)override fun `focusTab`(`tabId`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_focus_tab(
+        it,
+        
+        FfiConverterString.lower(`tabId`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Focus one workspace on the host (S26-2): the daemon switches to it,
      * exactly as tapping it in the herdr TUI does. `Ok(())` means the
      * daemon confirmed (`workspace_info`); a refusal names why.
@@ -1960,6 +2030,27 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
 
     
     /**
+     * Ask the daemon to re-render at a new surface size (S28-3): the grid
+     * the phone's terminal card derived from its own geometry. The core
+     * adds no opinion of its own — the client's validation refuses a size
+     * it would never render, so an oversized ask fails here, not on screen.
+     */
+    @Throws(CompanionException::class)override fun `resizeSurface`(`cols`: kotlin.UShort, `rows`: kotlin.UShort)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_resize_surface(
+        it,
+        
+        FfiConverterUShort.lower(`cols`),
+        FfiConverterUShort.lower(`rows`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Send one batch of key presses to the agent's pane — the extra-key
      * row's method. `keys` are the daemon's own key names (`esc`, `tab`,
      * `enter`, `up`, `down`, single characters, and `ctrl+`/`alt+`
@@ -1976,6 +2067,29 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         
         FfiConverterString.lower(`paneId`),
         FfiConverterSequenceString.lower(`keys`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Activate (or release) this client's surface control — measured in
+     * the daemon's own source: without an activated surface a resize only
+     * reshapes the client's projection and the pane's PTY keeps the
+     * desktop's width, so the phone paints a narrow frame over wide lines
+     * and text disappears. Every reflow activates first; leaving the
+     * session screen releases, handing the geometry control back to the
+     * desktop's own view.
+     */
+    @Throws(CompanionException::class)override fun `setSurfaceActive`(`active`: kotlin.Boolean)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_set_surface_active(
+        it,
+        
+        FfiConverterBoolean.lower(`active`),_status)
 }
     }
     

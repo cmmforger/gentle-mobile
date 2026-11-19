@@ -95,6 +95,7 @@
     <string name="hosts_rename_save">Save</string>
     <string name="hosts_empty">No hosts yet — add one to start.</string>
     <string name="nodes_session_history">Session history</string>
+    <string name="nodes_other_hosts">Other hosts</string>
     <string name="nodes_session_history_sub">Open a Gentle Shell session that already exists on the host.</string>
 
     <!-- Workspaces (S26-2): the host's herdr workspaces, the human's repositories -->
@@ -120,8 +121,6 @@
     <string name="ws_no_permission">No permission to open that directory on the host: %1$s</string>
     <string name="ws_is_git">git repository</string>
     <string name="ws_not_git">not a git repository — it can still be added</string>
-    <string name="ws_filter_all">All workspaces</string>
-    <string name="ws_filter_showing">Showing the agents of %1$s</string>
 
     <!-- Agent inbox groups -->
     <string name="inbox_back">Agents</string>
@@ -139,7 +138,9 @@
     <string name="status_done">done</string>
     <string name="status_unknown">unknown</string>
     <!-- Agent session screen -->
-    <string name="session_refresh">Refresh</string>    <string name="session_reading_pane">Reading the pane\u2026</string>
+    <string name="session_refresh">Refresh</string>
+    <!-- S28-1: the host's refusal when a tab could not be focused -->
+    <string name="session_tab_failed">The tab could not be focused: %1$s</string>    <string name="session_reading_pane">Reading the pane\u2026</string>
     <string name="session_pane_empty">(the pane shows no text right now)</string>
     <string name="session_pane_truncated">The host left out older rows.</string>
     <string name="session_no_camera_app">no camera app is available on this device</string>

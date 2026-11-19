@@ -195,6 +195,8 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.GentleMobileTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import com.gentlemanprogramming.gentlemobile.ui.theme.ThemeStore
+import com.gentlemanprogramming.gentlemobile.ui.terminal.CardSurface
+import com.gentlemanprogramming.gentlemobile.ui.terminal.PanePresentation
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFit
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMaxSp
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMinSp
@@ -558,6 +560,18 @@ private class SessionUi {
     var keySending by mutableStateOf(false)
     var keyError by mutableStateOf<String?>(null)
 
+    /** S28-1: the host's typed refusal when a tab tap could not be
+     *  focused — a chip never claims a switch that did not land. Cleared
+     *  by the next successful focus. */
+    var tabError by mutableStateOf<String?>(null)
+
+    /** The pane-presentation bookkeeping (S28-3, third round): the frame
+     *  this binding last asked the pane for. `null` = never asked — a
+     *  fresh session or a fresh tab rebind, where the new tab still sits
+     *  at the desktop's size. */
+    var askedCols by mutableStateOf<Int?>(null)
+    var askedRows by mutableStateOf<Int?>(null)
+
     /** Full re-baseline: a new connection owns a fresh core store, so the
      * drawn grid and the fallback read start empty again. Drafts survive.
      * Attachments do not: their upload session died with the connection. */
@@ -569,6 +583,11 @@ private class SessionUi {
         tabs = emptyList()
         panes = emptyList()
         tabAgents = emptyMap()
+        tabError = null
+        // A fresh connection knows no pane width: the first derived frame
+        // must ask (PanePresentation).
+        askedCols = null
+        askedRows = null
         // A dead connection cannot keep a recognizer: any dictation in
         // flight is cancelled honestly (its partial is never committed).
         if (dictationController.state is DictationState.Listening ||
@@ -829,6 +848,24 @@ fun ConnectScreen(
         }, LEASE_HEARTBEAT_MS)
     }
 
+    /** Open one agent's session screen — the exact path the inbox row, a
+     *  workspace row (S28-5) and a notification tap all take. The biometric
+     *  gate wraps it like any other session open. */
+    fun openAgentSession(current: UiState.Connected, agent: AgentDto) {
+        gated {
+            val connection = current.connection
+            screen.generation += 1
+            val generation = screen.generation
+            val sessionUi = screen.sessions.getOrPut(agent.paneId) { SessionUi() }
+            screen.ui = UiState.Session(connection, agent)
+            pollPane(screen, sessionUi, connection, agent.paneId, generation)
+            pollSurface(screen, sessionUi, connection, agent.paneId, generation)
+            // S27-7: the strip's rows ride the snapshot, polled while the
+            // session is open, scoped to this agent's workspace.
+            pollWorkspaceTabs(screen, sessionUi, connection, agent.workspaceId, agent.paneId, generation)
+        }
+    }
+
     /** S24-5: start a fresh session in `dir` (a repository with history, or
      *  a validated manual path) and open the same transcript + composer the
      *  resume path uses. The core validates the directory, spawns the child
@@ -910,13 +947,16 @@ fun ConnectScreen(
         }
     }
 
-    /** S26-2: tapping a workspace row — focus it on the host (the daemon's
-     *  own switch, exactly what tapping it in the herdr TUI does) and open
-     *  the inbox filtered to that workspace's agents. A focus refusal is
-     *  shown when the workspaces screen is next visited, but the filtered
-     *  inbox still opens: the filter is local truth, the focus is the
-     *  host's. */
+    /** S26-2/S28-5: tapping a workspace row — focus it on the host (the
+     *  daemon's own switch, exactly what tapping it in the herdr TUI does)
+     *  and go **straight in**: one agent opens its session directly, more
+     *  (or none) open the workspace's agent list — no screen in between
+     *  that only repeats the workspace's name (S28-5). A focus refusal is
+     *  shown when the workspaces screen is next visited; the entry still
+     *  proceeds on local truth. */
     fun openWorkspace(state: ScreenState, connection: CompanionConnection, row: com.gentlemanprogramming.gentlemobile.core.WorkspaceRowDto) {
+        val current = state.ui
+        if (current !is UiState.Connected) return
         executor.execute {
             val failure = try {
                 connection.focusWorkspace(row.id)
@@ -924,14 +964,27 @@ fun ConnectScreen(
             } catch (e: Exception) {
                 describe(AppLocale.wrapStored(state.appContext), e)
             }
+            // The agents of this workspace, from the latest snapshot — the
+            // decision's input is the daemon's own answer, not the row's
+            // cached count.
+            val agents = try {
+                connection.snapshot()?.agents?.filter { it.workspaceId == row.id }.orEmpty()
+            } catch (_: Exception) {
+                emptyList()
+            }
             mainHandler.post {
                 if (failure != null) state.workspacesError = failure
-                state.workspaceFilter = row.id
-                state.workspaceFilterLabel = row.label
-                // The inbox renders on the Main route; staying on the
-                // workspaces route would keep the list on screen.
-                route = Route.Main
-                state.inboxOpen = true
+                when (val entry = WorkspacesModel.workspaceEntry(agents)) {
+                    is WorkspacesModel.WorkspaceEntry.Session -> openAgentSession(current, entry.agent)
+                    WorkspacesModel.WorkspaceEntry.AgentList -> {
+                        state.workspaceFilter = row.id
+                        state.workspaceFilterLabel = row.label
+                        state.inboxOpen = true
+                        // The inbox renders on the Main route; staying on
+                        // the workspaces route would keep the list on screen.
+                        route = Route.Main
+                    }
+                }
             }
         }
     }
@@ -1741,24 +1794,6 @@ fun ConnectScreen(
         screen.ui = UiState.Form
     }
 
-    /** Open one agent's session screen — the exact path the inbox row and
-     *  a notification tap both take. The biometric gate wraps it like any
-     *  other session open. */
-    fun openAgentSession(current: UiState.Connected, agent: AgentDto) {
-        gated {
-            val connection = current.connection
-            screen.generation += 1
-            val generation = screen.generation
-            val sessionUi = screen.sessions.getOrPut(agent.paneId) { SessionUi() }
-            screen.ui = UiState.Session(connection, agent)
-            pollPane(screen, sessionUi, connection, agent.paneId, generation)
-            pollSurface(screen, sessionUi, connection, agent.paneId, generation)
-            // S27-7: the strip's rows ride the snapshot, polled while the
-            // session is open, scoped to this agent's workspace.
-            pollWorkspaceTabs(screen, sessionUi, connection, agent.workspaceId, agent.paneId, generation)
-        }
-    }
-
     // Foreground return (T8c): never assume the socket survived a sleep. A
     // live link gets a cheap liveness probe — an unanswered probe ends the
     // connection and the pollers surface the interruption; an interrupted
@@ -2524,15 +2559,10 @@ fun ConnectScreen(
                             fontSize = 20.sp,
                             modifier = Modifier
                                 .clickable {
-                                    // Back to where the inbox was opened from
-                                    // (S26-2): a filtered inbox came from the
-                                    // workspaces screen, the plain inbox from
-                                    // the host row.
-                                    if (screen.workspaceFilter != null) {
-                                        route = Route.Workspaces
-                                    } else {
-                                        screen.inboxOpen = false
-                                    }
+                                    // The agent list is the workspace's own
+                                    // (S28-4/S28-5): back is the workspaces
+                                    // screen, where it was entered from.
+                                    route = Route.Workspaces
                                 }
                                 .semantics { contentDescription = backToHosts }
                                 .padding(horizontal = 12.dp, vertical = 12.dp),
@@ -2556,39 +2586,14 @@ fun ConnectScreen(
                             fontFamily = FontFamily.Monospace,
                         )
                         else -> {
-                            // S26-2: the workspace filter — only the chosen
-                            // workspace's agents, with the obvious way back
-                            // to all of them.
+                            // S28-4: the agent list is always the chosen
+                            // workspace's own — there is no flat all-agents
+                            // list to duplicate it, and no line repeating
+                            // the workspace's name (S28-5).
                             val agents = WorkspacesModel.agentsInWorkspace(
                                 snapshot.agents,
                                 screen.workspaceFilter,
                             )
-                            if (screen.workspaceFilter != null) {
-                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                    Text(
-                                        text = stringResource(
-                                            R.string.ws_filter_showing,
-                                            screen.workspaceFilterLabel ?: "",
-                                        ),
-                                        color = LocalPalette.current.muted,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.ws_filter_all),
-                                        color = LocalPalette.current.accentEdge,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier
-                                            .heightIn(min = 44.dp)
-                                            .clickable {
-                                                screen.workspaceFilter = null
-                                                screen.workspaceFilterLabel = null
-                                            }
-                                            .padding(horizontal = 12.dp),
-                                    )
-                                }
-                            }
                             when {
                                 agents.isEmpty() -> Text(
                                     text = stringResource(R.string.inbox_no_agents),
@@ -2710,39 +2715,102 @@ fun ConnectScreen(
                             fontWeight = FontWeight.Bold,
                         )
                         Spacer(Modifier.height(4.dp))
-                        // S24-4: the whole saved host list, in the order the
-                        // hosts were added. The live machine is marked with
-                        // its state word in the accent; the others read
-                        // quietly as saved. Tapping another host switches:
-                        // the live link goes down cleanly first.
-                        screen.hosts.forEach { entry ->
-                            val live = entry.host.equals(host.trim(), ignoreCase = true) &&
+                        // S28-4: one place per thing. The connected host's
+                        // own surfaces live INSIDE its section — its name,
+                        // its workspaces, its session history — never as
+                        // siblings in a flat top-level list, and never the
+                        // projects again: the workspace screen already lists
+                        // them, so a row here opens it and lists nothing.
+                        screen.hosts.firstOrNull { entry ->
+                            entry.host.equals(host.trim(), ignoreCase = true) &&
                                 entry.port.trim() == port.trim()
+                        }?.let { liveEntry ->
+                            // The connected host leads its section: name,
+                            // state, rename — but no navigation row opening
+                            // a duplicate agent list (S28-4: the workspace
+                            // screen already does that).
+                            Row(
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Row {
+                                        Text(
+                                            text = liveEntry.name,
+                                            color = MaterialTheme.colorScheme.onBackground,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            text = if (interrupted != null) {
+                                                stringResource(R.string.nodes_state_row_interrupted)
+                                            } else {
+                                                stringResource(R.string.nodes_state_row_connected)
+                                            },
+                                            color = if (interrupted == null) {
+                                                LocalPalette.current.accent
+                                            } else {
+                                                LocalPalette.current.muted
+                                            },
+                                            fontSize = 11.sp,
+                                            letterSpacing = 0.5.sp,
+                                        )
+                                    }
+                                    Text(
+                                        text = "${liveEntry.user}@${liveEntry.host}:${liveEntry.port}",
+                                        color = LocalPalette.current.muted,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Text(
+                                    text = stringResource(R.string.hosts_rename),
+                                    color = LocalPalette.current.muted,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier
+                                        .clickable {
+                                            renameTarget = liveEntry
+                                            renameText = liveEntry.name
+                                        }
+                                        .padding(start = 12.dp, top = 12.dp, bottom = 12.dp),
+                                )
+                            }
+                            // The host's own surfaces, nested under it — a
+                            // second host brings its own.
+                            Column(Modifier.padding(start = 12.dp)) {
+                                NodeRow(
+                                    name = stringResource(R.string.nodes_workspaces),
+                                    state = null,
+                                    meta = stringResource(R.string.nodes_workspaces_sub),
+                                    onOpen = { route = Route.Workspaces },
+                                )
+                                NodeRow(
+                                    name = stringResource(R.string.nodes_session_history),
+                                    state = null,
+                                    meta = stringResource(R.string.nodes_session_history_sub),
+                                    onOpen = { route = Route.Sessions },
+                                )
+                            }
+                        }
+                        // The other saved machines, in the order they were
+                        // added. Tapping one switches: the live link goes
+                        // down cleanly first.
+                        val otherHosts = screen.hosts.filter { entry ->
+                            !(entry.host.equals(host.trim(), ignoreCase = true) &&
+                                entry.port.trim() == port.trim())
+                        }
+                        if (otherHosts.isNotEmpty()) {
+                            GroupLabel(stringResource(R.string.nodes_other_hosts))
+                        }
+                        otherHosts.forEach { entry ->
                             NodeRow(
                                 name = entry.name,
-                                state = if (live) {
-                                    if (interrupted != null) {
-                                        stringResource(R.string.nodes_state_row_interrupted)
-                                    } else {
-                                        stringResource(R.string.nodes_state_row_connected)
-                                    }
-                                } else {
-                                    stringResource(R.string.nodes_state_row_saved)
-                                },
-                                stateAccent = live && interrupted == null,
+                                state = stringResource(R.string.nodes_state_row_saved),
                                 meta = "${entry.user}@${entry.host}:${entry.port}",
-                                onOpen = {
-                                    if (live) {
-                                        // The plain host row opens every agent
-                                        // (S26-2): a workspace filter chosen
-                                        // earlier must not leak into it.
-                                        screen.workspaceFilter = null
-                                        screen.workspaceFilterLabel = null
-                                        screen.inboxOpen = true
-                                    } else {
-                                        connectTo(entry)
-                                    }
-                                },
+                                onOpen = { connectTo(entry) },
                                 renameLabel = stringResource(R.string.hosts_rename),
                                 onRename = {
                                         renameTarget = entry
@@ -2766,28 +2834,6 @@ fun ConnectScreen(
                                 },
                             )
                         }
-                        // S26-2: the host's herdr workspaces — the human's
-                        // repositories, with branch and state. The clear
-                        // entry for "navigate my repositories", beside the
-                        // other host-level surfaces, not buried in Settings.
-                        NodeRow(
-                            name = stringResource(R.string.nodes_workspaces),
-                            state = null,
-                            meta = stringResource(R.string.nodes_workspaces_sub),
-                            onOpen = { route = Route.Workspaces },
-                        )
-                        // T17a (S15): the host's Gentle Shell sessions, listed
-                        // over SFTP and lease-guarded — the entry point the
-                        // continuity flow starts from. S24-3: plain language —
-                        // the row itself says what it does, instead of the
-                        // jargon group label `gentle shell sessions` and the
-                        // `list · lease-guarded` state word.
-                        NodeRow(
-                            name = stringResource(R.string.nodes_session_history),
-                            state = null,
-                            meta = stringResource(R.string.nodes_session_history_sub),
-                            onOpen = { route = Route.Sessions },
-                        )
                         Spacer(Modifier.height(24.dp))
                         // The one accent action of the list (S24-4): add a
                         // host. It opens the Pair/Connect screen; the new
@@ -2891,12 +2937,21 @@ fun ConnectScreen(
                     supervision = screen.machine.state,
                     tabs = sessionUi.tabs,
                     panes = sessionUi.panes,
-                    tabAgents = sessionUi.tabAgents,
                     terminalFontPx = terminalFontPx,
                     onFontPxChange = { terminalFontPx = it },
                     onBack = {
                         screen.generation += 1
                         screen.ui = UiState.Connected(current.connection, snapshot = null)
+                        // The phone held the tab's geometry control while the
+                        // session was open (S28-3): release it, so the desktop's
+                        // own view reflows back to its size.
+                        executor.execute {
+                            try {
+                                current.connection.setSurfaceActive(false)
+                            } catch (error: Exception) {
+                                Log.w(TAG, "surface release failed: ${error.message}")
+                            }
+                        }
                         // Going back restarts snapshot polling: a session open
                         // had stopped it, and an empty snapshot must refresh,
                         // not freeze on "Waiting for the first snapshot…".
@@ -2909,14 +2964,40 @@ fun ConnectScreen(
                         val generation = screen.generation
                         requestPaneRead(screen, sessionUi, current.connection, current.agent.paneId, generation)
                     },
-                    // S27-7: a tab tap makes it the visible one. The app
-                    // renders agent panes, so the tab's agent opens here —
-                    // the exact path the inbox row takes. A tab without an
-                    // agent is not tappable (the strip leaves it quiet).
+                    // S28-1: a tab tap focuses the tab on the host — the
+                    // daemon's own `tab.focus {tab_id}` over the request
+                    // lane — and the visible pane follows, because the
+                    // surface stream renders the focused pane. A tab that
+                    // hosts another agent also rebinds the session to it:
+                    // the composer and the fallback read must address what
+                    // is on screen. Verified live: a tab with no agent is
+                    // focusable too — the daemon answers `tab_info` either
+                    // way, and no chip is left dead.
                     onTabSelected = { tab ->
+                        val connection = current.connection
                         val target = sessionUi.tabAgents[tab.id]
-                        if (target != null && target.paneId != current.agent.paneId) {
-                            openAgentSession(UiState.Connected(current.connection, snapshot = null), target)
+                        executor.execute {
+                            val failure = try {
+                                connection.focusTab(tab.id)
+                                null
+                            } catch (error: Exception) {
+                                describe(context, error)
+                            }
+                            mainHandler.post {
+                                if (sessionStillCurrent(screen, sessionUi, current.agent.paneId, screen.generation)) {
+                                    if (failure != null) {
+                                        sessionUi.tabError = failure
+                                    } else {
+                                        sessionUi.tabError = null
+                                        if (target != null && target.paneId != current.agent.paneId) {
+                                            openAgentSession(
+                                                UiState.Connected(connection, snapshot = null),
+                                                target,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     },
                     onSend = { prompt ->
@@ -3444,11 +3525,10 @@ private fun SessionScreen(
     agent: AgentDto,
     sessionUi: SessionUi,
     supervision: SupervisionState,
-    // S27-7: the workspace's own tabs — the strip's rows, the pane→tab map,
-    // and the agent each tab can make visible.
+    // S27-7/S28-1: the workspace's own tabs — the strip's rows and the
+    // pane→tab map a tap needs for rebinding. Empty until the first snapshot.
     tabs: List<TabDto>,
     panes: List<PaneDto>,
-    tabAgents: Map<String, AgentDto>,
     terminalFontPx: Float,
     onFontPxChange: (Float) -> Unit,
     onBack: () -> Unit,
@@ -3524,7 +3604,8 @@ private fun SessionScreen(
         // Header: back to the agents list, the project's name. Icons instead
         // of the words; the title is the project name — never the agent
         // name/kind, so a screen never reads `pi` (S27-5). The glyphs are
-        // small and muted (S27-4); the 44 dp touch target stays.
+        // small, in the theme's accent, and back is a chevron (S28-2) — the
+        // 44 dp touch target stays.
         Row(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 12.dp),
@@ -3536,9 +3617,9 @@ private fun SessionScreen(
                 contentAlignment = androidx.compose.ui.Alignment.Center,
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_back),
+                    painter = painterResource(R.drawable.ic_back_chevron),
                     contentDescription = stringResource(R.string.inbox_back),
-                    tint = LocalPalette.current.muted,
+                    tint = LocalPalette.current.accent,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -3571,7 +3652,7 @@ private fun SessionScreen(
                 Icon(
                     painter = painterResource(R.drawable.ic_refresh),
                     contentDescription = stringResource(R.string.session_refresh),
-                    tint = LocalPalette.current.muted,
+                    tint = LocalPalette.current.accent,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -3594,10 +3675,19 @@ private fun SessionScreen(
         if (tabs.isNotEmpty()) {
             WorkspaceTabStrip(
                 tabs = tabs,
-                currentTabId = WorkspaceTabsModel.currentTabId(panes, agent.paneId),
-                tabAgents = tabAgents,
+                currentTabId = WorkspaceTabsModel.currentTabId(tabs, panes, agent.paneId),
                 onTabSelected = onTabSelected,
             )
+            // S28-1: the host's typed refusal when a focus did not land —
+            // the chip never claimed a switch that did not happen.
+            sessionUi.tabError?.let { error ->
+                Text(
+                    text = stringResource(R.string.session_tab_failed, error),
+                    color = LocalPalette.current.error,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
             Spacer(Modifier.height(4.dp))
         }
         val surface = sessionUi.surface
@@ -3647,6 +3737,60 @@ private fun SessionScreen(
                 )
                 val minPx = with(density) { TerminalFontMinSp.toPx() }
                 val maxPx = with(density) { TerminalFontMaxSp.toPx() }
+                // S28-3: the grid is derived from THIS card, not a fixed
+                // desktop size — the largest cell that still yields a
+                // usable grid, columns from the card's width, rows from its
+                // height. The painted advance governs (as in the fit), so
+                // the derived grid can never overflow the card that derived
+                // it, and the daemon is never asked for a surface bigger
+                // than it renders back. The derivation re-runs on every
+                // card change (rotation, keyboard) and the daemon is
+                // re-asked only when the grid actually changes.
+                val cardSurface = CardSurface.derive(
+                    constraints.maxWidth.toFloat(),
+                    constraints.maxHeight.toFloat(),
+                    metrics.advanceRatio,
+                    metrics.lineHeightRatio,
+                    minFontPx = minPx,
+                    maxFontPx = maxPx,
+                    advanceRatioOverride = maxOf(metrics.advanceRatio, painted),
+                )
+                LaunchedEffect(cardSurface.cols, cardSurface.rows, agent.paneId) {
+                    // S28-3, third round: the pane and the painted frame must
+                    // be the same width — measured on the host and read from
+                    // the daemon's source, a resize from a client that never
+                    // activated its surface only reshapes the projection and
+                    // the PTY keeps the desktop's width (the truncation the
+                    // human saw). So every reflow activates the surface
+                    // first, then asks for exactly the painted frame. The
+                    // effect keys on the agent too: a tab rebind lands on a
+                    // tab still sitting at the desktop's size.
+                    val request = PanePresentation.reflow(
+                        sessionUi.askedCols,
+                        sessionUi.askedRows,
+                        cardSurface.cols,
+                        cardSurface.rows,
+                    )
+                    if (request != null) {
+                        val cols = request.cols.toUShort()
+                        val rows = request.rows.toUShort()
+                        executor.execute {
+                            try {
+                                connection.setSurfaceActive(true)
+                                connection.resizeSurface(cols, rows)
+                                mainHandler.post {
+                                    sessionUi.askedCols = request.cols
+                                    sessionUi.askedRows = request.rows
+                                }
+                            } catch (error: Exception) {
+                                // A refused reflow leaves the current grid on
+                                // screen and the bookkeeping open, so a later
+                                // key change asks again.
+                                Log.w(TAG, "pane reflow refused: ${error.message}")
+                            }
+                        }
+                    }
+                }
                 LaunchedEffect(cols, rows) {
                     if (terminalFontPx > 0f) onFontPxChange(0f)
                 }
@@ -3662,6 +3806,15 @@ private fun SessionScreen(
                     "terminal fit: frame=${cols}x${rows} card=${constraints.maxWidth}x${constraints.maxHeight} " +
                         "metrics a=${metrics.advanceRatio} l=${metrics.lineHeightRatio} painted=$painted fontPx=$effectivePx " +
                         "grid=${cols * metrics.advanceRatio * effectivePx}x${rows * metrics.lineHeightRatio * effectivePx}",
+                )
+                Log.i(
+                    TAG,
+                    "card surface: card=${constraints.maxWidth}x${constraints.maxHeight} " +
+                        "cell=${cardSurface.cellWidthPx}x${cardSurface.cellHeightPx}px " +
+                        "grid=${cardSurface.cols}x${cardSurface.rows} " +
+                        "fill=${cardSurface.gridWidthPx / constraints.maxWidth.toFloat()}x" +
+                        "${cardSurface.gridHeightPx / constraints.maxHeight.toFloat()} " +
+                        "fontPx=${cardSurface.fontPx}",
                 )
                 val gridWidthPx = cols * metrics.advanceRatio * effectivePx
                 val gridHeightPx = rows * metrics.lineHeightRatio * effectivePx
@@ -4258,20 +4411,18 @@ private fun InterruptedNotice(reason: String, onRetry: () -> Unit) {
 }
 
 /**
- * The workspace's own tab strip (S27-7): the session card's top strip
+ * The workspace's own tab strip (S27-7, S28-1): the session card's top strip
  * shows the tabs of the workspace the human is in — from the snapshot the
  * daemon already sends (`tab.list {workspace_id}` rows on the wire,
  * measured from `herdr api schema --json`) — in the daemon's order, with
- * the visible one marked. Tapping a tab makes it the visible one: the app
- * renders agent panes, so a tab hosting an agent opens that agent's
- * session; a tab without an agent has nothing this screen can render yet
- * and reads quiet instead of pretending to be tappable.
+ * the visible one marked. Tapping a tab focuses it on the host: measured
+ * live, the daemon allows focusing a tab with no agent, so every tab but
+ * the visible one is tappable — no dead chip and no quiet pretence.
  */
 @Composable
 private fun WorkspaceTabStrip(
     tabs: List<TabDto>,
     currentTabId: String?,
-    tabAgents: Map<String, AgentDto>,
     onTabSelected: (TabDto) -> Unit,
 ) {
     val p = LocalPalette.current
@@ -4283,15 +4434,10 @@ private fun WorkspaceTabStrip(
     ) {
         tabs.forEach { tab ->
             val isCurrent = tab.id == currentTabId
-            val hasAgent = tabAgents.containsKey(tab.id)
             val label = tab.label.ifBlank { tab.number.toString() }
             Text(
                 text = label,
-                color = when {
-                    isCurrent -> p.accent
-                    hasAgent -> MaterialTheme.colorScheme.onBackground
-                    else -> p.muted
-                },
+                color = if (isCurrent) p.accent else MaterialTheme.colorScheme.onBackground,
                 fontSize = 12.sp,
                 fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 1,
@@ -4299,7 +4445,7 @@ private fun WorkspaceTabStrip(
                 modifier = Modifier
                     .heightIn(min = 44.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable(enabled = hasAgent && !isCurrent) { onTabSelected(tab) }
+                    .clickable(enabled = !isCurrent) { onTabSelected(tab) }
                     .padding(horizontal = 10.dp, vertical = 12.dp),
             )
         }

@@ -60,15 +60,35 @@ class WorkspaceTabsModelTest {
     // --- currentTabId -------------------------------------------------------------
 
     @Test
-    fun `the visible tab is the one the open agent's pane sits in`() {
+    fun `the daemon's focused tab marks the visible one, not the open agent's pane`() {
+        // S28-1: a tap focuses the tab on the host and the visible pane
+        // follows; the marker must then read the daemon's focused tab —
+        // which can be a tab the session's own agent does not sit in.
+        val tabs = listOf(
+            tab("t1", "wA", 1UL, "repo"),
+            tab("t2", "wA", 2UL, "build", focused = true),
+        )
         val panes = listOf(pane("p1", "wA", "t1"), pane("p2", "wA", "t2"))
-        assertEquals("t2", WorkspaceTabsModel.currentTabId(panes, "p2"))
+        assertEquals("t2", WorkspaceTabsModel.currentTabId(tabs, panes, "p1"))
+    }
+
+    @Test
+    fun `before the first focus answer, the open agent's pane marks the tab`() {
+        // No tab carries the daemon's focused flag yet (fresh snapshot):
+        // the fallback is where the open agent's pane sits.
+        val tabs = listOf(
+            tab("t1", "wA", 1UL, "repo"),
+            tab("t2", "wA", 2UL, "build"),
+        )
+        val panes = listOf(pane("p1", "wA", "t1"))
+        assertEquals("t1", WorkspaceTabsModel.currentTabId(tabs, panes, "p1"))
     }
 
     @Test
     fun `a pane the snapshot does not know yet marks no tab`() {
+        val tabs = listOf(tab("t1", "wA", 1UL, "repo"))
         val panes = listOf(pane("p1", "wA", "t1"))
-        assertNull(WorkspaceTabsModel.currentTabId(panes, "ghost"))
+        assertNull(WorkspaceTabsModel.currentTabId(tabs, panes, "ghost"))
     }
 
     // --- agentInTab: what a tap can make visible ---------------------------------

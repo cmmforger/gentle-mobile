@@ -53,6 +53,22 @@ object WorkspacesModel {
      */
     fun workspaceLabel(path: String): String = SessionsModel.repoName(path)
 
+    /** Where tapping a workspace row goes (S28-5, no screen that only
+     *  repeats the name): a workspace with exactly one agent goes straight
+     *  into that agent's session; several agents — or none — go to the
+     *  workspace's agent list, which shows an honest empty state rather
+     *  than inventing a session. */
+    sealed interface WorkspaceEntry {
+        /** Straight into the one agent's session. */
+        data class Session(val agent: AgentDto) : WorkspaceEntry
+
+        /** The workspace's agent list (empty included). */
+        data object AgentList : WorkspaceEntry
+    }
+
+    fun workspaceEntry(agents: List<AgentDto>): WorkspaceEntry =
+        if (agents.size == 1) WorkspaceEntry.Session(agents[0]) else WorkspaceEntry.AgentList
+
     /**
      * The plain sentence for a failed path check (S26-3), or `null` when
      * the path is fine and the flow may continue to `workspace.create`.

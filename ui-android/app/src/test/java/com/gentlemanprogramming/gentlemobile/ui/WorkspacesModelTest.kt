@@ -107,4 +107,24 @@ class WorkspacesModelTest {
         assertEquals(R.string.ws_is_git, WorkspacesModel.gitNoteRes(true))
         assertEquals(R.string.ws_not_git, WorkspacesModel.gitNoteRes(false))
     }
+
+    // --- workspaceEntry (S28-5): where tapping a workspace row goes ---------------
+
+    @Test
+    fun a_workspace_with_one_agent_goes_straight_into_its_session() {
+        val agents = listOf(agent("p1", "w1F"))
+        val entry = WorkspacesModel.workspaceEntry(agents)
+        assertEquals("p1", (entry as WorkspacesModel.WorkspaceEntry.Session).agent.paneId)
+    }
+
+    @Test
+    fun a_workspace_with_several_agents_goes_to_their_list() {
+        val agents = listOf(agent("p1", "w1F"), agent("p2", "w1F"))
+        assertEquals(WorkspacesModel.WorkspaceEntry.AgentList, WorkspacesModel.workspaceEntry(agents))
+    }
+
+    @Test
+    fun a_workspace_with_no_agents_goes_to_the_honest_empty_list() {
+        assertEquals(WorkspacesModel.WorkspaceEntry.AgentList, WorkspacesModel.workspaceEntry(emptyList()))
+    }
 }

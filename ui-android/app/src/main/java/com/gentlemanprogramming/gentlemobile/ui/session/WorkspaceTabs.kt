@@ -23,15 +23,22 @@ object WorkspaceTabsModel {
     fun tabsOfWorkspace(tabs: List<TabDto>, workspaceId: String): List<TabDto> =
         tabs.filter { it.workspaceId == workspaceId }.sortedBy { it.number.toLong() }
 
-    /** The tab the given pane sits in — the strip marks it as the visible
-     *  one. An unknown pane (before the first snapshot) marks nothing. */
-    fun currentTabId(panes: List<PaneDto>, paneId: String): String? =
-        panes.firstOrNull { it.id == paneId }?.tabId
+    /**
+     * The tab the human is seeing right now: the daemon's focused tab
+     * wins — after a tap focuses another tab (S28-1) the visible pane is
+     * the daemon's, whether or not the session's own agent sits there —
+     * and before the first focus answer arrives, where the open agent's
+     * pane sits stands in. An unknown pane (before the first snapshot)
+     * marks nothing.
+     */
+    fun currentTabId(tabs: List<TabDto>, panes: List<PaneDto>, paneId: String): String? =
+        tabs.firstOrNull { it.focused }?.id
+            ?: panes.firstOrNull { it.id == paneId }?.tabId
 
     /**
      * The agent whose pane lives in this tab, if any — the agent a tap can
-     * make visible (the app renders agent panes; `null` means the tab has
-     * no agent to show).
+     * rebind the session to (the app renders agent panes and the composer
+     * addresses an agent; `null` means the tab has no agent to rebind to).
      */
     fun agentInTab(panes: List<PaneDto>, agents: List<AgentDto>, tabId: String): AgentDto? {
         val paneIds = panes.filter { it.tabId == tabId }.map { it.id }.toSet()

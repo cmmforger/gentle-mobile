@@ -513,6 +513,78 @@ impl Connection {
         })
     }
 
+    /// Focus one tab (`tab.focus {tab_id}`, S28-1, on the same request lane
+    /// as `workspace.focus` — measured from `herdr api schema --json`,
+    /// protocol 22, and verified live: a tab with no agent is focusable).
+    /// The daemon's own switch: the focused pane changes, and the surface
+    /// stream — which renders the focused pane — follows, so the phone's
+    /// visible pane follows too.
+    pub fn tab_focus(&self, tab_id: &str) -> std::result::Result<(), crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_TAB_FOCUS,
+            crate::requests::tab_focus_params(tab_id),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_tab_focus(&value).map_err(crate::requests::HubError::Request)
+        })
+    }
+
+    /// Re-render at a new surface size (S28-3): the grid the card's own
+    /// geometry derived (cols × rows in cells). Rides the vendored client's
+    /// resize message — the same lane the connect handshake uses — and the
+    /// client's own validation refuses a size it would never render
+    /// (0, > 4096 per side, area > 1M cells), so a bad derivation can never
+    /// ask the daemon for a surface bigger than it renders back.
+    pub fn resize_surface(&self, cols: u16, rows: u16) -> Result<()> {
+        let handle = self
+            .handle()
+            .ok_or_else(|| Error::Timeout("the connection is closed"))?;
+        let boot_id = self
+            .snapshot()
+            .map(|snapshot| snapshot.boot_id.clone())
+            .ok_or_else(|| Error::Timeout("no snapshot has arrived yet"))?;
+        handle
+            .resize(
+                &boot_id,
+                ConnectOptions {
+                    surface_size: herdr_client::protocol::ClientSurfaceSize { cols, rows },
+                    cell_width_px: 0,
+                    cell_height_px: 0,
+                },
+            )
+            .map_err(Error::Client)
+    }
+
+    /// Activate (or release) this client's surface control (`client_shell
+    /// .surface.set {active}`) — measured in the daemon's own source: a
+    /// client-shell resize only reshapes the client's projection; the
+    /// daemon reflows the tab's real layout (and with it the pane's PTY,
+    /// so lines wrap at the new width) only for the client that activated
+    /// its surface and thereby holds the tab's geometry control. Without
+    /// the activation, a resize paints a narrow frame over a desktop-sized
+    /// pane and whole words disappear off the right edge.
+    ///
+    /// Release (`active = false`) hands the geometry control back, so the
+    /// desktop's own view reflows to its size again.
+    pub fn set_surface_active(&self, active: bool) -> Result<()> {
+        let handle = self
+            .handle()
+            .ok_or_else(|| Error::Timeout("the connection is closed"))?;
+        let boot_id = self
+            .snapshot()
+            .map(|snapshot| snapshot.boot_id.clone())
+            .ok_or_else(|| Error::Timeout("no snapshot has arrived yet"))?;
+        handle
+            .set_surface_active(&boot_id, active)
+            .map(|_| ())
+            .map_err(Error::Client)
+    }
+
     /// Disconnect cleanly: stop the vendored client, close the SSH connection,
     /// and join every thread. The event stream ends with an
     /// [`Event::Disconnected`].
