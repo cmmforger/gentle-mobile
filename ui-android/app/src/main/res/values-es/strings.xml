@@ -16,7 +16,19 @@
 
     <!-- Pantalla de emparejamiento -->
     <string name="pair_title">Conectate a tu computadora</string>
-    <string name="pair_intro">Ejecutá gentle-mobile-pair en el host, escaneá su QR — o pegá el enlace — y la clave queda confiada en un paso. Después se confirma la clave del host una sola vez.</string>
+    <string name="pair_intro">Conectá directo con el formulario de abajo — o emparejá una vez con el QR que imprime el host. Después se confirma la clave del host una sola vez.</string>
+
+    <!-- Formulario de conexión (S25): el camino principal, un mensaje por campo -->
+    <string name="pair_form_name">Nombre (opcional)</string>
+    <string name="pair_form_host">Host</string>
+    <string name="pair_form_port">Puerto</string>
+    <string name="pair_form_user">Usuario</string>
+    <string name="pair_field_host_empty">Escribí la IP o el host de tu computadora.</string>
+    <string name="pair_field_host_invalid">Ese host no es una IP ni un nombre de host — escribilo como 192.168.1.24.</string>
+    <string name="pair_field_port_invalid">El puerto tiene que ser un número del 1 al 65535.</string>
+    <string name="pair_field_user_empty">Escribí tu usuario en esa computadora.</string>
+    <string name="pair_field_user_invalid">El usuario no puede tener espacios ni @.</string>
+    <string name="pair_form_help">La conexión firma con la clave de este teléfono — no hay contraseña que escribir.</string>
     <string name="pair_key_label">La clave de este teléfono</string>
     <string name="pair_creating_key">Creando la clave\u2026</string>
     <string name="pair_copy">Copiar</string>
@@ -30,6 +42,18 @@
     <string name="pair_clipboard_empty">El portapapeles está vacío — copiá el enlace que imprimió el host.</string>
     <string name="pair_will_pair">Se va a emparejar con %1$s \u00B7 ssh %2$s \u00B7 %3$s</string>
     <string name="pair_will_connect">Se va a conectar a %1$s \u00B7 %2$s \u00B7 %3$s</string>
+
+    <!-- Escanear QR: la acción secundaria, más quieta -->
+    <string name="pair_scan_hint">o escaneá el QR que imprime gentle-mobile pair en la computadora</string>
+
+    <!-- Configuración manual: plegada por defecto, todo lo demás vive acá -->
+    <string name="pair_manual_label">Configuración manual</string>
+    <string name="pair_manual_hint">La clave del teléfono, el comando del host y el enlace gc://, para cuando no hay un QR para escanear.</string>
+
+    <!-- Huella de la clave del host que trae el enlace (S25-3): se muestra antes de conectar -->
+    <string name="pair_fp_label">Huella de la clave del host</string>
+    <string name="pair_fp_hint">Comparala con lo que imprime el host antes de conectar.</string>
+    <string name="pair_fp_mismatch">Rechazado — la huella del host no coincide con la que traía el enlace. Enlace: %1$s \u00B7 Host: %2$s</string>
     <string name="pair_button">Conectar</string>
     <string name="pair_button_pairing">Emparejando\u2026</string>
     <string name="pair_button_connecting">Conectando\u2026</string>
@@ -320,15 +344,15 @@
     <string name="dict_failed">El dictado falló (error de reconocedor %1$d).</string>
 
     <!-- Rechazos del emparejamiento -->
-    <string name="pair_err_unreachable">No se pudo alcanzar el endpoint de emparejamiento en %1$s — ejecutá gentle-mobile-pair en el host y arrancá de nuevo. (%2$s)</string>
-    <string name="pair_err_token">El host rechazó el token — este enlace no corresponde al gentle-mobile-pair que está corriendo.</string>
-    <string name="pair_err_expired">El emparejamiento venció — ejecutá gentle-mobile-pair en el host y escaneá o pegá el enlace nuevo.</string>
-    <string name="pair_err_used">Ese emparejamiento ya se usó — ejecutá gentle-mobile-pair en el host para uno nuevo.</string>
+    <string name="pair_err_unreachable">No se pudo alcanzar el endpoint de emparejamiento en %1$s — ejecutá gentle-mobile pair en el host y arrancá de nuevo. (%2$s)</string>
+    <string name="pair_err_token">El host rechazó el token — este enlace no corresponde al gentle-mobile pair que está corriendo.</string>
+    <string name="pair_err_expired">El emparejamiento venció — ejecutá gentle-mobile pair en el host y escaneá o pegá el enlace nuevo.</string>
+    <string name="pair_err_used">Ese emparejamiento ya se usó — ejecutá gentle-mobile pair en el host para uno nuevo.</string>
     <string name="pair_err_key_detail">El host rechazó la clave: %1$s</string>
     <string name="pair_err_key_malformed">El host rechazó la clave por malformada.</string>
     <string name="pair_err_other">El host rechazó el emparejamiento (HTTP %1$d)</string>
     <string name="pair_err_detail_suffix"> — %1$s</string>
-    <string name="pair_invalid_empty">Pegá el enlace que imprimió gentle-mobile-pair (gc://host:port?user=…).</string>
+    <string name="pair_invalid_empty">Pegá el enlace que imprimió gentle-mobile pair (gc://host:port?user=…).</string>
     <string name="pair_invalid_not_gc">Eso no es un enlace gc:// — copiá la línea \u201CEnlace de conexión\u201D que imprime el comando de emparejamiento.</string>
     <string name="pair_invalid_missing_query">Al enlace le falta ?user=… — copiá el enlace de conexión completo.</string>
     <string name="pair_invalid_token_without_pair">El enlace trae un token de emparejamiento pero no &amp;pair=host:puerto — copiá el enlace completo.</string>
@@ -340,6 +364,8 @@
     <string name="pair_invalid_bad_port">El puerto del enlace tiene que ser un número del 1 al 65535.</string>
     <string name="pair_invalid_bad_user_url">El nombre de usuario del enlace no es texto de URL válido.</string>
     <string name="pair_invalid_bad_user_name">El nombre de usuario del enlace se ve malformado.</string>
+    <string name="pair_invalid_version">Ese enlace lo hizo una versión más nueva de Gentle Mobile — actualizá la app y probá de nuevo.</string>
+    <string name="pair_invalid_fp">La huella del enlace tiene que ser 64 caracteres hexadecimales — copiá el enlace completo.</string>
 
     <!-- Errores que el core muestra por la interfaz -->
     <string name="err_host_key_mismatch">La clave del host no coincide: guardada %1$s, presentada %2$s.</string>

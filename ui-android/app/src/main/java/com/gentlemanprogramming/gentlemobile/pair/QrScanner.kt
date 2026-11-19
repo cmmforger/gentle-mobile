@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
@@ -88,9 +89,11 @@ fun QrScannerScreen(
     onCancel: () -> Unit,
 ) {
     val context = LocalContext.current
-    // The composition context may be locale-wrapped (S24-1): the camera
-    // needs the real LifecycleOwner (the activity) behind it.
-    val lifecycleOwner = AppLocale.unwrapToLifecycle(context) as LifecycleOwner
+    // The camera lifecycle binds to the composition's LifecycleOwner —
+    // always the activity, even when LocalContext is the locale-wrapped
+    // context (S24-1), which is not a ContextWrapper and cannot be
+    // unwrapped by class-walking (it crashed the scanner once).
+    val lifecycleOwner = LocalLifecycleOwner.current
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
 
     DisposableEffect(Unit) {

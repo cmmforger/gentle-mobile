@@ -15,7 +15,19 @@
 
     <!-- Pair screen -->
     <string name="pair_title">Connect to your computer</string>
-    <string name="pair_intro">Run gentle-mobile-pair on the host, scan its QR — or paste the link — and the key is trusted in one step. The host key is confirmed once after.</string>
+    <string name="pair_intro">Connect directly with the form below — or pair once with the QR the host prints. The host key is confirmed once after.</string>
+
+    <!-- Connection form (S25): the primary path, one message per field -->
+    <string name="pair_form_name">Name (optional)</string>
+    <string name="pair_form_host">Host</string>
+    <string name="pair_form_port">Port</string>
+    <string name="pair_form_user">User</string>
+    <string name="pair_field_host_empty">Write the IP or host of your computer.</string>
+    <string name="pair_field_host_invalid">That host is not an IP or a host name — write it like 192.168.1.24.</string>
+    <string name="pair_field_port_invalid">The port must be a number from 1 to 65535.</string>
+    <string name="pair_field_user_empty">Write your user on that computer.</string>
+    <string name="pair_field_user_invalid">The user cannot contain spaces or @.</string>
+    <string name="pair_form_help">The connection signs in with this phone\u2019s key — no password to type.</string>
     <string name="pair_key_label">This phone\u2019s key</string>
     <string name="pair_creating_key">Creating the key\u2026</string>
     <string name="pair_copy">Copy</string>
@@ -29,6 +41,18 @@
     <string name="pair_clipboard_empty">The clipboard is empty — copy the link the host printed.</string>
     <string name="pair_will_pair">Will pair with %1$s \u00B7 ssh %2$s \u00B7 %3$s</string>
     <string name="pair_will_connect">Will connect to %1$s \u00B7 %2$s \u00B7 %3$s</string>
+
+    <!-- Scan QR: the quiet secondary on the main surface -->
+    <string name="pair_scan_hint">or scan the QR that gentle-mobile pair prints on the computer</string>
+
+    <!-- Manual setup: collapsed by default, everything else lives here -->
+    <string name="pair_manual_label">Manual setup</string>
+    <string name="pair_manual_hint">The phone\u2019s key, the host command and the gc:// link, for when there is no QR to scan.</string>
+
+    <!-- Host key fingerprint carried by the link (S25-3): shown before connecting -->
+    <string name="pair_fp_label">Host key fingerprint</string>
+    <string name="pair_fp_hint">Compare it with what the host prints before connecting.</string>
+    <string name="pair_fp_mismatch">Refused — the host\u2019s fingerprint does not match the one the link carried. Link: %1$s \u00B7 Host: %2$s</string>
     <string name="pair_button">Connect</string>
     <string name="pair_button_pairing">Pairing\u2026</string>
     <string name="pair_button_connecting">Connecting\u2026</string>
@@ -319,15 +343,15 @@
     <string name="dict_failed">Dictation failed (recognizer error %1$d).</string>
 
     <!-- Pairing refusals -->
-    <string name="pair_err_unreachable">Could not reach the pairing endpoint at %1$s — run gentle-mobile-pair on the host and start again. (%2$s)</string>
-    <string name="pair_err_token">The host refused the token — this link does not match the running gentle-mobile-pair.</string>
-    <string name="pair_err_expired">Pairing expired — run gentle-mobile-pair on the host and scan or paste the new link.</string>
-    <string name="pair_err_used">That pairing was already used — run gentle-mobile-pair on the host for a new one.</string>
+    <string name="pair_err_unreachable">Could not reach the pairing endpoint at %1$s — run gentle-mobile pair on the host and start again. (%2$s)</string>
+    <string name="pair_err_token">The host refused the token — this link does not match the running gentle-mobile pair.</string>
+    <string name="pair_err_expired">Pairing expired — run gentle-mobile pair on the host and scan or paste the new link.</string>
+    <string name="pair_err_used">That pairing was already used — run gentle-mobile pair on the host for a new one.</string>
     <string name="pair_err_key_detail">The host refused the key: %1$s</string>
     <string name="pair_err_key_malformed">The host refused the key as malformed.</string>
     <string name="pair_err_other">The host refused the pairing (HTTP %1$d)</string>
     <string name="pair_err_detail_suffix"> — %1$s</string>
-    <string name="pair_invalid_empty">Paste the link printed by gentle-mobile-pair (gc://host:port?user=…).</string>
+    <string name="pair_invalid_empty">Paste the link printed by gentle-mobile pair (gc://host:port?user=…).</string>
     <string name="pair_invalid_not_gc">That is not a gc:// link — copy the \u201CConnection link\u201D line the pair command prints.</string>
     <string name="pair_invalid_missing_query">The link is missing ?user=… — copy the full connection link.</string>
     <string name="pair_invalid_token_without_pair">The link carries a pairing token but no &amp;pair=host:port — copy the full link.</string>
@@ -339,6 +363,8 @@
     <string name="pair_invalid_bad_port">The link\u2019s port must be a number from 1 to 65535.</string>
     <string name="pair_invalid_bad_user_url">The link\u2019s user name is not valid URL text.</string>
     <string name="pair_invalid_bad_user_name">The link\u2019s user name looks malformed.</string>
+    <string name="pair_invalid_version">That link was made by a newer Gentle Mobile — update the app and try again.</string>
+    <string name="pair_invalid_fp">The fingerprint in the link must be 64 hexadecimal characters — copy the full link.</string>
 
     <!-- Errors the core surfaces through the UI -->
     <string name="err_host_key_mismatch">Host key mismatch: saved %1$s, presented %2$s.</string>

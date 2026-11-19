@@ -11,14 +11,14 @@ import org.junit.Test
 class PairCommandTest {
 
     @Test
-    fun `host tool is gentle-mobile-pair`() {
-        assertEquals("gentle-mobile-pair", PairCommand.HOST_TOOL)
+    fun `host tool is gentle-mobile with pair as the subcommand`() {
+        assertEquals("gentle-mobile", PairCommand.HOST_TOOL)
     }
 
     @Test
     fun `wraps the key in single quotes`() {
         assertEquals(
-            "gentle-mobile-pair --add-key 'ssh-ed25519 AAAAC3Nza demo@gentle'",
+            "gentle-mobile pair --add-key 'ssh-ed25519 AAAAC3Nza demo@gentle'",
             PairCommand.addKey("ssh-ed25519 AAAAC3Nza demo@gentle"),
         )
     }
@@ -26,7 +26,7 @@ class PairCommandTest {
     @Test
     fun `trims whitespace around the pasted key`() {
         assertEquals(
-            "gentle-mobile-pair --add-key 'ssh-ed25519 AAAAC3Nza'",
+            "gentle-mobile pair --add-key 'ssh-ed25519 AAAAC3Nza'",
             PairCommand.addKey("  ssh-ed25519 AAAAC3Nza \n"),
         )
     }

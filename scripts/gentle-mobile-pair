@@ -97,6 +97,7 @@ case "${1:-}" in
     exec python3 - "$bind" "$PORT" "$user" "$AUTHORIZED" "$MARKER" <<'PYLISTENER'
 import base64
 import datetime
+import hashlib
 import hmac
 import json
 import os
@@ -251,15 +252,43 @@ def make_handler(pairing):
     return Handler
 
 
+def host_fingerprint_hex():
+    """SHA-256 of the SSH host key, as 64 hex — what the link carries in
+    fp= so the phone shows the fingerprint BEFORE connecting (S25-3) and
+    refuses a host that presents a different key. The public half only,
+    so reading the file never touches a private key. An override exists
+    for a test sshd with its own host key; without a readable key the
+    parameter is simply omitted — old links keep working."""
+    path = os.environ.get("GENTLE_MOBILE_PAIR_HOSTKEY",
+                          "/etc/ssh/ssh_host_ed25519_key.pub")
+    try:
+        with open(path) as f:
+            blob = f.read().split()[1]
+        return hashlib.sha256(base64.b64decode(blob)).hexdigest()
+    except Exception:
+        return None
+
+
 def main():
     server = ThreadingHTTPServer((SSH_HOST, PAIR_PORT), make_handler(pairing))
     pairing.server = server
     port = server.server_address[1]
     advertise = os.environ.get("GENTLE_MOBILE_PAIR_ADDR") or SSH_HOST
-    link = f"gc://{SSH_HOST}:{SSH_PORT}?user={USER}&pair={advertise}:{port}&t={TOKEN}"
+    fingerprint = host_fingerprint_hex()
+    # v=1 is the format version the phone understands; a future format
+    # bump changes it and old apps refuse with an "update the app" message.
+    extra = "&v=1"
+    if fingerprint:
+        extra += f"&fp={fingerprint}"
+    link = f"gc://{SSH_HOST}:{SSH_PORT}?user={USER}&pair={advertise}:{port}&t={TOKEN}{extra}"
     minutes = max(1, round(TTL / 60))
     print(f"[QR]   single use · expires in {minutes} minutes", flush=True)
     print(f"pair   {advertise}:{port} · ssh {SSH_PORT} · user {USER}", flush=True)
+    if fingerprint:
+        print(f"fp     {fingerprint} — the app shows it; check it against", flush=True)
+        print(f"       ssh-keygen -lf {os.environ.get('GENTLE_MOBILE_PAIR_HOSTKEY', '/etc/ssh/ssh_host_ed25519_key.pub')}", flush=True)
+    else:
+        print("fp     unavailable (no readable host key) — the link carries no fingerprint", flush=True)
     print(f"scan it with Gentle Mobile — no key to copy.", flush=True)
     print(f"link:  {link}", flush=True)
     if subprocess.run(["qrencode", "-t", "ANSIUTF8", link]).returncode != 0:

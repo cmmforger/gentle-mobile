@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -100,6 +102,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.padding
@@ -146,12 +150,16 @@ import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsScreen
 import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
+import com.gentlemanprogramming.gentlemobile.pair.ConnectValidator
+import com.gentlemanprogramming.gentlemobile.pair.FingerprintCheck
+import com.gentlemanprogramming.gentlemobile.pair.HostStore
 import com.gentlemanprogramming.gentlemobile.pair.PairClient
 import com.gentlemanprogramming.gentlemobile.pair.PairCommand
 import com.gentlemanprogramming.gentlemobile.pair.PairLink
 import com.gentlemanprogramming.gentlemobile.pair.PairLinkResult
 import com.gentlemanprogramming.gentlemobile.pair.PairParams
 import com.gentlemanprogramming.gentlemobile.pair.QrScannerScreen
+import com.gentlemanprogramming.gentlemobile.pair.SavedHost
 import com.gentlemanprogramming.gentlemobile.security.BiometricDecision
 import com.gentlemanprogramming.gentlemobile.security.BiometricUnlockStore
 import com.gentlemanprogramming.gentlemobile.security.biometricDecision
@@ -531,9 +539,15 @@ fun ConnectScreen(
 
     var route by remember { mutableStateOf(Route.Main) }
 
-    var host by remember { mutableStateOf("10.0.2.2") }
-    var port by remember { mutableStateOf("2222") }
-    var user by remember { mutableStateOf("erickfm") }
+    // S25: the form starts from the last connection (the optional Name
+    // label travels with it, kept for the multi-host work), empty on
+    // first launch with only the SSH port as default.
+    val hostStore = remember { HostStore(SharedPreferencesStore(context)) }
+    val savedForm = remember { hostStore.load() }
+    var hostName by remember { mutableStateOf(savedForm.name) }
+    var host by remember { mutableStateOf(savedForm.host) }
+    var port by remember { mutableStateOf(savedForm.port) }
+    var user by remember { mutableStateOf(savedForm.user) }
     var session by remember { mutableStateOf("default") }
     /** User-chosen terminal font size in px, `0f` = fit the grid to the width. */
     var terminalFontPx by remember { mutableStateOf(0f) }
@@ -979,6 +993,16 @@ fun ConnectScreen(
     var copiedKey by remember { mutableStateOf(false) }
     var copiedCommand by remember { mutableStateOf(false) }
     var pasted by remember { mutableStateOf(false) }
+    // S25-1: per-field validation messages — one per field, set on submit.
+    var hostError by remember { mutableStateOf<String?>(null) }
+    var portError by remember { mutableStateOf<String?>(null) }
+    var userError by remember { mutableStateOf<String?>(null) }
+    // S25-3: Manual setup stays collapsed until the user asks for it.
+    var manualOpen by remember { mutableStateOf(false) }
+    // S25-3: the fingerprint an `fp=` link pinned — shown before
+    // connecting and enforced at the handshake. It changes only when a
+    // new link is applied; a refusal still fails closed on any mismatch.
+    var linkFingerprint by remember { mutableStateOf<String?>(null) }
     // One-scan pairing (S22): when the applied link carries a pairing
     // endpoint + token, Connect first POSTs this phone's key to the
     // listener, then opens SSH. The paste field runs the same flow.
@@ -1011,6 +1035,19 @@ fun ConnectScreen(
             PairLink.InvalidReason.MISSING_USER -> R.string.pair_invalid_missing_query
             PairLink.InvalidReason.BAD_USER_URL -> R.string.pair_invalid_bad_user_url
             PairLink.InvalidReason.BAD_USER_NAME -> R.string.pair_invalid_bad_user_name
+            PairLink.InvalidReason.UNSUPPORTED_VERSION -> R.string.pair_invalid_version
+            PairLink.InvalidReason.BAD_FINGERPRINT -> R.string.pair_invalid_fp
+        }
+        context.getString(id)
+    }
+    // S25-1: the same one-message-per-field rule for the form validator.
+    val fieldMessage = { reason: ConnectValidator.Reason ->
+        val id = when (reason) {
+            ConnectValidator.Reason.HOST_EMPTY -> R.string.pair_field_host_empty
+            ConnectValidator.Reason.HOST_INVALID -> R.string.pair_field_host_invalid
+            ConnectValidator.Reason.PORT_INVALID -> R.string.pair_field_port_invalid
+            ConnectValidator.Reason.USER_EMPTY -> R.string.pair_field_user_empty
+            ConnectValidator.Reason.USER_INVALID -> R.string.pair_field_user_invalid
         }
         context.getString(id)
     }
@@ -1038,12 +1075,16 @@ fun ConnectScreen(
                 port = parsed.port
                 user = parsed.user
                 pairParams = parsed.pair
+                linkFingerprint = parsed.fingerprint
+                hostError = null
+                portError = null
+                userError = null
                 pairLink = ""
                 pairError = null
                 true
             }
             is PairLinkResult.Invalid -> {
-                pairError = parsed.reason
+                pairError = parsed.message
                 false
             }
         }
@@ -1052,6 +1093,10 @@ fun ConnectScreen(
     fun connect(acceptChallenge: UiState.Challenge?, pair: PairParams?) {
         screen.generation += 1
         val generation = screen.generation
+        // S25-3: the fingerprint pinned by the last applied link, enforced
+        // at the handshake below. Captured here so the worker sees one
+        // consistent value.
+        val linkFp = linkFingerprint
         // Supervision (T8c): a new attempt begins — first connect, manual
         // retry, or the one automatic foreground attempt. The challenge accept
         // continues the attempt already in flight, so it does not re-begin.
@@ -1128,7 +1173,38 @@ fun ConnectScreen(
                     }
                     return@execute
                 }
-                when (val outcome = coreConnect(profile, session)) {
+                var outcome = coreConnect(profile, session)
+                // S25-3: a link that carried fp= pinned the host key before
+                // connecting. On a match the question is already answered —
+                // the user compared the fingerprint the host printed when
+                // scanning — so accept and continue; on a mismatch refuse
+                // and say why, never a second look-alike prompt.
+                if (outcome is ConnectOutcome.Challenge && linkFp != null) {
+                    when (val verdict = FingerprintCheck.compare(linkFp, outcome.v1.fingerprint)) {
+                        is FingerprintCheck.Verdict.Match -> {
+                            acceptHostKey(knownHostsPath, profile.host, profile.port, outcome.v1.keyBlob)
+                            outcome = coreConnect(profile, session)
+                        }
+                        is FingerprintCheck.Verdict.Mismatch -> {
+                            val message = context.getString(
+                                R.string.pair_fp_mismatch,
+                                FingerprintCheck.hexToOpenSsh(verdict.linkFingerprint)
+                                    ?: verdict.linkFingerprint,
+                                verdict.presented,
+                            )
+                            mainHandler.post {
+                                if (screen.generation == generation) {
+                                    screen.machine.onRefused(message)
+                                    screen.ui = UiState.Failed(message)
+                                }
+                            }
+                            // Never fall through to SSH against a host the
+                            // link does not name.
+                            return@execute
+                        }
+                    }
+                }
+                when (outcome) {
                     is ConnectOutcome.Challenge -> mainHandler.post {
                         if (screen.generation == generation) {
                             // Still the same attempt, paused for the human.
@@ -1396,127 +1472,47 @@ fun ConnectScreen(
                 Spacer(Modifier.height(12.dp))
                 Hairline()
 
-                // Block 1: this phone's own public key, with the identity
-                // state shown honestly — "creating the key…", the error, or
-                // the key itself. Never a spinner that hides a failure.
-                BlockLabel(stringResource(R.string.pair_key_label))
-                val identity = identity
-                val identityFailure = identityError
-                when {
-                    identityFailure != null -> Text(
-                        text = identityFailure,
-                        color = LocalPalette.current.error,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                    identity == null -> Text(
-                        text = stringResource(R.string.pair_creating_key),
-                        color = LocalPalette.current.muted,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                    else -> {
-                        SelectionContainer {
-                            Text(
-                                text = identity.publicKeyLine,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(LocalPalette.current.surfaceRaised, RoundedCornerShape(8.dp))
-                                    .padding(12.dp),
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            GhostButton(
-                                label = stringResource(R.string.pair_copy),
-                                onClick = {
-                                    clipboard.setText(AnnotatedString(identity.publicKeyLine))
-                                    copiedKey = true
-                                    copiedCommand = false
-                                },
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = if (copiedKey) stringResource(R.string.pair_copied) else
-                                    stringResource(R.string.pair_key_trust_hint),
-                                color = if (copiedKey) LocalPalette.current.accent else LocalPalette.current.muted,
-                                fontSize = 11.sp,
-                                maxLines = 2,
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Hairline()
-
-                // Block 2: the host command, ready to copy.
-                BlockLabel(stringResource(R.string.pair_host_label))
-                val identityForCommand = identity
-                if (identityForCommand == null) {
-                    Text(
-                        text = stringResource(R.string.pair_ready_when_key),
-                        color = LocalPalette.current.muted,
-                        fontSize = 12.sp,
-                    )
-                } else {
-                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        Text(
-                            text = buildAnnotatedString {
-                                withStyle(SpanStyle(color = LocalPalette.current.accent)) { append("\u27AF ") }
-                                append(PairCommand.addKey(identityForCommand.publicKeyLine))
-                            },
-                            color = MaterialTheme.colorScheme.onBackground,
-                            fontSize = 11.sp,
-                            lineHeight = 18.sp,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        GhostButton(
-                            label = stringResource(R.string.pair_copy),
-                            onClick = {
-                                clipboard.setText(
-                                    AnnotatedString(
-                                        PairCommand.addKey(identityForCommand.publicKeyLine),
-                                    ),
-                                )
-                                copiedCommand = true
-                                copiedKey = false
-                            },
-                        )
-                    }
-                    if (copiedCommand) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.pair_copied_command),
-                            color = LocalPalette.current.accent,
-                            fontSize = 11.sp,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Hairline()
-
-                // Block 3: the connection link, pasted from the host output.
-                BlockLabel(stringResource(R.string.pair_link_label))
+                // The Connection form — the primary path, like Moshi's
+                // "New connection": optional name, host + compact port,
+                // user, one help line, one accent Connect. The device key
+                // is already in use; the screen says which one signs
+                // instead of offering a picker, and there is no password
+                // or protocol selector — SSH + device key only.
+                val fieldColors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = LocalPalette.current.accent,
+                    unfocusedBorderColor = LocalPalette.current.line,
+                    focusedContainerColor = LocalPalette.current.surface,
+                    unfocusedContainerColor = LocalPalette.current.surface,
+                    cursorColor = LocalPalette.current.accent,
+                )
                 OutlinedTextField(
-                    value = pairLink,
+                    value = hostName,
+                    onValueChange = { hostName = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.pair_form_name)) },
+                    textStyle = TextStyle(
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 13.sp,
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = fieldColors,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = host,
                     onValueChange = {
-                        pairLink = it
-                        pairError = null
+                        host = it
+                        // The pinned fingerprint belongs to the host KEY, not
+                        // the address: editing a field keeps it, and the
+                        // handshake still refuses a key the link did not name.
+                        hostError = null
                     },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = {
-                        Text(
-                            "gc://host:port?user=\u2026",
-                            color = LocalPalette.current.muted,
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.Monospace,
-                        )
+                    label = { Text(stringResource(R.string.pair_form_host)) },
+                    isError = hostError != null,
+                    supportingText = hostError?.let { error ->
+                        { Text(error, color = LocalPalette.current.error, fontSize = 11.sp) }
                     },
                     textStyle = TextStyle(
                         color = MaterialTheme.colorScheme.onBackground,
@@ -1524,66 +1520,108 @@ fun ConnectScreen(
                         fontFamily = FontFamily.Monospace,
                     ),
                     shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = LocalPalette.current.accent,
-                        unfocusedBorderColor = LocalPalette.current.line,
-                        focusedContainerColor = LocalPalette.current.surface,
-                        unfocusedContainerColor = LocalPalette.current.surface,
-                        cursorColor = LocalPalette.current.accent,
-                    ),
+                    colors = fieldColors,
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
-                Row {
-                    GhostButton(
-                        label = stringResource(R.string.pair_paste),
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            val text = clipboard.getText()?.text.orEmpty()
-                            if (text.isBlank()) {
-                                pairError =
-                                    context.getString(R.string.pair_clipboard_empty)
-                            } else {
-                                applyPairLink(text)
-                            }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = port,
+                        onValueChange = {
+                            port = it
+                            portError = null
                         },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.pair_form_port)) },
+                        isError = portError != null,
+                        supportingText = portError?.let { error ->
+                            { Text(error, color = LocalPalette.current.error, fontSize = 11.sp) }
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        textStyle = TextStyle(
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = fieldColors,
+                        modifier = Modifier.weight(0.35f),
+                    )
+                    OutlinedTextField(
+                        value = user,
+                        onValueChange = {
+                            user = it
+                            userError = null
+                        },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.pair_form_user)) },
+                        isError = userError != null,
+                        supportingText = userError?.let { error ->
+                            { Text(error, color = LocalPalette.current.error, fontSize = 11.sp) }
+                        },
+                        textStyle = TextStyle(
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = fieldColors,
+                        modifier = Modifier.weight(0.65f),
                     )
                 }
-                pairError?.let { error ->
-                    Notice(error, LocalPalette.current.error)
-                }
-                if (pasted) {
+                Spacer(Modifier.height(8.dp))
+                // One line of help: the connection signs in with this
+                // phone's key — no password, no protocol selector.
+                Text(
+                    text = stringResource(R.string.pair_form_help),
+                    color = LocalPalette.current.muted,
+                    fontSize = 11.sp,
+                )
+                // The pinned host key fingerprint, only when a link
+                // carried fp=: shown before connecting (S25). When nothing
+                // pinned it, this line simply does not exist.
+                linkFingerprint?.let { pinned ->
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = pairParams?.let {
-                            stringResource(
-                                R.string.pair_will_pair,
-                                "${it.host}:${it.port}", host, user,
-                            )
-                        } ?: stringResource(R.string.pair_will_connect, host, port, user),
-                        color = LocalPalette.current.muted,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    FingerprintCheck.hexToOpenSsh(pinned)?.let { shown ->
+                        Text(
+                            text = stringResource(R.string.pair_fp_label) + " · " + shown,
+                            color = LocalPalette.current.muted,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
-                        // The notification permission rides the connect
-                        // action: one explicit moment, with the explanation
-                        // below while the dialog is up.
-                        askForNotifications()
-                        // A typed link is applied first; a pasted or scanned
-                        // one was already applied, so Connect reuses it. With
-                        // the biometric switch on, connecting is the device
-                        // key being used: the prompt stands before it.
-                        gated {
-                            if (pairLink.isNotBlank()) applyPairLink(pairLink)
-                            if (pasted) connect(acceptChallenge = null, pair = pairParams)
+                        // Validation on submit (S25-1): one message per
+                        // field, never a generic error; only a valid form
+                        // reaches the connect path. The notification
+                        // permission rides the connect action (T15), and
+                        // the biometric gate treats connecting as the
+                        // device key being used.
+                        hostError = ConnectValidator.host(host, fieldMessage)
+                        portError = ConnectValidator.port(port, fieldMessage)
+                        userError = ConnectValidator.user(user, fieldMessage)
+                        if (hostError == null && portError == null && userError == null) {
+                            // The form is what the user asked to connect to:
+                            // keep it, including the Name label (the multi-
+                            // host work reads it from here).
+                            hostStore.save(
+                                SavedHost(
+                                    name = hostName,
+                                    host = host,
+                                    port = port,
+                                    user = user,
+                                ),
+                            )
+                            askForNotifications()
+                            gated { connect(acceptChallenge = null, pair = pairParams) }
                         }
                     },
-                    enabled = (pairLink.isNotBlank() || pasted) && current !is UiState.Connecting,
+                    enabled = current !is UiState.Connecting,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(44.dp),
@@ -1621,6 +1659,41 @@ fun ConnectScreen(
                 if (current is UiState.Failed) {
                     Notice(current.message, LocalPalette.current.error)
                 }
+                Spacer(Modifier.height(12.dp))
+                // The quiet secondary: Scan QR. One line under it — no
+                // block label, no second headline (reworked screen).
+                OutlinedButton(
+                    onClick = {
+                        cameraMessage = null
+                        if (context.packageManager.hasSystemFeature(
+                                android.content.pm.PackageManager.FEATURE_CAMERA_ANY,
+                            )
+                        ) {
+                            cameraPermission.launch(android.Manifest.permission.CAMERA)
+                        } else {
+                            cameraMessage = context.getString(R.string.pair_no_camera)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = LocalPalette.current.muted,
+                    ),
+                ) {
+                    Text(stringResource(R.string.pair_scan_qr))
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.pair_scan_hint),
+                    color = LocalPalette.current.muted,
+                    fontSize = 11.sp,
+                )
+                cameraMessage?.let { message ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(text = message, color = LocalPalette.current.muted, fontSize = 12.sp)
+                }
                 if (notificationsAsked && notificationsGranted == null) {
                     // The request is up: the explanation the honest flow
                     // needs, never a bare dialog.
@@ -1634,30 +1707,221 @@ fun ConnectScreen(
                 Spacer(Modifier.height(12.dp))
                 Hairline()
 
-                // Block 4: the scan affordance, per 01-pair.html — the button
-                // stands alone (no QR label above it). A missing or denied
-                // camera never blocks pairing — the paste field above is the
-                // fallback.
-                Row {
-                    GhostButton(
-                        label = stringResource(R.string.pair_scan_qr),
+                // Manual setup — collapsed by default, and the ONLY place
+                // the rest lives: the phone's key, the host command and
+                // the gc:// link paste field. Nothing else on the main
+                // surface (reworked screen).
+                Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .clickable { manualOpen = !manualOpen },
+                ) {
+                    Text(
+                        text = stringResource(R.string.pair_manual_label),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f),
-                        onClick = {
-                            cameraMessage = null
-                            if (context.packageManager.hasSystemFeature(
-                                    android.content.pm.PackageManager.FEATURE_CAMERA_ANY,
-                                )
-                            ) {
-                                cameraPermission.launch(android.Manifest.permission.CAMERA)
-                            } else {
-                                cameraMessage = context.getString(R.string.pair_no_camera)
-                            }
-                        },
+                    )
+                    Text(
+                        text = if (manualOpen) "▾" else "▸",
+                        color = LocalPalette.current.accent,
+                        fontSize = 16.sp,
                     )
                 }
-                cameraMessage?.let { message ->
-                    Spacer(Modifier.height(6.dp))
-                    Text(text = message, color = LocalPalette.current.muted, fontSize = 12.sp)
+                if (!manualOpen) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.pair_manual_hint),
+                        color = LocalPalette.current.muted,
+                        fontSize = 11.sp,
+                    )
+                }
+                if (manualOpen) {
+                    Spacer(Modifier.height(8.dp))
+                    // The phone's own public key, with the identity state
+                    // shown honestly — "creating the key…", the error, or
+                    // the key itself. Never a spinner that hides a failure.
+                    BlockLabel(stringResource(R.string.pair_key_label))
+                    val identity = identity
+                    val identityFailure = identityError
+                    when {
+                        identityFailure != null -> Text(
+                            text = identityFailure,
+                            color = LocalPalette.current.error,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                        identity == null -> Text(
+                            text = stringResource(R.string.pair_creating_key),
+                            color = LocalPalette.current.muted,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                        else -> {
+                            SelectionContainer {
+                                Text(
+                                    text = identity.publicKeyLine,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(LocalPalette.current.surfaceRaised, RoundedCornerShape(8.dp))
+                                        .padding(12.dp),
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                GhostButton(
+                                    label = stringResource(R.string.pair_copy),
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(identity.publicKeyLine))
+                                        copiedKey = true
+                                        copiedCommand = false
+                                    },
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = if (copiedKey) stringResource(R.string.pair_copied) else
+                                        stringResource(R.string.pair_key_trust_hint),
+                                    color = if (copiedKey) LocalPalette.current.accent else LocalPalette.current.muted,
+                                    fontSize = 11.sp,
+                                    maxLines = 2,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Hairline()
+
+                    // The host command, ready to copy — the real CLI
+                    // (S25-1): gentle-mobile pair --add-key '<key>'.
+                    BlockLabel(stringResource(R.string.pair_host_label))
+                    val identityForCommand = identity
+                    if (identityForCommand == null) {
+                        Text(
+                            text = stringResource(R.string.pair_ready_when_key),
+                            color = LocalPalette.current.muted,
+                            fontSize = 12.sp,
+                        )
+                    } else {
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text(
+                                text = buildAnnotatedString {
+                                    withStyle(SpanStyle(color = LocalPalette.current.accent)) { append("\u27AF ") }
+                                    append(PairCommand.addKey(identityForCommand.publicKeyLine))
+                                },
+                                color = MaterialTheme.colorScheme.onBackground,
+                                fontSize = 11.sp,
+                                lineHeight = 18.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            GhostButton(
+                                label = stringResource(R.string.pair_copy),
+                                onClick = {
+                                    clipboard.setText(
+                                        AnnotatedString(
+                                            PairCommand.addKey(identityForCommand.publicKeyLine),
+                                        ),
+                                    )
+                                    copiedCommand = true
+                                    copiedKey = false
+                                },
+                            )
+                        }
+                        if (copiedCommand) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = stringResource(R.string.pair_copied_command),
+                                color = LocalPalette.current.accent,
+                                fontSize = 11.sp,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Hairline()
+
+                    // The gc:// link paste field: the same local parse
+                    // (S25-4) the scanner runs — typed or pasted, refused
+                    // locally before any native call.
+                    BlockLabel(stringResource(R.string.pair_link_label))
+                    OutlinedTextField(
+                        value = pairLink,
+                        onValueChange = {
+                            pairLink = it
+                            pairError = null
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text(
+                                "gc://host:port?user=\u2026",
+                                color = LocalPalette.current.muted,
+                                fontSize = 13.sp,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        },
+                        textStyle = TextStyle(
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { if (pairLink.isNotBlank()) applyPairLink(pairLink) },
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = LocalPalette.current.accent,
+                            unfocusedBorderColor = LocalPalette.current.line,
+                            focusedContainerColor = LocalPalette.current.surface,
+                            unfocusedContainerColor = LocalPalette.current.surface,
+                            cursorColor = LocalPalette.current.accent,
+                        ),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row {
+                        GhostButton(
+                            label = stringResource(R.string.pair_paste),
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                val text = clipboard.getText()?.text.orEmpty()
+                                if (text.isBlank()) {
+                                    pairError =
+                                        context.getString(R.string.pair_clipboard_empty)
+                                } else {
+                                    applyPairLink(text)
+                                }
+                            },
+                        )
+                    }
+                    pairError?.let { error ->
+                        Notice(error, LocalPalette.current.error)
+                    }
+                    if (pasted) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = pairParams?.let {
+                                stringResource(
+                                    R.string.pair_will_pair,
+                                    "${it.host}:${it.port}", host, user,
+                                )
+                            } ?: stringResource(R.string.pair_will_connect, host, port, user),
+                            color = LocalPalette.current.muted,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
 
