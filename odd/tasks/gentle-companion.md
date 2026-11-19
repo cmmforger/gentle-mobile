@@ -222,6 +222,18 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   8. **The other projects**: the workspaces surface lists the projects the human is *not* in too, and offers the `+` to
      create one, so switching or starting is one tap. The word `Idle` is removed.
 
+- **S28 — Fourth phone test: fill the phone, real tabs, and one place per thing.**
+  1. **Tabs do nothing.** Pressing a tab must switch the visible pane; today the chips are inert because the core has no
+     `tab.focus` binding. Wire it.
+  2. **Header glyphs.** Back and refresh are grey and the arrow shape does not read: both in the theme's accent colour, and a
+     chevron for back.
+  3. **The frame must fill the phone and be readable.** The card leaves a large empty area below and the text is small; on a
+     big desktop screen it is small on the phone, and shrinking the desktop does not help. The surface must be derived from the
+     card: the largest cell size that still fills the card's height, so text is as big as possible and no empty area remains.
+  4. **One place per thing.** Workspaces belong inside each host (a second host brings its own), and the connected session's
+     card must not list projects again — that duplicate is what the rename row was opening.
+  5. **Workspace detail.** Its title collides with the status bar clock, so it needs the same back-button header as the rest;
+     and tapping a project must go straight into its session, not through an intermediate screen that repeats its name.
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -277,6 +289,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T20 | **Deferred (S16):** optional upstream ask for B-ii, a minimal `--attach-stdio` bridge for `gentle-shell-gpui`, after a `LICENSE` file exists. Not scheduled. | S3 S13 S16 | inline | — |
 | T21 | Continuity (v1.5): list the host's Gentle Shell sessions and resume a closed one, with a guard that refuses a session another process holds | S15 | worker | — |
 | T22 | Third phone test corrections: fit the frame to the phone, wider card, no measurement or `live` lines, quiet header glyphs, project name only, the workspace's tabs, and the full project list with `+` | S27 | worker | — |
+| T23 | Fourth phone test: working tabs via `tab.focus`, accent header glyphs, a surface derived from the card so the frame fills the phone, workspaces nested under their host without duplication, and a workspace screen that enters the session directly | S28 | worker | — |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
