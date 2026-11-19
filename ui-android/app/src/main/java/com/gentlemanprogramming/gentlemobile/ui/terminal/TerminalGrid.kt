@@ -185,9 +185,26 @@ private fun DrawScope.drawGrid(
     // 0.6em, so slots and glyphs disagreed.
     paint.typeface = painter.typefaceFor(0)
     val metrics = paint.fontMetrics
-    val cellWidth = paint.measureText("M")
-    val cellHeight = metrics.descent - metrics.ascent
-    val baseline = -metrics.ascent
+    var cellWidth = paint.measureText("M")
+    var cellHeight = metrics.descent - metrics.ascent
+
+    // The WHOLE frame must fit the canvas this renderer actually sees
+    // (S27-1): hinting can make the real advance at a small text size wider
+    // than the nominal ratio the fit used (80 × 12.0 px nominal drew as
+    // 80 × 12.2 px real — the last column fell off the card). Re-measure and
+    // rescale until the real cell size fits, so the last column is always
+    // inside the canvas whatever the font engine does.
+    var guard = 0
+    while ((cellWidth * cols > size.width || cellHeight * rows > size.height) && guard < 4) {
+        val widthScale = if (cellWidth * cols > size.width) size.width / (cellWidth * cols) else 1f
+        val heightScale = if (cellHeight * rows > size.height) size.height / (cellHeight * rows) else 1f
+        paint.textSize *= minOf(widthScale, heightScale)
+        cellWidth = paint.measureText("M")
+        val fm = paint.fontMetrics
+        cellHeight = fm.descent - fm.ascent
+        guard++
+    }
+    val baseline = -paint.fontMetrics.ascent
 
     fun cellX(column: Int): Float = column * cellWidth
     fun cellY(row: Int): Float = row * cellHeight

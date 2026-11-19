@@ -3658,25 +3658,28 @@ private fun SessionScreen(
                 }
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
+                        // S27b: the card hugs the frame's real rows — a
+                        // smaller frame leaves no dead black area below, a
+                        // taller one scrolls inside the leftover height.
+                        .height(with(density) { minOf(gridHeightPx, constraints.maxHeight.toFloat()).toDp() })
                         .clip(RoundedCornerShape(8.dp))
                         .onSizeChanged { viewSize = it }
                         .verticalScroll(vScroll)
                         .horizontalScroll(hScroll)
                         .transformable(transformState, canPan = { false }),
                 ) {
-                    // The canvas covers the whole viewport when the grid
-                    // fits (background everywhere) and the grid's own size
-                    // when a manual pinch overflows: scrolling then reveals
-                    // the rest — nothing is clipped.
-                    val canvasWidthPx = maxOf(gridWidthPx, viewSize.width.toFloat())
-                    val canvasHeightPx = maxOf(gridHeightPx, viewSize.height.toFloat())
+                    // The renderer guarantees the whole frame fits the
+                    // canvas it actually sees (it re-measures its own
+                    // paint and rescales when hinting widens the real
+                    // advance) — nothing is cropped, no horizontal
+                    // scrolling is needed to read a line.
                     TerminalSurface(
                         surface = surface,
                         fontSizePx = effectivePx,
                         modifier = Modifier.size(
-                            with(density) { canvasWidthPx.toDp() },
-                            with(density) { canvasHeightPx.toDp() },
+                            with(density) { maxOf(gridWidthPx, viewSize.width.toFloat()).toDp() },
+                            with(density) { maxOf(gridHeightPx, viewSize.height.toFloat()).toDp() },
                         ),
                     )
                 }

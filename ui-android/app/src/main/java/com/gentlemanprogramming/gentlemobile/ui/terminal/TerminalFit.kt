@@ -37,11 +37,22 @@ object TerminalFit {
      *  crash or an invisible grid. */
     private const val MIN_FONT_PX = 1f
 
+    /** Safety margin, in pixels, kept on each side of the card: the drawn
+     *  grid must never touch the card's own edge. Measured defect: 80
+     *  columns summed 976 px against a 974 px card — the last column fell
+     *  off the edge. */
+    private const val SAFETY_PX = 1f
+
     /**
      * The font size that fits the whole `cols x rows` frame into the card.
      * Width and height are both honoured: the binding side (the smaller of
      * the two bounds) wins, so a tall frame on a wide card shrinks to the
      * height and a wide frame on a short card shrinks to the width.
+     *
+     * The result is floored to whole pixels and computed against the card
+     * minus a safety pixel per side: the renderer measures its own paint
+     * per frame, and a fractional font lets the last column drift past the
+     * card's edge (80 × 12.2 px was 976 px against a 974 px card).
      */
     fun fit(
         cols: Int,
@@ -53,9 +64,11 @@ object TerminalFit {
     ): Result {
         val c = cols.coerceAtLeast(1)
         val r = rows.coerceAtLeast(1)
-        val widthBound = if (cardWidthPx > 0f) cardWidthPx / (c * advanceRatio) else Float.MAX_VALUE
-        val heightBound = if (cardHeightPx > 0f) cardHeightPx / (r * lineHeightRatio) else Float.MAX_VALUE
-        val fontPx = minOf(widthBound, heightBound).coerceAtLeast(MIN_FONT_PX)
+        val usableWidth = (cardWidthPx - 2f * SAFETY_PX).coerceAtLeast(0f)
+        val usableHeight = (cardHeightPx - 2f * SAFETY_PX).coerceAtLeast(0f)
+        val widthBound = if (usableWidth > 0f) usableWidth / (c * advanceRatio) else Float.MAX_VALUE
+        val heightBound = if (usableHeight > 0f) usableHeight / (r * lineHeightRatio) else Float.MAX_VALUE
+        val fontPx = kotlin.math.floor(minOf(widthBound, heightBound)).coerceAtLeast(MIN_FONT_PX)
         return Result(
             cols = c,
             rows = r,

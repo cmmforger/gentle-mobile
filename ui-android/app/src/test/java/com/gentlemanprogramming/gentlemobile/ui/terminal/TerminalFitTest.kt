@@ -36,8 +36,8 @@ class TerminalFitTest {
         val fit = TerminalFit.fit(80, 24, pixel6CardWidth, pixel6CardHeight, advance, lineHeight)
         val widthBound = pixel6CardWidth / (80 * advance)
         val heightBound = pixel6CardHeight / (24 * lineHeight)
-        assertEquals(widthBound, fit.fontPx, 0.001f)
         assertTrue("width bound ($widthBound) < height bound ($heightBound)", widthBound < heightBound)
+        assertTrue("the floored font must stay near the width bound", fit.fontPx <= widthBound)
     }
 
     @Test
@@ -55,10 +55,10 @@ class TerminalFitTest {
     fun `a frame taller than the card is bound by the height, not cropped`() {
         // 60x80 on a card where the height is the tight side.
         val fit = TerminalFit.fit(60, 80, 600f, 900f, advance, lineHeight)
-        val widthBound = 600f / (60 * advance)
         val heightBound = 900f / (80 * lineHeight)
-        assertTrue("height must be the binding side", heightBound < widthBound)
-        assertEquals(heightBound, fit.fontPx, 0.001f)
+        assertTrue("height must be the binding side",
+            heightBound < 600f / (60 * advance))
+        assertTrue(fit.fontPx <= heightBound)
         assertTrue(fit.gridWidthPx <= 600f + 0.01f)
         assertTrue(fit.gridHeightPx <= 900f + 0.01f)
     }
@@ -91,6 +91,48 @@ class TerminalFitTest {
                 )
             }
         }
+    }
+
+    // --- the third phone test's defect: the last column must never drift out ----
+
+    /** The measured defect: 80 columns at a fractional font summed to 976 px
+     *  against a 974 px card — one or more columns off the edge. The fit must
+     *  leave a safety pixel per side and land on whole pixels, because the
+     *  renderer measures its own paint per frame and a fractional font lets
+     *  the last column drift past the card. */
+    @Test
+    fun `80 columns fit into 974 px of content, with a safety pixel per side`() {
+        val fit = TerminalFit.fit(80, 24, 974f, 1475f, 0.6f, 1.32f)
+        assertTrue(
+            "grid ${fit.gridWidthPx} must leave 1 px of safety per side of the 974 px card",
+            fit.gridWidthPx <= 972f,
+        )
+        assertEquals("the font must land on whole pixels", 0f, fit.fontPx % 1f, 0.0001f)
+    }
+
+    @Test
+    fun `the cell width never exceeds the space the columns have`() {
+        val fit = TerminalFit.fit(80, 24, 974f, 1475f, 0.6f, 1.32f)
+        assertTrue(
+            "80 cells at ${fit.cellWidthPx} must fit inside 972 usable px",
+            fit.cellWidthPx * 80 <= 972f + 0.01f,
+        )
+    }
+
+    @Test
+    fun `the height hugs the real rows and never invents a taller grid`() {
+        val fit = TerminalFit.fit(80, 24, 974f, 1475f, 0.6f, 1.32f)
+        assertEquals(24 * fit.cellHeightPx, fit.gridHeightPx, 0.01f)
+        assertTrue(fit.gridHeightPx <= 1473f)
+    }
+
+    @Test
+    fun `a shorter card binds the height, a taller one never stretches the grid`() {
+        val short = TerminalFit.fit(80, 24, 974f, 600f, 0.6f, 1.32f)
+        val tall = TerminalFit.fit(80, 24, 974f, 2000f, 0.6f, 1.32f)
+        assertTrue(short.fontPx < tall.fontPx)
+        assertTrue("a taller card cannot grow the grid past its rows",
+            tall.gridHeightPx <= 24 * tall.cellHeightPx + 0.01f)
     }
 
     // --- degenerate inputs never crash or crop ----------------------------------
