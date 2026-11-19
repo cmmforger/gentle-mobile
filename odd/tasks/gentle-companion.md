@@ -133,6 +133,13 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   2. **Connection form in the app** like Termius/Moshi: host, port, user and key, as the primary manual path.
   3. Idea worth keeping from their QR: carry the **host key fingerprint** in the link so the phone can show it
      before connecting instead of only after the handshake.
+  4. **Typed QR parse errors, answered locally**: their `qr-parse` separates "not our code", "broken code" and
+     "newer protocol", with one message per case, and validates **before** any native call so a foreign QR never
+     stalls the camera preview. Our parser must do the same, and the link gains both `fp=` (host fingerprint,
+     shown before connecting) and a version field.
+  5. **A pure, framework-free validation module** for the Connection form (host as IPv4/IPv6/hostname, port
+     1–65535, user without spaces or `@`), with one exact message per rejection, tested without a UI runtime.
+     Their copy is rioplatense Spanish, which is what our `values-es` should read like.
   What we do **not** adopt: password inside the QR (a one-time token is strictly better), the 43721 tunnel
   (wrong backend for us), and the on-device agent local mode (a different product).
   Pair screen consequence: the primary surface becomes **Connection form + Scan QR**, and the phone key and the
