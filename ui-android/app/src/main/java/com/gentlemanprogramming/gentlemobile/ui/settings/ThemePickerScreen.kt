@@ -33,7 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
+import androidx.compose.ui.res.stringResource
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.paletteOf
 
@@ -68,11 +70,11 @@ fun ThemePickerScreen(
                 Text("‹", color = p.text, fontSize = 18.sp)
             }
             Spacer(Modifier.width(8.dp))
-            Text(text = "Theme", color = p.muted, fontSize = 13.sp)
+            Text(text = stringResource(R.string.theme_title), color = p.muted, fontSize = 13.sp)
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Theme",
+            text = stringResource(R.string.theme_title),
             color = MaterialTheme.colorScheme.onBackground,
             fontSize = 22.sp,
             lineHeight = 26.sp,
@@ -80,7 +82,7 @@ fun ThemePickerScreen(
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Same layout, new colours — the terminal and the app chrome switch together.",
+            text = stringResource(R.string.theme_intro),
             color = p.muted,
             fontSize = 13.sp,
         )
@@ -157,7 +159,7 @@ private fun ThemeCard(theme: AppTheme, selected: Boolean, onSelect: () -> Unit) 
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "accent ${hex(palette.accent)}",
+                    text = stringResource(R.string.theme_accent, hex(palette.accent)),
                     color = chrome.muted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
@@ -166,7 +168,7 @@ private fun ThemeCard(theme: AppTheme, selected: Boolean, onSelect: () -> Unit) 
             }
             if (theme == AppTheme.CUTE) {
                 Text(
-                    text = "DEFAULT",
+                    text = stringResource(R.string.theme_default),
                     color = chrome.muted,
                     fontSize = 11.sp,
                     letterSpacing = 0.6.sp,

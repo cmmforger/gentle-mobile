@@ -32,6 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gentlemanprogramming.gentlemobile.R
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import com.gentlemanprogramming.gentlemobile.core.DialogRequestDto
 import com.gentlemanprogramming.gentlemobile.core.TranscriptEntryDto
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
@@ -93,7 +96,7 @@ fun ResumedSessionScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                text = "‹ Sessions",
+                text = stringResource(R.string.res_back),
                 color = p.accent,
                 fontSize = 13.sp,
                 modifier = Modifier
@@ -101,7 +104,7 @@ fun ResumedSessionScreen(
                     .padding(vertical = 12.dp),
             )
             Text(
-                text = "rpc lane",
+                text = stringResource(R.string.res_lane),
                 color = p.muted,
                 fontSize = 11.sp,
                 letterSpacing = 0.8.sp,
@@ -109,7 +112,7 @@ fun ResumedSessionScreen(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = SessionsModel.resumedHeader(sessionId),
+            text = stringResource(R.string.res_header, sessionId),
             color = MaterialTheme.colorScheme.onBackground,
             fontSize = 18.sp,
             fontFamily = FontFamily.Monospace,
@@ -119,8 +122,12 @@ fun ResumedSessionScreen(
         )
         Text(
             text = listOfNotNull(
-                SessionsModel.resumedMeta(messageCount),
-                if (reclaimed) "stale lease reclaimed" else null,
+                pluralStringResource(
+                    R.plurals.messages_count,
+                    messageCount.toInt(),
+                    messageCount.toInt(),
+                ),
+                if (reclaimed) stringResource(R.string.res_reclaimed) else null,
             ).joinToString(" · "),
             color = p.muted,
             fontSize = 11.sp,
@@ -130,7 +137,7 @@ fun ResumedSessionScreen(
 
         if (transcript.isEmpty()) {
             Text(
-                text = SessionsModel.EMPTY_TRANSCRIPT_NOTE,
+                text = stringResource(R.string.res_empty),
                 color = p.muted,
                 fontSize = 13.sp,
             )
@@ -164,7 +171,7 @@ fun ResumedSessionScreen(
             Spacer(Modifier.height(12.dp))
             Text(
                 text = closeError
-                    ?: "Session closed — the child ended and the lease was released.",
+                    ?: stringResource(R.string.res_closed),
                 color = if (closeError != null) p.error else p.muted,
                 fontSize = 13.sp,
             )
@@ -182,18 +189,28 @@ fun ResumedSessionScreen(
             )
         }
         Spacer(Modifier.height(12.dp))
+        val closeCd = stringResource(R.string.cd_close_session)
         Text(
-            text = "Close session",
+            text = stringResource(R.string.res_close),
             color = p.accent,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier
                 .clickable(onClick = onClose)
                 .padding(vertical = 12.dp)
-                .semantics { contentDescription = "Close session — releases the lease" },
+                .semantics { contentDescription = closeCd },
         )
         Spacer(Modifier.height(24.dp))
     }
+}
+
+/** The transcript role word, localized (the pure [SessionsModel.roleLabel]
+ *  rule: unknown roles render as themselves — nothing invented). */
+@Composable
+private fun roleLabel(role: String): String = when (role) {
+    "user" -> stringResource(R.string.res_role_you)
+    "assistant" -> stringResource(R.string.res_role_agent)
+    else -> role
 }
 
 /** One transcript row: the role word and the text. No styling invented —
@@ -203,7 +220,7 @@ private fun TranscriptRow(entry: TranscriptEntryDto) {
     val p = LocalPalette.current
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(
-            text = SessionsModel.roleLabel(entry.role),
+            text = roleLabel(entry.role),
             color = p.muted,
             fontSize = 10.sp,
             fontFamily = FontFamily.Monospace,
@@ -235,7 +252,7 @@ private fun DialogCard(
             .padding(12.dp),
     ) {
         Text(
-            text = dialog.title ?: "The agent needs you",
+            text = dialog.title ?: stringResource(R.string.res_dialog_fallback),
             color = MaterialTheme.colorScheme.onBackground,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
@@ -260,7 +277,7 @@ private fun DialogCard(
         Spacer(Modifier.height(8.dp))
         Row {
             Text(
-                text = "Cancel",
+                text = stringResource(R.string.comp_cancel),
                 color = p.muted,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -312,9 +329,9 @@ private fun RpcComposer(
         Spacer(Modifier.width(8.dp))
         // The 44 px circle: accent while it can send, quiet while it cannot.
         val circleDescription = when {
-            sending -> "Send — waiting for the agent to settle"
-            canSend -> "Send"
-            else -> "Send — type a prompt first"
+            sending -> stringResource(R.string.res_send_waiting)
+            canSend -> stringResource(R.string.res_send_cd)
+            else -> stringResource(R.string.res_send_type_first)
         }
         androidx.compose.foundation.layout.Box(
             contentAlignment = Alignment.Center,

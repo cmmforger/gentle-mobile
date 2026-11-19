@@ -8,6 +8,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.core.content.ContextCompat
+import com.gentlemanprogramming.gentlemobile.R
 
 /**
  * T14 (S8): the real recognizer behind the dictation state machine.
@@ -50,6 +51,10 @@ class AndroidDictationEngine(private val context: Context) {
      * True when the microphone permission is not granted yet — the gate for
      * both recognizer paths, because both record audio while listening.
      */
+    /** Why dictation asks for the microphone, in the stored locale (S24-1). */
+    val permissionExplanation: String
+        get() = context.getString(R.string.dictation_permission_explanation)
+
     val needsPermission: Boolean
         get() = ContextCompat.checkSelfPermission(
             context,
@@ -63,7 +68,7 @@ class AndroidDictationEngine(private val context: Context) {
     fun availabilityReason(): String? = when {
         onDeviceAvailable() -> null
         SpeechRecognizer.isRecognitionAvailable(context) -> null
-        else -> "No speech recognizer is installed on this device — dictation is unavailable."
+        else -> context.getString(R.string.dict_no_recognizer)
     }
 
     private fun onDeviceAvailable(): Boolean =
@@ -75,7 +80,7 @@ class AndroidDictationEngine(private val context: Context) {
      */
     fun start(listener: Listener) {
         val recognizer = createRecognizer() ?: run {
-            listener.onError("No speech recognizer is installed on this device — dictation is unavailable.")
+            listener.onError(context.getString(R.string.dict_no_recognizer))
             return
         }
         recognizer.setRecognitionListener(Bridge(listener))
@@ -92,7 +97,12 @@ class AndroidDictationEngine(private val context: Context) {
             recognizer.startListening(intent)
         } catch (error: Exception) {
             destroy()
-            listener.onError("The recognizer could not start: ${error.message ?: error.javaClass.simpleName}")
+            listener.onError(
+                context.getString(
+                    R.string.dict_start_failed,
+                    error.message ?: error.javaClass.simpleName,
+                ),
+            )
         }
     }
 
@@ -169,14 +179,14 @@ class AndroidDictationEngine(private val context: Context) {
 
         /** The recognizer's error codes, in words the composer can show. */
         private fun describe(error: Int) = when (error) {
-            SpeechRecognizer.ERROR_NO_MATCH -> "No speech heard — nothing was dictated."
-            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech heard — the microphone stayed quiet."
+            SpeechRecognizer.ERROR_NO_MATCH -> context.getString(R.string.dict_no_speech)
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> context.getString(R.string.dict_silent)
             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
-                "The microphone permission was refused, so nothing was heard."
+                context.getString(R.string.dict_permission_refused)
             SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
-                "The recognizer's network service failed — the on-device engine avoids this."
-            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "The recognizer was busy — try again in a moment."
-            else -> "Dictation failed (recognizer error $error)."
+                context.getString(R.string.dict_network_failed)
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> context.getString(R.string.dict_busy)
+            else -> context.getString(R.string.dict_failed, error)
         }
     }
 }

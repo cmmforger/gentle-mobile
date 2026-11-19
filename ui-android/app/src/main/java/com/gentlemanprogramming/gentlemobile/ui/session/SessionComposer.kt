@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import kotlinx.coroutines.delay
@@ -114,7 +115,7 @@ fun SessionComposer(
         }
         if (sent) {
             Text(
-                text = "Sent — the host confirmed the submission.",
+                text = stringResource(R.string.comp_sent),
                 color = palette.accent,
                 fontSize = 12.sp,
             )
@@ -219,9 +220,9 @@ private fun DictationListeningLine(
         Spacer(Modifier.width(12.dp))
         Text(
             text = if (partial != null) {
-                "Listening… \"$partial\""
+                stringResource(R.string.comp_listening_partial, partial)
             } else {
-                "Listening…"
+                stringResource(R.string.comp_listening)
             },
             color = palette.muted,
             fontSize = 13.sp,
@@ -237,8 +238,8 @@ private fun DictationListeningLine(
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace,
         )
-        DictationAction("Stop", palette.accentEdge, enabled = true, onClick = onStop)
-        DictationAction("Cancel", palette.muted, enabled = true, onClick = onCancel)
+        DictationAction(stringResource(R.string.comp_stop), palette.accentEdge, enabled = true, onClick = onStop)
+        DictationAction(stringResource(R.string.comp_cancel), palette.muted, enabled = true, onClick = onCancel)
     }
 }
 
@@ -294,6 +295,7 @@ private fun AttachmentRow(
     onRemove: () -> Unit,
 ) {
     val palette = LocalPalette.current
+    val removeCd = stringResource(R.string.att_remove_cd, attachment.displayName)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -312,7 +314,7 @@ private fun AttachmentRow(
             if (thumbnail != null) {
                 Image(
                     bitmap = thumbnail,
-                    contentDescription = "Preview of ${attachment.displayName}",
+                    contentDescription = stringResource(R.string.att_preview_of, attachment.displayName),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.size(56.dp),
                 )
@@ -357,16 +359,23 @@ private fun AttachmentRow(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "uploading · $pct % · ${formatBytes(state.sentBytes)} / " +
+                        text = stringResource(
+                            R.string.att_uploading,
+                            pct,
+                            formatBytes(state.sentBytes),
                             formatBytes(attachment.sizeBytes),
+                        ),
                         color = palette.muted,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                     )
                 }
                 is AttachmentState.Uploaded -> Text(
-                    text = "✓ uploaded · ${formatBytes(attachment.sizeBytes)} · " +
+                    text = stringResource(
+                        R.string.att_uploaded,
+                        formatBytes(attachment.sizeBytes),
                         state.remotePath,
+                    ),
                     color = palette.success,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
@@ -374,7 +383,7 @@ private fun AttachmentRow(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
                 is AttachmentState.Failed -> Text(
-                    text = "Upload failed — ${state.message}",
+                    text = stringResource(R.string.att_failed, state.message),
                     color = palette.error,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
@@ -382,7 +391,7 @@ private fun AttachmentRow(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
                 AttachmentState.Ready -> Text(
-                    text = "waiting to upload · ${formatBytes(attachment.sizeBytes)}",
+                    text = stringResource(R.string.att_ready, formatBytes(attachment.sizeBytes)),
                     color = palette.muted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
@@ -391,7 +400,7 @@ private fun AttachmentRow(
         }
         if (attachment.state is AttachmentState.Failed) {
             Text(
-                text = "Retry",
+                text = stringResource(R.string.att_retry),
                 color = palette.accentEdge,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -406,7 +415,7 @@ private fun AttachmentRow(
                 .size(44.dp)
                 .clickable(onClick = onRemove)
                 .semantics {
-                    contentDescription = "Remove image ${attachment.displayName}"
+                    contentDescription = removeCd
                 },
         ) {
             Text(text = "✕", color = palette.muted, fontSize = 15.sp)
@@ -434,7 +443,7 @@ private fun ComposerField(
     ) {
         ComposerIcon(
             drawable = R.drawable.ic_camera,
-            description = "Take a photo with the camera",
+            description = stringResource(R.string.cd_camera),
             enabled = true,
             onClick = onCamera,
         )
@@ -453,7 +462,7 @@ private fun ComposerField(
         )
         ComposerIcon(
             drawable = R.drawable.ic_clip,
-            description = "Attach an image from the gallery",
+            description = stringResource(R.string.cd_clip),
             enabled = true,
             onClick = onPickImage,
         )
@@ -509,6 +518,8 @@ private fun ComposerCircle(
 ) {
     val palette = LocalPalette.current
     val sendEnabled = canSend && !sending
+    val sendCd = stringResource(R.string.cd_send)
+    val sendWaitingCd = stringResource(R.string.cd_send_waiting)
     // A tap on the circle during dictation stops it; the listening line's
     // Stop and Cancel buttons are the explicit path too.
     val listening = dictation is DictationState.Listening
@@ -518,12 +529,15 @@ private fun ComposerCircle(
         dictation is DictationState.Error
     val micEnabled = listening || micStartable
     val micDescription = when (dictation) {
-        is DictationState.Listening -> "Stop dictation"
-        is DictationState.RequestingPermission -> "Dictate — waiting for the microphone permission"
-        is DictationState.Denied -> "Dictate — speech becomes text. ${dictation.explanation}"
-        is DictationState.Unavailable -> "Dictate — speech becomes text. ${dictation.reason}"
-        is DictationState.Error -> "Dictate — speech becomes text. Try again: ${dictation.message}"
-        else -> "Dictate — speech becomes text"
+        is DictationState.Listening -> stringResource(R.string.cd_mic_stop)
+        is DictationState.RequestingPermission -> stringResource(R.string.cd_mic_permission)
+        is DictationState.Denied ->
+            stringResource(R.string.cd_mic_reason, dictation.explanation)
+        is DictationState.Unavailable ->
+            stringResource(R.string.cd_mic_reason, dictation.reason)
+        is DictationState.Error ->
+            stringResource(R.string.cd_mic_reason, dictation.message)
+        else -> stringResource(R.string.cd_mic)
     }
     val circleModifier = when {
         sendEnabled -> Modifier
@@ -531,12 +545,12 @@ private fun ComposerCircle(
             .clip(CircleShape)
             .background(palette.accent)
             .clickable(onClick = onSend)
-            .semantics { contentDescription = "Send" }
+            .semantics { contentDescription = sendCd }
         hasContent -> Modifier
             .size(44.dp)
             .clip(CircleShape)
             .background(palette.accentPressed)
-            .semantics { contentDescription = "Send — waiting for the attachments to finish" }
+            .semantics { contentDescription = sendWaitingCd }
         micEnabled -> Modifier
             .size(44.dp)
             .clip(CircleShape)

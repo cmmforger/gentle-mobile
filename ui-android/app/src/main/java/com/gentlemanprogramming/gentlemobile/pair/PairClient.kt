@@ -55,7 +55,19 @@ object PairClient {
      * [Result.Refused] with the reason. A network failure (listener gone,
      * TTL over, unreachable host) is a refusal too, with its own message.
      */
-    fun sendKey(pairHost: String, pairPort: String, token: String, publicKeyLine: String): Result {
+    fun sendKey(pairHost: String, pairPort: String, token: String, publicKeyLine: String): Result =
+        sendKey(pairHost, pairPort, token, publicKeyLine, ::defaultUnreachable, ::defaultRefusal)
+
+    /** Same request, with the refusal messages built by [unreachable] and
+     *  [refusal] so the UI can show them in the user's language (S24-1). */
+    fun sendKey(
+        pairHost: String,
+        pairPort: String,
+        token: String,
+        publicKeyLine: String,
+        unreachable: (pairHost: String, pairPort: String, reason: String) -> String,
+        refusal: (status: Int, detail: String?) -> String,
+    ): Result {
         val body = "{\"token\":\"${jsonEscape(token)}\",\"key\":\"${jsonEscape(publicKeyLine)}\"}"
         return try {
             val connection = URL("http://$pairHost:$pairPort/pair").openConnection()
@@ -69,21 +81,34 @@ object PairClient {
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
             val reply = readBody(connection)
-            parseReply(status, reply)
+            parseReply(status, reply, refusal)
         } catch (error: IOException) {
             Result.Refused(
-                "Could not reach the pairing endpoint at $pairHost:$pairPort — " +
-                    "run gentle-mobile-pair on the host and start again. (${error.message ?: "connection failed"})",
+                unreachable(pairHost, pairPort, error.message ?: "connection failed"),
             )
         }
     }
+
+    /** The default (English) unreachable refusal; the pure tests rely on it. */
+    fun defaultUnreachable(pairHost: String, pairPort: String, reason: String): String =
+        "Could not reach the pairing endpoint at $pairHost:$pairPort — " +
+            "run gentle-mobile-pair on the host and start again. ($reason)"
 
     private fun readBody(connection: HttpURLConnection): String =
         (connection.inputStream ?: connection.errorStream)?.use { it.readBytes() }
             ?.toString(Charsets.UTF_8).orEmpty()
 
     /** Map the listener's status + JSON body to a result with a readable message. */
-    fun parseReply(status: Int, body: String): Result {
+    fun parseReply(status: Int, body: String): Result =
+        parseReply(status, body, ::defaultRefusal)
+
+    /** Same mapping, with the refusal message built by [refusal] for the
+     *  UI's language (S24-1). */
+    fun parseReply(
+        status: Int,
+        body: String,
+        refusal: (status: Int, detail: String?) -> String,
+    ): Result {
         val error = jsonStringField(body, "error")
         if (status in 200..299) {
             if (jsonStringField(body, "written") == "already trusted") {
@@ -92,15 +117,19 @@ object PairClient {
             return Result.Accepted(alreadyTrusted = false)
         }
         val detail = error?.takeIf { it.isNotBlank() }
+        return Result.Refused(refusal(status, detail))
+    }
+
+    /** The default (English) refusal per status; the pure tests rely on it. */
+    fun defaultRefusal(status: Int, detail: String?): String {
         val suffix = detail?.let { " — $it" }.orEmpty()
-        val message = when (status) {
+        return when (status) {
             401 -> "The host refused the token — this link does not match the running gentle-mobile-pair." + suffix
             403 -> "Pairing expired — run gentle-mobile-pair on the host and scan or paste the new link." + suffix
             409 -> "That pairing was already used — run gentle-mobile-pair on the host for a new one." + suffix
             400 -> "The host refused the key" + (detail?.let { ": $it" } ?: " as malformed.")
             else -> "The host refused the pairing (HTTP $status)" + (detail?.let { ": $it" } ?: ".")
         }
-        return Result.Refused(message)
     }
 
     /** Read one string field out of the listener's small JSON replies. */

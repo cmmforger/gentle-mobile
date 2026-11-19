@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Variante en español de cada cadena de la app (S24-1). El inglés es el
+  idioma por defecto (res/values/strings.xml). Reglas: redacción natural,
+  sin tecnicismos (nada de "lease", "snapshot" ni "protocol 22" en el
+  texto al usuario), plurales con <plurals> donde aparece un contador.
+  Nunca se traducen: nombres de agentes, rutas, ids de sesión,
+  huellas digitales, números de protocolo.
+-->
+<resources>
+    <!-- Descripciones para lectores de pantalla -->
+    <string name="cd_settings">Ajustes</string>
+    <string name="cd_back">Atrás</string>
+    <string name="cd_back_to_hosts">Volver a los hosts</string>
+    <string name="cd_close_session">Cerrar sesión — la libera para otros dispositivos</string>
+
+    <!-- Pantalla de emparejamiento -->
+    <string name="pair_title">Conectate a tu computadora</string>
+    <string name="pair_intro">Ejecutá gentle-mobile-pair en el host, escaneá su QR — o pegá el enlace — y la clave queda confiada en un paso. Después se confirma la clave del host una sola vez.</string>
+    <string name="pair_key_label">La clave de este teléfono</string>
+    <string name="pair_creating_key">Creando la clave\u2026</string>
+    <string name="pair_copy">Copiar</string>
+    <string name="pair_copied">Copiado</string>
+    <string name="pair_key_trust_hint">El host tiene que confiar en esta clave antes de poder conectarse.</string>
+    <string name="pair_host_label">En el host</string>
+    <string name="pair_ready_when_key">Listo cuando exista la clave de este teléfono.</string>
+    <string name="pair_copied_command">Copiado — ejecutalo en el host.</string>
+    <string name="pair_link_label">Enlace de conexión</string>
+    <string name="pair_paste">Pegar</string>
+    <string name="pair_clipboard_empty">El portapapeles está vacío — copiá el enlace que imprimió el host.</string>
+    <string name="pair_will_pair">Se va a emparejar con %1$s \u00B7 ssh %2$s \u00B7 %3$s</string>
+    <string name="pair_will_connect">Se va a conectar a %1$s \u00B7 %2$s \u00B7 %3$s</string>
+    <string name="pair_button">Conectar</string>
+    <string name="pair_button_pairing">Emparejando\u2026</string>
+    <string name="pair_button_connecting">Conectando\u2026</string>
+    <string name="pair_status_pairing">Emparejando — enviando la clave de este teléfono a %1$s\u2026</string>
+    <string name="pair_status_accepted">Clave aceptada — conectando\u2026</string>
+    <string name="pair_status_probing">Verificando la clave del host, después abrimos el puente\u2026</string>
+    <string name="pair_notifications_explaining">Android pregunta si Gentle Mobile puede notificarte — cuando un agente te necesita, el teléfono debería avisar. Si rechazás, todo sigue funcionando; en Ajustes se va a ver que las notificaciones están apagadas.</string>
+    <string name="pair_scan_qr">Escanear QR</string>
+    <string name="pair_camera_denied">Permiso de cámara rechazado — pegá el enlace.</string>
+    <string name="pair_no_camera">Este dispositivo no tiene cámara — pegá el enlace.</string>
+    <string name="pair_no_key_yet">Todavía no hay clave de cliente en este teléfono — la identidad tiene que existir antes de emparejar.</string>
+    <string name="pair_no_key_file">No hay clave de cliente en %1$s — no se pudo preparar la identidad en este teléfono.</string>
+
+    <!-- Confirmación de la clave del host -->
+    <string name="chal_verify">Verificá este host</string>
+    <string name="chal_presents">El host presentó esta huella de clave:</string>
+    <string name="chal_pinned_differs">La clave guardada es distinta: %1$s. Al aceptarla la reemplazás.</string>
+    <string name="chal_accept">Aceptar y conectar</string>
+    <string name="chal_cancel">Cancelar</string>
+
+    <!-- Escáner QR -->
+    <string name="scan_hint">Apuntá la cámara al QR que imprimió el host.</string>
+    <string name="scan_cancel">Cancelar</string>
+
+    <!-- Pantalla de hosts -->
+    <string name="nodes_state_connected">Conectado</string>
+    <string name="nodes_state_connecting">Conectando</string>
+    <string name="nodes_state_interrupted">Interrumpido</string>
+    <string name="nodes_state_failed">Falló</string>
+    <string name="nodes_disconnect">Desconectar</string>
+    <string name="nodes_waiting">Esperando la primera actualización\u2026</string>
+    <string name="nodes_your_hosts">Tus hosts</string>
+    <string name="nodes_meta">%1$s \u00B7 puerto %2$s \u00B7 %3$s</string>
+    <string name="nodes_state_row_connected">conectado</string>
+    <string name="nodes_state_row_interrupted">interrumpido</string>
+    <string name="nodes_one_host">Por ahora un host por instalación — agregar un segundo host necesita una versión futura.</string>
+    <string name="nodes_session_history">Historial de sesiones</string>
+    <string name="nodes_session_history_sub">Abrí una sesión de Gentle Shell que ya existe en el host.</string>
+
+    <!-- Grupos de la bandeja de agentes -->
+    <string name="inbox_back">Agentes</string>
+    <string name="inbox_group_needs_you">Te necesita</string>
+    <string name="inbox_group_done">Terminado</string>
+    <string name="inbox_group_working">Trabajando</string>
+    <string name="inbox_group_idle">En espera</string>
+    <string name="inbox_group_unknown">Desconocido</string>
+    <string name="inbox_group_count">%1$s \u00B7 %2$d</string>
+    <string name="inbox_no_agents">No hay agentes corriendo en este host ahora mismo.</string>
+    <string name="inbox_interrupted_title">Conexión interrumpida.</string>
+    <string name="inbox_interrupted_suffix">%1$s — lo que se ve en pantalla es lo último que se recibió.</string>
+    <string name="inbox_retry_now">Reintentar ahora</string>
+
+    <!-- Palabras de estado de un agente -->
+    <string name="status_idle">en espera</string>
+    <string name="status_working">trabajando</string>
+    <string name="status_needs_you">te necesita</string>
+    <string name="status_done">terminado</string>
+    <string name="status_unknown">desconocido</string>
+    <string name="status_live">en vivo</string>
+    <string name="status_not_live">sin conexión</string>
+
+    <!-- Pantalla de sesión de un agente -->
+    <string name="session_refresh">Actualizar</string>
+    <string name="session_live_line">%1$s \u00B7 lo que el agente muestra ahora mismo</string>
+    <string name="session_not_live_line">%1$s \u00B7 esto es lo que se veía antes de que se cortara la conexión</string>
+    <string name="session_reading_pane">Leyendo el panel\u2026</string>
+    <string name="session_pane_empty">(el panel no muestra texto ahora mismo)</string>
+    <string name="session_pane_truncated">El host dejó fuera las filas más viejas.</string>
+    <string name="session_no_camera_app">no hay una app de cámara en este dispositivo</string>
+    <string name="session_no_gallery_app">no hay una app de galería en este dispositivo</string>
+    <string name="session_reason_link_down">la conexión estaba cortada mientras la app estaba en segundo plano</string>
+    <string name="session_reason_host_closed">el host cerró la conexión</string>
+    <string name="session_stats_line">%1$d\u00D7%2$d \u00B7 %3$d celdas dibujadas \u00B7 %4$d colores</string>
+    <string name="session_stats_wide">\u00B7 ancho \u0022%1$s\u0022</string>
+    <string name="session_stats_cursor">\u00B7 cursor</string>
+    <string name="session_stats_scroll">\u00B7 desplazar \u2194</string>
+    <string name="session_stats_at_bottom">\u00B7 al final</string>
+    <string name="session_stats_scrolled">\u00B7 desplazado</string>
+    <string name="session_stats_sp">sp</string>
+
+    <!-- Compositor -->
+    <string name="comp_sent">Enviado — el host confirmó el envío.</string>
+    <string name="comp_listening">Escuchando\u2026</string>
+    <string name="comp_listening_partial">Escuchando\u2026 \u0022%1$s\u0022</string>
+    <string name="comp_stop">Parar</string>
+    <string name="comp_cancel">Cancelar</string>
+    <string name="cd_camera">Sacar una foto con la cámara</string>
+    <string name="cd_clip">Adjuntar una imagen de la galería</string>
+    <string name="cd_send">Enviar</string>
+    <string name="cd_send_waiting">Enviar — esperando que terminen los adjuntos</string>
+    <string name="cd_mic_stop">Parar el dictado</string>
+    <string name="cd_mic_permission">Dictar — esperando el permiso del micrófono</string>
+    <string name="cd_mic">Dictar — tu voz se convierte en texto</string>
+    <string name="cd_mic_reason">Dictar — tu voz se convierte en texto. %1$s</string>
+    <string name="dictation_permission_explanation">El dictado escucha tu voz y la escribe como texto en el campo — no se graba ni se guarda nada.</string>
+
+    <!-- Adjuntos -->
+    <string name="att_preview_of">Vista previa de %1$s</string>
+    <string name="att_uploading">subiendo \u00B7 %1$d %% \u00B7 %2$s / %3$s</string>
+    <string name="att_uploaded">\u2713 subido \u00B7 %1$s \u00B7 %2$s</string>
+    <string name="att_failed">Falló la subida — %1$s</string>
+    <string name="att_ready">esperando para subir \u00B7 %1$s</string>
+    <string name="att_retry">Reintentar</string>
+    <string name="att_remove_cd">Quitar la imagen %1$s</string>
+    <string name="att_unreadable">no se pudo leer la imagen</string>
+    <string name="att_unreadable_anymore">la imagen ya no se puede leer</string>
+    <string name="att_too_large">el archivo es muy grande: %1$s, el host acepta hasta %2$s</string>
+
+    <!-- Historial de sesiones (las sesiones guardadas del host) -->
+    <string name="hist_back">Hosts</string>
+    <string name="hist_one_device">un dispositivo a la vez</string>
+    <string name="hist_title">Historial de sesiones</string>
+    <string name="hist_subtitle">%1$s@%2$s \u00B7 gentle shell</string>
+    <string name="hist_listing">Leyendo los archivos de sesión por la conexión — un host con muchas sesiones puede tardar un poco.</string>
+    <string name="hist_listing_slow">Sigue leyendo — las sesiones del host se leen de a un archivo por vez. (%1$d s hasta ahora)</string>
+    <string name="hist_list_error">No se pudieron listar las sesiones: %1$s</string>
+    <string name="hist_empty">No hay sesiones en este directorio.</string>
+    <string name="hist_state_free">libre</string>
+    <string name="hist_state_held_here">abierta en este dispositivo</string>
+    <string name="hist_state_reclaimed">recién recuperada</string>
+    <string name="hist_state_elsewhere">en uso en otro lado</string>
+    <string name="hist_state_stale">se puede tomar</string>
+    <string name="hist_note_taken">La tomaste — este dispositivo ahora puede retomarla.</string>
+    <string name="hist_note_released">Soltada — la sesión está libre otra vez.</string>
+    <string name="hist_note_reclaimed">La sesión quedó a medio terminar — la tomaste y podés retomarla.</string>
+    <string name="hist_note_elsewhere_live">Otro dispositivo está usando esta sesión ahora mismo — no se tomó.</string>
+    <string name="hist_fallback_name">sesión</string>
+    <string name="hist_sheet_session_id">Id de sesión</string>
+    <string name="hist_sheet_file">Archivo</string>
+    <string name="hist_sheet_dir">Directorio de trabajo</string>
+    <string name="hist_sheet_last_write">Última escritura</string>
+    <string name="hist_sheet_messages">Mensajes</string>
+    <string name="hist_sheet_state">Estado de la sesión</string>
+    <string name="hist_state_free_detail">libre — ningún dispositivo la está usando</string>
+    <string name="hist_state_held_here_detail">en uso en este dispositivo</string>
+    <string name="hist_state_elsewhere_detail">en uso en otro dispositivo</string>
+    <string name="hist_state_stale_detail">quedó a medio terminar — el otro dispositivo dejó de responder, podés tomarla</string>
+    <string name="hist_sheet_dir_missing">sin registrar</string>
+    <string name="hist_sheet_messages_too_many">demasiados para contarlos rápido</string>
+    <string name="hist_resume">Retomar sesión</string>
+    <string name="hist_resume_ok">Retomar abre la sesión como quedó — este dispositivo la tiene ahora.</string>
+    <string name="hist_resume_take_first">Tomá la sesión primero — retomarla la abre para este dispositivo, y solo un dispositivo puede usarla a la vez.</string>
+    <string name="hist_resume_elsewhere">En uso en otro lado — otro dispositivo está usando esta sesión ahora mismo, así que no se puede abrir acá.</string>
+    <string name="hist_resume_stale">La sesión quedó a medio terminar en el host. Tomala primero, después retomala.</string>
+    <string name="hist_take">Tomar</string>
+    <string name="hist_release">Soltar</string>
+
+    <!-- Tiempo relativo -->
+    <string name="time_just_now">justo ahora</string>
+    <string name="time_min_ago">hace %1$d min</string>
+    <string name="time_h_ago">hace %1$d h</string>
+    <string name="time_d_ago">hace %1$d d</string>
+
+    <!-- Sesión retomada -->
+    <string name="res_back">Sesiones</string>
+    <string name="res_lane">canal rpc</string>
+    <string name="res_header">retomada \u00B7 %1$s</string>
+    <string name="res_reclaimed">recién recuperada</string>
+    <string name="res_empty">Esta sesión todavía no tiene mensajes.</string>
+    <string name="res_role_you">vos</string>
+    <string name="res_role_agent">agente</string>
+    <string name="res_closed">Sesión cerrada — la sesión terminó y quedó liberada.</string>
+    <string name="res_close">Cerrar sesión</string>
+    <string name="res_dialog_fallback">El agente te necesita</string>
+    <string name="res_send_cd">Enviar</string>
+    <string name="res_send_waiting">Enviar — esperando que el agente se acomode</string>
+    <string name="res_send_type_first">Enviar — escribí un mensaje primero</string>
+
+    <!-- Contadores -->
+    <plurals name="messages_count">
+        <item quantity="one">%d mensaje</item>
+        <item quantity="other">%d mensajes</item>
+    </plurals>
+    <plurals name="agents_count">
+        <item quantity="one">%d agente</item>
+        <item quantity="other">%d agentes</item>
+    </plurals>
+    <plurals name="pinned_count">
+        <item quantity="one">%d host guardado</item>
+        <item quantity="other">%d hosts guardados</item>
+    </plurals>
+
+    <!-- Ajustes -->
+    <string name="set_title">Ajustes</string>
+    <string name="set_section_security">Seguridad</string>
+    <string name="set_section_connection">Conexión</string>
+    <string name="set_section_appearance">Apariencia</string>
+    <string name="set_section_about">Acerca de</string>
+    <string name="set_summary_security">clave del dispositivo \u00B7 hosts guardados \u00B7 biometría \u00B7 fijado</string>
+    <string name="set_summary_connection">canal \u00B7 directorio de sesiones \u00B7 notificaciones</string>
+    <string name="set_summary_appearance">tema \u00B7 idioma</string>
+    <string name="set_summary_about">versión \u00B7 novedades</string>
+
+    <string name="set_device_key">Clave del dispositivo</string>
+    <string name="set_device_key_error">No se pudo leer la identidad.</string>
+    <string name="set_device_key_sub">ed25519 \u00B7 %1$s \u00B7 almacenamiento privado de la app</string>
+    <string name="set_device_key_fp_unavailable">huella no disponible</string>
+    <string name="set_device_key_reading">Leyendo la clave\u2026</string>
+    <string name="set_regenerate">Regenerar</string>
+    <string name="set_regenerated">Clave nueva generada — se borraron los hosts guardados. Cada host tiene que confiar en esta clave otra vez antes de conectarse.</string>
+    <string name="set_copy_key">Copiar clave</string>
+    <string name="set_known_hosts">Hosts guardados</string>
+    <string name="set_known_hosts_empty">Todavía no hay hosts guardados — conectate una vez y la clave del host se guarda sola.</string>
+    <string name="set_known_hosts_open">%1$d guardados — tocá para ocultar</string>
+    <string name="set_known_hosts_closed">%1$s — %2$d guardados</string>
+    <string name="set_hide">Ocultar</string>
+    <string name="set_manage">Administrar</string>
+    <string name="set_forget">Olvidar</string>
+    <string name="set_forget_note">Olvidar un host borra solo su clave guardada — la próxima conexión te vuelve a pedir que confirmes la huella del host.</string>
+    <string name="set_biometric">Desbloqueo biométrico</string>
+    <string name="set_biometric_sub">huella antes de abrir cualquier sesión</string>
+    <string name="set_biometric_no_hw">Este dispositivo no tiene hardware biométrico utilizable — el interruptor queda apagado.</string>
+    <string name="set_biometric_not_enrolled">No hay huella ni credencial del dispositivo enrolada — enrolá una primero en los ajustes de Android.</string>
+    <string name="set_biometric_checking">Verificando la capacidad biométrica de este dispositivo\u2026</string>
+    <string name="set_pinning">Fijado de clave del host</string>
+    <string name="set_pinning_sub">Rechaza un host cuya clave SSH cambió.</string>
+
+    <string name="set_sessions_dir">Directorio de sesiones</string>
+    <string name="set_sessions_dir_default">por defecto \u00B7 ~/.gentle-shell/agent/sessions</string>
+    <string name="set_edit">Editar</string>
+    <string name="set_sessions_dir_hint">vacío = el valor por defecto del host</string>
+    <string name="set_save">Guardar</string>
+    <string name="set_lane_herdr">Herdr TUI</string>
+    <string name="set_lane_herdr_sub">Conectarse a Herdr</string>
+    <string name="set_lane_shell">Gentle Shell</string>
+    <string name="set_lane_shell_sub">Abrir una sesión de shell</string>
+    <string name="set_lane_note">Las sesiones directas de Gentle Shell todavía no están en el core — Herdr TUI es el único canal.</string>
+    <string name="set_notifications">Notificaciones de agentes</string>
+    <string name="set_enable_notifications">Activar notificaciones</string>
+    <string name="set_enable_notifications_sub">Abre los ajustes de notificación de Android para Gentle Mobile.</string>
+    <string name="set_notifications_on">Encendidas</string>
+    <string name="set_notifications_off">Apagadas</string>
+    <string name="set_notifications_on_detail">El teléfono te va a avisar cuando un agente te necesite.</string>
+    <string name="set_notifications_off_detail">Apagadas — las notificaciones fueron rechazadas, así que el teléfono queda callado mientras un agente te necesite. Activalas en los ajustes de Android.</string>
+    <string name="set_notifications_na_detail">Esta versión de Android no pregunta — permitir las notificaciones es cosa del sistema.</string>
+
+    <string name="set_theme">Tema</string>
+    <string name="set_theme_cute_sub">por defecto \u00B7 tocá para elegir Sexy o Gentle</string>
+    <string name="set_theme_sub">tocá para elegir Cute, Sexy o Gentle</string>
+    <string name="set_language">Idioma · %1$s</string>
+    <string name="set_cancel">Cancelar</string>
+    <string name="set_language_switch_sub">Tocá para cambiar a %1$s</string>
+
+    <string name="set_about_version">Gentle Mobile %1$s</string>
+    <string name="set_about_sub">Apache-2.0</string>
+    <string name="set_whats_new">Novedades</string>
+    <string name="set_no_release_notes">Todavía no hay notas de versión — esta es %1$s.</string>
+    <string name="set_disconnect">Desconectar</string>
+    <string name="set_disconnect_note">Sin conexión — la acción de desconectar pertenece a una sesión viva.</string>
+    <string name="set_revoke">Revocar en este dispositivo</string>
+    <string name="set_revoke_note">Borra la clave de este teléfono y sus hosts guardados. Del lado del host todavía hace falta gentle-mobile-pair --revoke en cada host — la app no puede ejecutarlo: solo tiene la clave de este teléfono, nunca una shell en el host.</string>
+    <string name="set_confirm_regenerate_title">¿Regenerar la clave del dispositivo?</string>
+    <string name="set_confirm_regenerate_body">Esto destruye la clave vieja y borra todos los hosts guardados — una clave nueva significa confianza nueva. Cada host tiene que confiar en la clave nueva antes de poder conectarse.</string>
+    <string name="set_confirm_revoke_title">¿Revocar en este dispositivo?</string>
+    <string name="set_confirm_revoke_body">Esto borra la clave de este teléfono y todos los hosts guardados. El host todavía confía en la clave vieja hasta que ejecutes gentle-mobile-pair --revoke ahí — la app no puede hacerlo por vos: solo tiene la clave de este teléfono, nunca una shell en el host.</string>
+    <string name="set_confirm_revoke">Revocar</string>
+
+    <!-- Selector de tema -->
+    <string name="theme_title">Tema</string>
+    <string name="theme_intro">Mismo diseño, nuevos colores — la terminal y el resto de la app cambian juntos.</string>
+    <string name="theme_accent">acento %1$s</string>
+    <string name="theme_default">PREDETERMINADO</string>
+
+    <!-- Prompt biométrico -->
+    <string name="bio_title">Desbloquear Gentle Mobile</string>
+    <string name="bio_subtitle">Confirmá que sos vos antes de abrir la sesión.</string>
+
+    <!-- Notificaciones -->
+    <string name="notif_channel_connection">Conexión</string>
+    <string name="notif_channel_connection_desc">Aparece mientras hay una conexión a un host viva en segundo plano.</string>
+    <string name="notif_channel_agents">Actividad de agentes</string>
+    <string name="notif_channel_agents_desc">Un agente te necesita, o terminó.</string>
+    <string name="notif_connected">conectado \u00B7 %1$s</string>
+    <string name="notif_connected_body">Tus agentes están al alcance. Tocá para abrir.</string>
+    <string name="notif_disconnect">Desconectar</string>
+    <string name="notif_needs_you">%1$s te necesita</string>
+    <string name="notif_done">%1$s terminó</string>
+    <string name="notif_fallback_host">host</string>
+
+    <!-- Motivos del motor de dictado -->
+    <string name="dict_no_recognizer">No hay un reconocedor de voz instalado en este dispositivo — el dictado no está disponible.</string>
+    <string name="dict_start_failed">El reconocedor no pudo arrancar: %1$s</string>
+    <string name="dict_no_speech">No se escuchó nada — no se dictó nada.</string>
+    <string name="dict_silent">No se escuchó nada — el micrófono quedó callado.</string>
+    <string name="dict_permission_refused">El permiso del micrófono fue rechazado, así que no se escuchó nada.</string>
+    <string name="dict_network_failed">El servicio de red del reconocedor falló — el motor en el dispositivo lo evita.</string>
+    <string name="dict_busy">El reconocedor estaba ocupado — probá de nuevo en un momento.</string>
+    <string name="dict_failed">El dictado falló (error de reconocedor %1$d).</string>
+
+    <!-- Rechazos del emparejamiento -->
+    <string name="pair_err_unreachable">No se pudo alcanzar el endpoint de emparejamiento en %1$s — ejecutá gentle-mobile-pair en el host y arrancá de nuevo. (%2$s)</string>
+    <string name="pair_err_token">El host rechazó el token — este enlace no corresponde al gentle-mobile-pair que está corriendo.</string>
+    <string name="pair_err_expired">El emparejamiento venció — ejecutá gentle-mobile-pair en el host y escaneá o pegá el enlace nuevo.</string>
+    <string name="pair_err_used">Ese emparejamiento ya se usó — ejecutá gentle-mobile-pair en el host para uno nuevo.</string>
+    <string name="pair_err_key_detail">El host rechazó la clave: %1$s</string>
+    <string name="pair_err_key_malformed">El host rechazó la clave por malformada.</string>
+    <string name="pair_err_other">El host rechazó el emparejamiento (HTTP %1$d)</string>
+    <string name="pair_err_detail_suffix"> — %1$s</string>
+    <string name="pair_invalid_empty">Pegá el enlace que imprimió gentle-mobile-pair (gc://host:port?user=…).</string>
+    <string name="pair_invalid_not_gc">Eso no es un enlace gc:// — copiá la línea \u201CEnlace de conexión\u201D que imprime el comando de emparejamiento.</string>
+    <string name="pair_invalid_missing_query">Al enlace le falta ?user=… — copiá el enlace de conexión completo.</string>
+    <string name="pair_invalid_token_without_pair">El enlace trae un token de emparejamiento pero no &amp;pair=host:puerto — copiá el enlace completo.</string>
+    <string name="pair_invalid_pair_without_token">El enlace trae un endpoint de emparejamiento pero no &amp;t=token — copiá el enlace completo.</string>
+    <string name="pair_invalid_bad_token">El token de emparejamiento del enlace se ve malformado.</string>
+    <string name="pair_invalid_bad_pair_hostport">El endpoint de emparejamiento del enlace necesita host:puerto, como &amp;pair=192.168.1.24:8787.</string>
+    <string name="pair_invalid_bad_authority">El enlace necesita host:puerto antes del ?, como gc://192.168.1.24:22?user=yo.</string>
+    <string name="pair_invalid_bad_host">El nombre de host del enlace se ve malformado.</string>
+    <string name="pair_invalid_bad_port">El puerto del enlace tiene que ser un número del 1 al 65535.</string>
+    <string name="pair_invalid_bad_user_url">El nombre de usuario del enlace no es texto de URL válido.</string>
+    <string name="pair_invalid_bad_user_name">El nombre de usuario del enlace se ve malformado.</string>
+
+    <!-- Errores que el core muestra por la interfaz -->
+    <string name="err_host_key_mismatch">La clave del host no coincide: guardada %1$s, presentada %2$s.</string>
+    <string name="err_host_key_unknown">Clave de host desconocida: %1$s.</string>
+    <string name="err_request_refused">El host lo rechazó (%1$s): %2$s</string>
+    <string name="err_unsupported_method">Este host no ofrece %1$s.</string>
+    <string name="err_transport">La conexión al host falló: %1$s</string>
+    <string name="err_timeout">El host tardó demasiado en responder: %1$s</string>
+</resources>

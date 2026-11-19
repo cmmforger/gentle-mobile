@@ -73,6 +73,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -134,6 +136,11 @@ import com.gentlemanprogramming.gentlemobile.core.resumeSession as coreResumeSes
 import com.gentlemanprogramming.gentlemobile.ui.sessions.HeldLease
 import com.gentlemanprogramming.gentlemobile.ui.AgentRowModel
 import com.gentlemanprogramming.gentlemobile.R
+import com.gentlemanprogramming.gentlemobile.ui.locale.AppLanguage
+import com.gentlemanprogramming.gentlemobile.ui.locale.AppLocale
+import com.gentlemanprogramming.gentlemobile.ui.locale.LocaleStore
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import com.gentlemanprogramming.gentlemobile.ui.sessions.ResumedSessionScreen
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
@@ -152,6 +159,7 @@ import com.gentlemanprogramming.gentlemobile.security.parseHostSpec
 import com.gentlemanprogramming.gentlemobile.security.requireBiometricUnlock
 import com.gentlemanprogramming.gentlemobile.ui.settings.SettingsScreen
 import com.gentlemanprogramming.gentlemobile.ui.session.AddResult
+import com.gentlemanprogramming.gentlemobile.ui.session.formatBytes
 import com.gentlemanprogramming.gentlemobile.ui.session.AndroidDictationEngine
 import com.gentlemanprogramming.gentlemobile.ui.session.Attachment
 import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentQueue
@@ -200,6 +208,14 @@ import java.util.concurrent.Executors
  * that use it.
  */
 class MainActivity : FragmentActivity() {
+
+    /** S24-1: the stored language wraps the base context, so the choice
+     *  survives process death and every resource access follows it from
+     *  the very first frame. */
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(AppLocale.wrapStored(base))
+    }
+
     /** T15 (S11): the agent pane a notification tap asked to open. Set from
      *  the launch intent here and from onNewIntent when the task is already
      *  running (singleTop); consumed by the connect screen once the live
@@ -240,7 +256,28 @@ class MainActivity : FragmentActivity() {
                 ThemeStore(SharedPreferencesStore(this@MainActivity))
             }
             var appTheme by remember { mutableStateOf(themeStore.selected()) }
-            GentleMobileTheme(appTheme) {
+            // S24-1: the language lives in the app, persists, and applies
+            // immediately — the composition re-provides the context in the
+            // chosen locale, so every stringResource call follows without a
+            // restart. The choice is re-read in attachBaseContext after a
+            // process death.
+            val localeStore = remember {
+                LocaleStore(SharedPreferencesStore(this@MainActivity))
+            }
+            var language by remember { mutableStateOf(localeStore.selected()) }
+            val localizedContext = remember(language) {
+                AppLocale.wrap(this@MainActivity, language)
+            }
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalContext provides localizedContext,
+                // S24-1: the wrapped context is not the ComponentActivity,
+                // so the owners activity-compose derives by casting
+                // LocalContext must be provided explicitly.
+                LocalActivityResultRegistryOwner provides this@MainActivity,
+                LocalLifecycleOwner provides this@MainActivity,
+                LocalOnBackPressedDispatcherOwner provides this@MainActivity,
+            ) {
+                GentleMobileTheme(appTheme) {
                 if (showFixture) {
                     com.gentlemanprogramming.gentlemobile.ui.terminal.FixtureTerminal()
                 } else {
@@ -254,6 +291,14 @@ class MainActivity : FragmentActivity() {
                         keyPath = keyPath,
                         knownHostsPath = knownHostsPath,
                         appTheme = appTheme,
+                        language = language,
+                        onSetLanguage = { chosen ->
+                            // Applied immediately (the composition provides
+                            // a context in the new locale), persisted for the
+                            // next launch.
+                            localeStore.select(chosen)
+                            language = chosen
+                        },
                         openAgentPane = openAgentPane,
                         onSelectTheme = { theme ->
                             // Applied immediately, persisted for the next launch.
@@ -262,6 +307,7 @@ class MainActivity : FragmentActivity() {
                         },
                     )
                 }
+            }
             }
         }
     }
@@ -342,6 +388,11 @@ private class ScreenState {
      *  a session, going back to the host list, replacing the connection — is
      *  provable with a counter that returns to zero. */
     val pollers = PollTracker()
+
+    /** S24-1: the application context, captured once so messages composed
+     *  on the worker threads (errors, drop reasons) can resolve their
+     *  strings in the stored locale at creation time. */
+    lateinit var appContext: Context
 
     /** T15 (S11): the pure alert brain, fed by its own slow poller over the
      *  connection the app already holds — no extra network traffic, no
@@ -466,12 +517,17 @@ fun ConnectScreen(
     keyPath: String,
     knownHostsPath: String,
     appTheme: AppTheme,
+    language: AppLanguage,
+    onSetLanguage: (AppLanguage) -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     openAgentPane: androidx.compose.runtime.MutableState<String?>,
 ) {
     val screen = remember { ScreenState() }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    // S24-1: the worker threads resolve their strings (errors, drop
+    // reasons) through the application context, in the stored locale.
+    screen.appContext = context.applicationContext
 
     var route by remember { mutableStateOf(Route.Main) }
 
@@ -500,7 +556,7 @@ fun ConnectScreen(
                 val ensured = DeviceIdentity.ensure(context)
                 mainHandler.post { identity = ensured }
             } catch (error: Exception) {
-                mainHandler.post { identityError = describe(error) }
+                mainHandler.post { identityError = describe(context, error) }
             }
         }
     }
@@ -533,7 +589,9 @@ fun ConnectScreen(
     // action — opening a session, or an explicit connect, which is the
     // device key being used. It never touches the key file itself.
     fun gated(action: () -> Unit) {
-        val activity = context as? FragmentActivity
+        // The composition context may be locale-wrapped (S24-1): the gate
+        // needs the real FragmentActivity behind it.
+        val activity = AppLocale.unwrapToLifecycle(context) as? FragmentActivity
         if (activity != null) {
             requireBiometricUnlock(activity, biometricStore, biometricDecision, action)
         } else {
@@ -669,6 +727,8 @@ fun ConnectScreen(
             biometricDecision = biometricDecision,
             biometricEnabled = biometricEnabled,
             theme = appTheme,
+            language = language,
+            onSetLanguage = onSetLanguage,
             connected = screen.ui is UiState.Connected,
             regenerated = regenerated,
             notificationsGranted = notificationsGranted,
@@ -694,7 +754,7 @@ fun ConnectScreen(
                         // A new key means new trust: the pins are gone.
                         mainHandler.post { refreshHosts() }
                     } catch (error: Exception) {
-                        mainHandler.post { identityError = describe(error) }
+                        mainHandler.post { identityError = describe(context, error) }
                     }
                 }
             },
@@ -931,12 +991,46 @@ fun ConnectScreen(
             cameraMessage = null
             screen.ui = UiState.Scanning
         } else {
-            cameraMessage = "Camera permission denied — paste the link instead."
+            cameraMessage = context.getString(R.string.pair_camera_denied)
         }
     }
 
+    // S24-1: the pairing refusals, built in the stored locale.
+    val pairInvalid = { reason: PairLink.InvalidReason ->
+        val id = when (reason) {
+            PairLink.InvalidReason.EMPTY -> R.string.pair_invalid_empty
+            PairLink.InvalidReason.NOT_GC -> R.string.pair_invalid_not_gc
+            PairLink.InvalidReason.MISSING_QUERY -> R.string.pair_invalid_missing_query
+            PairLink.InvalidReason.TOKEN_WITHOUT_PAIR -> R.string.pair_invalid_token_without_pair
+            PairLink.InvalidReason.PAIR_WITHOUT_TOKEN -> R.string.pair_invalid_pair_without_token
+            PairLink.InvalidReason.BAD_TOKEN -> R.string.pair_invalid_bad_token
+            PairLink.InvalidReason.BAD_PAIR_HOSTPORT -> R.string.pair_invalid_bad_pair_hostport
+            PairLink.InvalidReason.BAD_AUTHORITY -> R.string.pair_invalid_bad_authority
+            PairLink.InvalidReason.BAD_HOST_NAME -> R.string.pair_invalid_bad_host
+            PairLink.InvalidReason.BAD_PORT -> R.string.pair_invalid_bad_port
+            PairLink.InvalidReason.MISSING_USER -> R.string.pair_invalid_missing_query
+            PairLink.InvalidReason.BAD_USER_URL -> R.string.pair_invalid_bad_user_url
+            PairLink.InvalidReason.BAD_USER_NAME -> R.string.pair_invalid_bad_user_name
+        }
+        context.getString(id)
+    }
+    val pairRefusal = { status: Int, detail: String? ->
+        val suffix = detail?.let { context.getString(R.string.pair_err_detail_suffix, it) }.orEmpty()
+        when (status) {
+            401 -> context.getString(R.string.pair_err_token) + suffix
+            403 -> context.getString(R.string.pair_err_expired) + suffix
+            409 -> context.getString(R.string.pair_err_used) + suffix
+            400 -> detail?.let { context.getString(R.string.pair_err_key_detail, it) }
+                ?: context.getString(R.string.pair_err_key_malformed)
+            else -> context.getString(R.string.pair_err_other, status) + suffix
+        }
+    }
+    val pairUnreachable = { pairHost: String, pairPort: String, reason: String ->
+        context.getString(R.string.pair_err_unreachable, "$pairHost:$pairPort", reason)
+    }
+
     fun applyPairLink(raw: String): Boolean {
-        val parsed = PairLink.parse(raw)
+        val parsed = PairLink.parse(raw, pairInvalid)
         pasted = parsed is PairLinkResult.Parsed
         return when (parsed) {
             is PairLinkResult.Parsed -> {
@@ -966,7 +1060,7 @@ fun ConnectScreen(
         }
         screen.ui = UiState.Connecting
         pairStatus = pair?.let {
-            "Pairing — sending this phone's key to ${it.host}:${it.port}…"
+            context.getString(R.string.pair_status_pairing, "${it.host}:${it.port}")
         }
         val profile = HostProfileDto(
             host = host,
@@ -986,12 +1080,21 @@ fun ConnectScreen(
                     if (keyLine == null) {
                         mainHandler.post {
                             screen.ui = UiState.Failed(
-                                "No client key on this phone yet — the identity must exist before pairing.",
+                                context.getString(R.string.pair_no_key_yet),
                             )
                         }
                         return@execute
                     }
-                    when (val reply = PairClient.sendKey(pair.host, pair.port, pair.token, keyLine)) {
+                    when (
+                        val reply = PairClient.sendKey(
+                            pair.host,
+                            pair.port,
+                            pair.token,
+                            keyLine,
+                            pairUnreachable,
+                            pairRefusal,
+                        )
+                    ) {
                         is PairClient.Result.Refused -> {
                             mainHandler.post {
                                 if (screen.generation == generation) {
@@ -1009,7 +1112,7 @@ fun ConnectScreen(
                                 // The token burned on use: the key is trusted
                                 // now, later connects go straight to SSH.
                                 pairParams = null
-                                pairStatus = "Key accepted — connecting…"
+                                pairStatus = context.getString(R.string.pair_status_accepted)
                             }
                         }
                     }
@@ -1020,7 +1123,7 @@ fun ConnectScreen(
                 if (!File(keyPath).exists()) {
                     mainHandler.post {
                         screen.ui = UiState.Failed(
-                            "No client key at $keyPath — the identity could not be prepared on this phone.",
+                            context.getString(R.string.pair_no_key_file, keyPath),
                         )
                     }
                     return@execute
@@ -1067,7 +1170,7 @@ fun ConnectScreen(
                     }
                 }
             } catch (error: Exception) {
-                val message = describe(error)
+                val message = describe(context, error)
                 mainHandler.post {
                     // A refused attempt fails with its reason and never
                     // retries on its own (T8c).
@@ -1120,7 +1223,10 @@ fun ConnectScreen(
                         if (dead) {
                             mainHandler.post {
                                 if (screen.generation == generation) {
-                                    screen.machine.onDropped("the link was down while the app was away")
+                                    screen.machine.onDropped(
+                                        AppLocale.wrapStored(screen.appContext)
+                                            .getString(R.string.session_reason_link_down),
+                                    )
                                 }
                             }
                         } else {
@@ -1246,7 +1352,7 @@ fun ConnectScreen(
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_settings),
-                        contentDescription = "Settings",
+                        contentDescription = stringResource(R.string.cd_settings),
                         tint = LocalPalette.current.accentEdge,
                         modifier = Modifier.size(22.dp),
                     )
@@ -1275,7 +1381,7 @@ fun ConnectScreen(
                 // --- 01-pair.html: one surface, hairline-separated blocks, ---
                 // --- no nested cards, one accent action.                  ---
                 Text(
-                    text = "Connect to your computer",
+                    text = stringResource(R.string.pair_title),
                     color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 22.sp,
                     lineHeight = 26.sp,
@@ -1283,7 +1389,7 @@ fun ConnectScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Run gentle-mobile-pair on the host, scan its QR — or paste the link — and the key is trusted in one step. The host key is confirmed once after.",
+                    text = stringResource(R.string.pair_intro),
                     color = LocalPalette.current.muted,
                     fontSize = 13.sp,
                 )
@@ -1293,7 +1399,7 @@ fun ConnectScreen(
                 // Block 1: this phone's own public key, with the identity
                 // state shown honestly — "creating the key…", the error, or
                 // the key itself. Never a spinner that hides a failure.
-                BlockLabel("This phone's key")
+                BlockLabel(stringResource(R.string.pair_key_label))
                 val identity = identity
                 val identityFailure = identityError
                 when {
@@ -1304,7 +1410,7 @@ fun ConnectScreen(
                         fontFamily = FontFamily.Monospace,
                     )
                     identity == null -> Text(
-                        text = "Creating the key…",
+                        text = stringResource(R.string.pair_creating_key),
                         color = LocalPalette.current.muted,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace,
@@ -1325,7 +1431,7 @@ fun ConnectScreen(
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             GhostButton(
-                                label = "Copy",
+                                label = stringResource(R.string.pair_copy),
                                 onClick = {
                                     clipboard.setText(AnnotatedString(identity.publicKeyLine))
                                     copiedKey = true
@@ -1334,8 +1440,8 @@ fun ConnectScreen(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = if (copiedKey) "Copied" else
-                                    "The host must trust this key before it can connect.",
+                                text = if (copiedKey) stringResource(R.string.pair_copied) else
+                                    stringResource(R.string.pair_key_trust_hint),
                                 color = if (copiedKey) LocalPalette.current.accent else LocalPalette.current.muted,
                                 fontSize = 11.sp,
                                 maxLines = 2,
@@ -1347,11 +1453,11 @@ fun ConnectScreen(
                 Hairline()
 
                 // Block 2: the host command, ready to copy.
-                BlockLabel("On the host")
+                BlockLabel(stringResource(R.string.pair_host_label))
                 val identityForCommand = identity
                 if (identityForCommand == null) {
                     Text(
-                        text = "Ready when this phone's key exists.",
+                        text = stringResource(R.string.pair_ready_when_key),
                         color = LocalPalette.current.muted,
                         fontSize = 12.sp,
                     )
@@ -1370,7 +1476,7 @@ fun ConnectScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         GhostButton(
-                            label = "Copy",
+                            label = stringResource(R.string.pair_copy),
                             onClick = {
                                 clipboard.setText(
                                     AnnotatedString(
@@ -1385,7 +1491,7 @@ fun ConnectScreen(
                     if (copiedCommand) {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "Copied — run it on the host.",
+                            text = stringResource(R.string.pair_copied_command),
                             color = LocalPalette.current.accent,
                             fontSize = 11.sp,
                         )
@@ -1395,7 +1501,7 @@ fun ConnectScreen(
                 Hairline()
 
                 // Block 3: the connection link, pasted from the host output.
-                BlockLabel("Connection link")
+                BlockLabel(stringResource(R.string.pair_link_label))
                 OutlinedTextField(
                     value = pairLink,
                     onValueChange = {
@@ -1429,13 +1535,13 @@ fun ConnectScreen(
                 Spacer(Modifier.height(8.dp))
                 Row {
                     GhostButton(
-                        label = "Paste",
+                        label = stringResource(R.string.pair_paste),
                         modifier = Modifier.weight(1f),
                         onClick = {
                             val text = clipboard.getText()?.text.orEmpty()
                             if (text.isBlank()) {
                                 pairError =
-                                    "The clipboard is empty — copy the link the host printed."
+                                    context.getString(R.string.pair_clipboard_empty)
                             } else {
                                 applyPairLink(text)
                             }
@@ -1449,8 +1555,11 @@ fun ConnectScreen(
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = pairParams?.let {
-                            "Will pair with ${it.host}:${it.port} \u00B7 ssh $host:$port \u00B7 $user"
-                        } ?: "Will connect to $host \u00B7 $port \u00B7 $user",
+                            stringResource(
+                                R.string.pair_will_pair,
+                                "${it.host}:${it.port}", host, user,
+                            )
+                        } ?: stringResource(R.string.pair_will_connect, host, port, user),
                         color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
@@ -1490,9 +1599,11 @@ fun ConnectScreen(
                 ) {
                     Text(
                         text = when {
-                            current is UiState.Connecting && pairParams != null -> "Pairing\u2026"
-                            current is UiState.Connecting -> "Connecting\u2026"
-                            else -> "Connect"
+                            current is UiState.Connecting && pairParams != null ->
+                                stringResource(R.string.pair_button_pairing)
+                            current is UiState.Connecting ->
+                                stringResource(R.string.pair_button_connecting)
+                            else -> stringResource(R.string.pair_button)
                         },
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -1500,7 +1611,8 @@ fun ConnectScreen(
                 if (current is UiState.Connecting) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = pairStatus ?: "Probing the host key, then opening the bridge\u2026",
+                        text = pairStatus
+                            ?: stringResource(R.string.pair_status_probing),
                         color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
@@ -1514,10 +1626,7 @@ fun ConnectScreen(
                     // needs, never a bare dialog.
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "Android is asking whether Gentle Mobile may notify you — " +
-                            "when an agent needs you, the phone should say so. " +
-                            "Declining keeps everything working; Settings will show " +
-                            "notifications are off.",
+                        text = stringResource(R.string.pair_notifications_explaining),
                         color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                     )
@@ -1531,7 +1640,7 @@ fun ConnectScreen(
                 // fallback.
                 Row {
                     GhostButton(
-                        label = "Scan QR",
+                        label = stringResource(R.string.pair_scan_qr),
                         modifier = Modifier.weight(1f),
                         onClick = {
                             cameraMessage = null
@@ -1541,7 +1650,7 @@ fun ConnectScreen(
                             ) {
                                 cameraPermission.launch(android.Manifest.permission.CAMERA)
                             } else {
-                                cameraMessage = "This device has no camera — paste the link instead."
+                                cameraMessage = context.getString(R.string.pair_no_camera)
                             }
                         },
                     )
@@ -1554,14 +1663,14 @@ fun ConnectScreen(
 
             is UiState.Challenge -> {
                 Text(
-                    text = "Verify this host",
+                    text = stringResource(R.string.chal_verify),
                     color = LocalPalette.current.muted,
                     fontSize = 11.sp,
                     letterSpacing = 0.8.sp,
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "The host presented this key fingerprint:",
+                    text = stringResource(R.string.chal_presents),
                     color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 14.sp,
                 )
@@ -1579,8 +1688,7 @@ fun ConnectScreen(
                 if (current.pinned != null) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "The pinned key is different: ${current.pinned}. " +
-                            "Accepting retires the old pin.",
+                        text = stringResource(R.string.chal_pinned_differs, current.pinned),
                         color = LocalPalette.current.error,
                         fontSize = 12.sp,
                     )
@@ -1601,7 +1709,7 @@ fun ConnectScreen(
                         disabledContentColor = LocalPalette.current.muted,
                     ),
                 ) {
-                    Text(text = "Accept & connect", fontWeight = FontWeight.SemiBold)
+                    Text(text = stringResource(R.string.chal_accept), fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
@@ -1614,7 +1722,7 @@ fun ConnectScreen(
                         contentColor = LocalPalette.current.muted,
                     ),
                 ) {
-                    Text(text = "Cancel")
+                    Text(text = stringResource(R.string.chal_cancel))
                 }
             }
 
@@ -1640,18 +1748,19 @@ fun ConnectScreen(
                     // repeated `Hosts` word. The row keeps a screen-reader
                     // label because the chevron glyph reads as nothing.
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        val backToHosts = stringResource(R.string.cd_back_to_hosts)
                         Text(
                             text = "‹",
                             color = LocalPalette.current.accent,
                             fontSize = 20.sp,
                             modifier = Modifier
                                 .clickable { screen.inboxOpen = false }
-                                .semantics { contentDescription = "Back to hosts" }
+                                .semantics { contentDescription = backToHosts }
                                 .padding(horizontal = 12.dp, vertical = 12.dp),
                         )
                         Spacer(Modifier.weight(1f))
                         Text(
-                            text = "Disconnect",
+                            text = stringResource(R.string.nodes_disconnect),
                             color = LocalPalette.current.muted,
                             fontSize = 11.sp,
                             modifier = Modifier
@@ -1662,13 +1771,13 @@ fun ConnectScreen(
                     val snapshot = current.snapshot
                     when {
                         snapshot == null -> Text(
-                            text = "Waiting for the first snapshot…",
+                            text = stringResource(R.string.nodes_waiting),
                             color = LocalPalette.current.muted,
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace,
                         )
                         snapshot.agents.isEmpty() -> Text(
-                            text = "No agents in this snapshot.",
+                            text = stringResource(R.string.inbox_no_agents),
                             color = LocalPalette.current.muted,
                             fontSize = 13.sp,
                         )
@@ -1679,14 +1788,34 @@ fun ConnectScreen(
                             // count only when it is not one. S24-8: rows
                             // lead with the project name, not the path.
                             listOf(
-                                Triple("Needs you", snapshot.agents.filter { it.status == AgentStatusDto.BLOCKED }, true),
-                                Triple("Done", snapshot.agents.filter { it.status == AgentStatusDto.DONE }, false),
-                                Triple("Working", snapshot.agents.filter { it.status == AgentStatusDto.WORKING }, false),
-                                Triple("Idle", snapshot.agents.filter { it.status == AgentStatusDto.IDLE }, false),
-                                Triple("Unknown", snapshot.agents.filter { it.status == AgentStatusDto.UNKNOWN }, false),
+                                Triple(
+                                    stringResource(R.string.inbox_group_needs_you),
+                                    snapshot.agents.filter { it.status == AgentStatusDto.BLOCKED },
+                                    true,
+                                ),
+                                Triple(
+                                    stringResource(R.string.inbox_group_done),
+                                    snapshot.agents.filter { it.status == AgentStatusDto.DONE },
+                                    false,
+                                ),
+                                Triple(
+                                    stringResource(R.string.inbox_group_working),
+                                    snapshot.agents.filter { it.status == AgentStatusDto.WORKING },
+                                    false,
+                                ),
+                                Triple(
+                                    stringResource(R.string.inbox_group_idle),
+                                    snapshot.agents.filter { it.status == AgentStatusDto.IDLE },
+                                    false,
+                                ),
+                                Triple(
+                                    stringResource(R.string.inbox_group_unknown),
+                                    snapshot.agents.filter { it.status == AgentStatusDto.UNKNOWN },
+                                    false,
+                                ),
                             ).forEach { (label, agents, needsYou) ->
                                 if (agents.isNotEmpty()) {
-                                    GroupLabel(AgentRowModel.groupLabel(label, agents.size), uppercase = false)
+                                    GroupLabel(groupLabelWithCount(label, agents.size), uppercase = false)
                                     agents.forEach { agent ->
                                         InboxRow(agent, needsYou = needsYou, onOpen = {
                                             openAgentSession(current, agent)
@@ -1709,14 +1838,17 @@ fun ConnectScreen(
                         // does not have: the word comes from the supervision
                         // state, not from the fact that this branch renders.
                         val stateWord = when (screen.machine.state) {
-                            is SupervisionState.Interrupted -> "Interrupted"
-                            is SupervisionState.Failed -> "Failed"
-                            is SupervisionState.Connecting -> "Connecting"
-                            else -> "Connected"
+                            is SupervisionState.Interrupted ->
+                                stringResource(R.string.nodes_state_interrupted)
+                            is SupervisionState.Failed ->
+                                stringResource(R.string.nodes_state_failed)
+                            is SupervisionState.Connecting ->
+                                stringResource(R.string.nodes_state_connecting)
+                            else -> stringResource(R.string.nodes_state_connected)
                         }
                         Text(
                             text = "$stateWord · $session",
-                            color = if (stateWord == "Connected") {
+                            color = if (screen.machine.state is SupervisionState.Connected) {
                                 LocalPalette.current.accent
                             } else {
                                 LocalPalette.current.error
@@ -1725,7 +1857,7 @@ fun ConnectScreen(
                             letterSpacing = 0.8.sp,
                         )
                         Text(
-                            text = "Disconnect",
+                            text = stringResource(R.string.nodes_disconnect),
                             color = LocalPalette.current.muted,
                             fontSize = 11.sp,
                             modifier = Modifier.clickable { disconnectLive() },
@@ -1735,14 +1867,14 @@ fun ConnectScreen(
                     val snapshot = current.snapshot
                     if (snapshot == null) {
                         Text(
-                            text = "Waiting for the first snapshot…",
+                            text = stringResource(R.string.nodes_waiting),
                             color = LocalPalette.current.muted,
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace,
                         )
                     } else {
                         Text(
-                            text = "Your hosts",
+                            text = stringResource(R.string.nodes_your_hosts),
                             color = MaterialTheme.colorScheme.onBackground,
                             fontSize = 22.sp,
                             lineHeight = 26.sp,
@@ -1754,8 +1886,21 @@ fun ConnectScreen(
                             name = host,
                             // State as a word, never a stale snapshot rendered
                             // as if it were live (T8c).
-                            state = if (interrupted != null) "interrupted" else "connected",
-                            meta = "$user@$host · port $port · protocol 22 · ${snapshot.agents.size} agents",
+                            state = if (interrupted != null) {
+                                stringResource(R.string.nodes_state_row_interrupted)
+                            } else {
+                                stringResource(R.string.nodes_state_row_connected)
+                            },
+                            meta = stringResource(
+                                R.string.nodes_meta,
+                                "$user@$host",
+                                port,
+                                pluralStringResource(
+                                    R.plurals.agents_count,
+                                    snapshot.agents.size,
+                                    snapshot.agents.size,
+                                ),
+                            ),
                             onOpen = { screen.inboxOpen = true },
                         )
                         // T17a (S15): the host's Gentle Shell sessions, listed
@@ -1765,16 +1910,16 @@ fun ConnectScreen(
                         // jargon group label `gentle shell sessions` and the
                         // `list · lease-guarded` state word.
                         NodeRow(
-                            name = "Session history",
+                            name = stringResource(R.string.nodes_session_history),
                             state = null,
-                            meta = "Open a Gentle Shell session that already exists on the host.",
+                            meta = stringResource(R.string.nodes_session_history_sub),
                             onOpen = { route = Route.Sessions },
                         )
                         Spacer(Modifier.height(24.dp))
                         // Honest empty space, not a dead accent button: a
                         // second host cannot be added in this build.
                         Text(
-                            text = "One host per install for now — adding a second host needs a later build.",
+                            text = stringResource(R.string.nodes_one_host),
                             color = LocalPalette.current.muted,
                             fontSize = 13.sp,
                         )
@@ -1836,7 +1981,7 @@ fun ConnectScreen(
                                     if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
                                         sessionUi.sending = false
                                         sessionUi.sent = false
-                                        sessionUi.sendError = describe(error)
+                                        sessionUi.sendError = describe(context, error)
                                     }
                                 }
                             }
@@ -1861,7 +2006,7 @@ fun ConnectScreen(
                                 mainHandler.post {
                                     if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
                                         sessionUi.keySending = false
-                                        sessionUi.keyError = describe(error)
+                                        sessionUi.keyError = describe(context, error)
                                     }
                                 }
                             }
@@ -1901,7 +2046,9 @@ private fun poll(screen: ScreenState, connection: CompanionConnection, generatio
                 } catch (error: Exception) {
                     mainHandler.post {
                         if (screen.generation == generation) {
-                            screen.machine.onDropped(describe(error))
+                            screen.machine.onDropped(
+                                describe(AppLocale.wrapStored(screen.appContext), error),
+                            )
                         }
                     }
                     return@execute
@@ -1918,7 +2065,10 @@ private fun poll(screen: ScreenState, connection: CompanionConnection, generatio
                         current.connection === connection
                     ) {
                         if (ended) {
-                            screen.machine.onDropped("the host closed the connection")
+                            screen.machine.onDropped(
+                                AppLocale.wrapStored(screen.appContext)
+                                    .getString(R.string.session_reason_host_closed),
+                            )
                         } else if (snapshot != null) {
                             screen.ui = current.copy(snapshot = snapshot)
                         }
@@ -2044,15 +2194,19 @@ private fun notificationPermissionGranted(context: Context): Boolean? =
         null
     }
 
-private fun describe(error: Exception): String = when (error) {
+private fun describe(context: Context, error: Exception): String = when (error) {
     is CompanionException.HostKeyMismatch ->
-        "Host key mismatch: pinned ${error.pinned}, presented ${error.presented}."
+        context.getString(R.string.err_host_key_mismatch, error.pinned, error.presented)
     is CompanionException.HostKeyUnknown ->
-        "Unknown host key: ${error.fingerprint}."
+        context.getString(R.string.err_host_key_unknown, error.fingerprint)
     is CompanionException.RequestRefused ->
-        "The host refused it (${error.code}): ${error.detail}"
+        context.getString(R.string.err_request_refused, error.code.toString(), error.detail)
     is CompanionException.UnsupportedMethod ->
-        "This host does not offer ${error.method}."
+        context.getString(R.string.err_unsupported_method, error.method)
+    is CompanionException.Transport ->
+        context.getString(R.string.err_transport, error.detail)
+    is CompanionException.Timeout ->
+        context.getString(R.string.err_timeout, error.detail)
     else -> error.message ?: error.javaClass.simpleName
 }
 
@@ -2119,7 +2273,10 @@ private fun pollSurface(
                 if (ended) {
                     mainHandler.post {
                         if (screen.generation == generation) {
-                            screen.machine.onDropped("the host closed the connection")
+                            screen.machine.onDropped(
+                                AppLocale.wrapStored(screen.appContext)
+                                    .getString(R.string.session_reason_host_closed),
+                            )
                         }
                     }
                 }
@@ -2165,7 +2322,8 @@ private fun requestPaneRead(
         } catch (error: Exception) {
             mainHandler.post {
                 if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                    sessionUi.readError = describe(error)
+                    sessionUi.readError =
+                        describe(AppLocale.wrapStored(screen.appContext), error)
                 }
             }
         }
@@ -2203,7 +2361,8 @@ private fun pollPane(
                 } catch (error: Exception) {
                     mainHandler.post {
                         if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                            sessionUi.readError = describe(error)
+                            sessionUi.readError =
+                                describe(AppLocale.wrapStored(screen.appContext), error)
                         }
                     }
                 }
@@ -2215,7 +2374,10 @@ private fun pollPane(
                 if (ended) {
                     mainHandler.post {
                         if (screen.generation == generation) {
-                            screen.machine.onDropped("the host closed the connection")
+                            screen.machine.onDropped(
+                                AppLocale.wrapStored(screen.appContext)
+                                    .getString(R.string.session_reason_host_closed),
+                            )
                         }
                     }
                 }
@@ -2286,7 +2448,7 @@ private fun SessionScreen(
         try {
             cameraLauncher.launch(uri)
         } catch (error: Exception) {
-            sessionUi.attachmentError = "no camera app is available on this device"
+            sessionUi.attachmentError = context.getString(R.string.session_no_camera_app)
         }
     }
     fun openPicker() {
@@ -2295,7 +2457,7 @@ private fun SessionScreen(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
             )
         } catch (error: Exception) {
-            sessionUi.attachmentError = "no gallery app is available on this device"
+            sessionUi.attachmentError = context.getString(R.string.session_no_gallery_app)
         }
     }
 
@@ -2323,7 +2485,7 @@ private fun SessionScreen(
         // Header: back to the agents list, agent name and its cwd.
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(
-                text = "‹ Agents",
+                text = stringResource(R.string.inbox_back),
                 color = LocalPalette.current.accent,
                 fontSize = 13.sp,
                 modifier = Modifier
@@ -2341,7 +2503,10 @@ private fun SessionScreen(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = listOfNotNull(agent.cwd, statusWord(agent.status)).joinToString(" · "),
+                    text = listOfNotNull(
+                        agent.cwd,
+                        statusWord(agent.status),
+                    ).joinToString(" · "),
                     color = LocalPalette.current.muted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
@@ -2350,7 +2515,7 @@ private fun SessionScreen(
                 )
             }
             Text(
-                text = "Refresh",
+                text = stringResource(R.string.session_refresh),
                 color = LocalPalette.current.accent,
                 fontSize = 13.sp,
                 modifier = Modifier
@@ -2363,9 +2528,15 @@ private fun SessionScreen(
             // The liveness word is the machine's, never assumed: only a
             // connected connection may claim live (T8c).
             text = if (interrupted == null) {
-                "live · ${livenessLabel(supervision)} · the agent's pane from the surface stream"
+                stringResource(
+                    R.string.session_live_line,
+                    stringResource(R.string.status_live),
+                )
             } else {
-                "not live · this is the last frame before the interruption"
+                stringResource(
+                    R.string.session_not_live_line,
+                    stringResource(R.string.status_not_live),
+                )
             },
             color = if (interrupted == null) LocalPalette.current.muted else LocalPalette.current.error,
             fontSize = 11.sp,
@@ -2434,10 +2605,15 @@ private fun SessionScreen(
                     onFontPxChange((current * zoomChange).coerceIn(minPx, maxPx))
                 }
                 val statsLine = surfaceStats?.let {
-                    "${it.cols}×${it.rows} · ${it.drawnCells} non-blank · " +
-                        "${it.distinctColours} colours" +
-                        (it.wideSymbol?.let { w -> " · wide \"$w\"" } ?: "") +
-                        (if (it.cursorVisible) " · cursor" else "")
+                    stringResource(
+                        R.string.session_stats_line,
+                        it.cols,
+                        it.rows,
+                        it.drawnCells,
+                        it.distinctColours,
+                    ) +
+                        (it.wideSymbol?.let { w -> stringResource(R.string.session_stats_wide, w) } ?: "") +
+                        (if (it.cursorVisible) stringResource(R.string.session_stats_cursor) else "")
                 } ?: ""
                 Column(Modifier.fillMaxSize()) {
                     if (statsLine.isNotEmpty()) {
@@ -2486,10 +2662,18 @@ private fun SessionScreen(
                             append(rows)
                             append(" · ")
                             append("%.1f".format(fontSp))
-                            append("sp")
-                            if (gridWidthPx > viewSize.width + 0.5f) append(" · scroll ↔")
+                            append(stringResource(R.string.session_stats_sp))
+                            if (gridWidthPx > viewSize.width + 0.5f) {
+                                append(stringResource(R.string.session_stats_scroll))
+                            }
                             if (gridHeightPx > viewSize.height + 0.5f) {
-                                append(if (atBottom) " · at bottom" else " · scrolled")
+                                append(
+                                    if (atBottom) {
+                                        stringResource(R.string.session_stats_at_bottom)
+                                    } else {
+                                        stringResource(R.string.session_stats_scrolled)
+                                    },
+                                )
                             }
                         },
                         color = LocalPalette.current.muted,
@@ -2511,8 +2695,8 @@ private fun SessionScreen(
                 val pane = sessionUi.pane
                 Text(
                     text = when {
-                        pane == null -> "Reading the pane…"
-                        pane.text.isEmpty() -> "(the pane shows no text right now)"
+                        pane == null -> stringResource(R.string.session_reading_pane)
+                        pane.text.isEmpty() -> stringResource(R.string.session_pane_empty)
                         else -> pane.text
                     },
                     color = MaterialTheme.colorScheme.onBackground,
@@ -2528,7 +2712,7 @@ private fun SessionScreen(
                 if (pane?.truncated == true) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "The host left out older rows.",
+                        text = stringResource(R.string.session_pane_truncated),
                         color = LocalPalette.current.muted,
                         fontSize = 11.sp,
                     )
@@ -2616,7 +2800,7 @@ private fun startAttachmentUpload(
             }
         val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
         if (bytes == null) {
-            sessionUi.attachmentError = "the image could not be read"
+            sessionUi.attachmentError = context.getString(R.string.att_unreadable)
             return
         }
         if (size < 0) size = bytes.size.toLong()
@@ -2624,11 +2808,13 @@ private fun startAttachmentUpload(
         val plan = try {
             corePlanUpload(name, size.toULong())
         } catch (error: CompanionException) {
-            sessionUi.attachmentError = describe(error)
+            sessionUi.attachmentError = describe(context, error)
             return
         }
         val thumbnail = decodeThumbnail(context, uri)
-        val added = sessionUi.attachmentQueue.add(name, plan.storedName, size)
+        val added = sessionUi.attachmentQueue.add(name, plan.storedName, size) { bytes, max ->
+            context.getString(R.string.att_too_large, formatBytes(bytes), formatBytes(max))
+        }
         val id = when (added) {
             is AddResult.Refused -> {
                 sessionUi.attachmentError = added.reason
@@ -2641,7 +2827,7 @@ private fun startAttachmentUpload(
         sessionUi.syncAttachments()
         uploadAttachment(context, connection, sessionUi, id, uri)
     } catch (error: Exception) {
-        sessionUi.attachmentError = describe(error)
+        sessionUi.attachmentError = describe(context, error)
     }
 }
 
@@ -2662,7 +2848,7 @@ private fun uploadAttachment(
     executor.execute {
         val outcome = try {
             val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: throw java.io.IOException("the image could not be read anymore")
+                ?: throw java.io.IOException(context.getString(R.string.att_unreadable_anymore))
             connection.uploadFile(
                 storedName,
                 bytes,
@@ -2677,7 +2863,7 @@ private fun uploadAttachment(
             )
         } catch (error: Exception) {
             mainHandler.post {
-                sessionUi.attachmentQueue.onFailed(id, describe(error))
+                sessionUi.attachmentQueue.onFailed(id, describe(context, error))
                 sessionUi.syncAttachments()
             }
             return@execute
@@ -2905,21 +3091,21 @@ private fun InterruptedNotice(reason: String, onRetry: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = "Connection interrupted.",
+                text = stringResource(R.string.inbox_interrupted_title),
                 color = LocalPalette.current.error,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
                 // The honest reason, then the rule: what is on screen is the
-                // last snapshot, never live data (board 03, T8c).
-                text = "$reason — what is on screen is the last snapshot.",
+                // last data received, never live data (board 03, T8c).
+                text = stringResource(R.string.inbox_interrupted_suffix, reason),
                 color = LocalPalette.current.muted,
                 fontSize = 13.sp,
             )
         }
         Text(
-            text = "Retry now",
+            text = stringResource(R.string.inbox_retry_now),
             color = LocalPalette.current.accentEdge,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
@@ -3051,13 +3237,21 @@ private fun ExtraKeyChip(
     }
 }
 
+@Composable
 private fun statusWord(status: AgentStatusDto): String = when (status) {
-    AgentStatusDto.IDLE -> "idle"
-    AgentStatusDto.WORKING -> "working"
-    AgentStatusDto.BLOCKED -> "needs you"
-    AgentStatusDto.DONE -> "done"
-    AgentStatusDto.UNKNOWN -> "unknown"
+    AgentStatusDto.IDLE -> stringResource(R.string.status_idle)
+    AgentStatusDto.WORKING -> stringResource(R.string.status_working)
+    AgentStatusDto.BLOCKED -> stringResource(R.string.status_needs_you)
+    AgentStatusDto.DONE -> stringResource(R.string.status_done)
+    AgentStatusDto.UNKNOWN -> stringResource(R.string.status_unknown)
 }
+
+/** S24-1: the localized inbox group label — the human word, the count only
+ *  when it is not one (the rule AgentRowModel.groupLabel encodes). */
+@Composable
+private fun groupLabelWithCount(word: String, count: Int): String =
+    if (count == 1) word
+    else stringResource(R.string.inbox_group_count, word, count)
 
 private fun String.toUShortOrNull(): UShort? =
     trim().toIntOrNull()?.let { if (it in 1..65535) it.toUShort() else null }
@@ -3070,6 +3264,8 @@ private fun ConnectScreenPreview() {
             keyPath = "/data/local/tmp/client_ed25519",
             knownHostsPath = "/data/known_hosts",
             appTheme = AppTheme.CUTE,
+            language = AppLanguage.ENGLISH,
+            onSetLanguage = {},
             openAgentPane = androidx.compose.runtime.mutableStateOf<String?>(null),
             onSelectTheme = {},
         )

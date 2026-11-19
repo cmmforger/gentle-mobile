@@ -28,7 +28,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
+import com.gentlemanprogramming.gentlemobile.R
+import com.gentlemanprogramming.gentlemobile.ui.locale.AppLocale
 import androidx.lifecycle.LifecycleOwner
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -85,7 +88,9 @@ fun QrScannerScreen(
     onCancel: () -> Unit,
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = context as LifecycleOwner
+    // The composition context may be locale-wrapped (S24-1): the camera
+    // needs the real LifecycleOwner (the activity) behind it.
+    val lifecycleOwner = AppLocale.unwrapToLifecycle(context) as LifecycleOwner
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
 
     DisposableEffect(Unit) {
@@ -140,7 +145,7 @@ fun QrScannerScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "Point the camera at the QR the host printed.",
+                text = stringResource(R.string.scan_hint),
                 color = Color.White,
                 fontSize = 13.sp,
             )
@@ -152,7 +157,7 @@ fun QrScannerScreen(
                     .height(44.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = LocalPalette.current.accent),
             ) {
-                Text("Cancel")
+                Text(stringResource(R.string.scan_cancel))
             }
         }
     }

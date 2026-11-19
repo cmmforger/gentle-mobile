@@ -34,7 +34,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.core.HostProfileDto
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import com.gentlemanprogramming.gentlemobile.core.LeaseTakeOutcomeDto
 import com.gentlemanprogramming.gentlemobile.core.LeaseViewDto
 import com.gentlemanprogramming.gentlemobile.core.SessionDto
@@ -78,6 +82,7 @@ fun SessionsScreen(
     onBack: () -> Unit,
 ) {
     val p = LocalPalette.current
+    val context = LocalContext.current
     var sessions by remember { mutableStateOf<List<SessionDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     // S24-3: the listing can be genuinely slow (the host's session files are
@@ -138,12 +143,12 @@ fun SessionsScreen(
                     when (outcome) {
                         LeaseTakeOutcomeDto.TAKEN -> {
                             onLeaseTaken(session.sessionId, token)
-                            showNote("Lease taken — this device now holds it.", isError = false)
+                            showNote(context.getString(R.string.hist_note_taken), isError = false)
                         }
                         LeaseTakeOutcomeDto.RECLAIMED -> {
                             onLeaseTaken(session.sessionId, token)
                             reclaimedIds = reclaimedIds + session.sessionId
-                            showNote(SessionsModel.RECLAIM_NOTE, isError = false)
+                            showNote(context.getString(R.string.hist_note_reclaimed), isError = false)
                         }
                     }
                     reloadNonce += 1
@@ -151,7 +156,7 @@ fun SessionsScreen(
             } catch (e: Exception) {
                 // The core refuses a live lease held elsewhere, typed.
                 mainHandler.post {
-                    showNote(SessionsModel.LEASE_LIVE_ELSEWHERE_NOTE, isError = true)
+                    showNote(context.getString(R.string.hist_note_elsewhere_live), isError = true)
                     reloadNonce += 1
                 }
             }
@@ -167,7 +172,7 @@ fun SessionsScreen(
             }
             mainHandler.post {
                 onLeaseReleased()
-                showNote("Lease released — the session is open again.", isError = false)
+                showNote(context.getString(R.string.hist_note_released), isError = false)
                 reloadNonce += 1
             }
         }
@@ -186,7 +191,7 @@ fun SessionsScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                text = "‹ Nodes",
+                text = stringResource(R.string.hist_back),
                 color = p.accent,
                 fontSize = 13.sp,
                 modifier = Modifier
@@ -197,7 +202,7 @@ fun SessionsScreen(
                     .padding(vertical = 12.dp),
             )
             Text(
-                text = "lease-guarded",
+                text = stringResource(R.string.hist_one_device),
                 color = p.muted,
                 fontSize = 11.sp,
                 letterSpacing = 0.8.sp,
@@ -205,14 +210,14 @@ fun SessionsScreen(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Session history",
+            text = stringResource(R.string.hist_title),
             color = MaterialTheme.colorScheme.onBackground,
             fontSize = 22.sp,
             lineHeight = 26.sp,
             fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.height(4.dp))
-        GroupLabel("${profile.user}@${profile.host} · gentle shell")
+        GroupLabel(stringResource(R.string.hist_subtitle, profile.user, profile.host))
         Text(
             text = sessionsDir,
             color = p.muted,
@@ -225,18 +230,18 @@ fun SessionsScreen(
 
         when {
             sessions == null && error == null -> Text(
-                text = SessionsModel.listingStatus(nowMs - listingStartedAtMs),
+                text = listingStatus(nowMs - listingStartedAtMs),
                 color = p.muted,
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
             )
             error != null -> Text(
-                text = "The sessions could not be listed: ${describeOr(error!!)}",
+                text = stringResource(R.string.hist_list_error, describeOr(error!!)),
                 color = p.error,
                 fontSize = 13.sp,
             )
             sessions!!.isEmpty() -> Text(
-                text = "No sessions in this directory.",
+                text = stringResource(R.string.hist_empty),
                 color = p.muted,
                 fontSize = 13.sp,
             )
@@ -246,7 +251,7 @@ fun SessionsScreen(
                 val reclaimed = session.sessionId in reclaimedIds && isHeldHere
                 SessionRow(
                     session = session,
-                    state = SessionsModel.stateWord(view, reclaimed),
+                    state = stateWord(view, reclaimed),
                     isBlocked = view == LeaseViewDto.IN_USE_ELSEWHERE,
                     onClick = { sheetFor = session },
                 )
@@ -303,7 +308,8 @@ private fun SessionRow(
         Column(Modifier.weight(1f)) {
             Row {
                 Text(
-                    text = session.cwd?.substringAfterLast('/')?.ifBlank { "session" } ?: "session",
+                    text = session.cwd?.substringAfterLast('/')?.ifBlank { stringResource(R.string.hist_fallback_name) }
+                        ?: stringResource(R.string.hist_fallback_name),
                     color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -319,9 +325,9 @@ private fun SessionRow(
                 )
             }
             Text(
-                text = SessionsModel.rowMeta(
+                text = rowMeta(
                     session,
-                    SessionsModel.relativeTime(session.lastModifiedEpochMs.toLong(), System.currentTimeMillis()),
+                    relativeTime(session.lastModifiedEpochMs.toLong(), System.currentTimeMillis()),
                 ),
                 color = p.muted,
                 fontSize = 11.sp,
@@ -346,7 +352,7 @@ private fun SessionSheet(
 ) {
     val p = LocalPalette.current
     val view = if (isHeldHere) LeaseViewDto.HELD_HERE else session.lease
-    val leaseReason = SessionsModel.resumeReason(view, isHeldHere)
+    val leaseReason = resumeReason(view, isHeldHere)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = p.surface,
@@ -359,30 +365,36 @@ private fun SessionSheet(
                 .padding(bottom = 24.dp),
         ) {
             Text(
-                text = session.cwd?.substringAfterLast('/')?.ifBlank { "session" } ?: "session",
+                text = session.cwd?.substringAfterLast('/')?.ifBlank { stringResource(R.string.hist_fallback_name) }
+                        ?: stringResource(R.string.hist_fallback_name),
                 color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(8.dp))
-            SheetField("Session id", session.sessionId)
-            SheetField("File", session.fileName)
-            SheetField("Working directory", session.cwd ?: "not recorded")
+            SheetField(stringResource(R.string.hist_sheet_session_id), session.sessionId)
+            SheetField(stringResource(R.string.hist_sheet_file), session.fileName)
             SheetField(
-                "Last write",
-                SessionsModel.relativeTime(session.lastModifiedEpochMs.toLong(), System.currentTimeMillis()),
+                stringResource(R.string.hist_sheet_dir),
+                session.cwd ?: stringResource(R.string.hist_sheet_dir_missing),
             )
             SheetField(
-                "Messages",
-                session.messageCount?.let { it.toString() } ?: "too large to count cheaply",
+                stringResource(R.string.hist_sheet_last_write),
+                relativeTime(session.lastModifiedEpochMs.toLong(), System.currentTimeMillis()),
             )
             SheetField(
-                "Lease",
+                stringResource(R.string.hist_sheet_messages),
+                session.messageCount?.let {
+                    pluralStringResource(R.plurals.messages_count, it.toInt(), it.toInt())
+                } ?: stringResource(R.string.hist_sheet_messages_too_many),
+            )
+            SheetField(
+                stringResource(R.string.hist_sheet_state),
                 when (view) {
-                    LeaseViewDto.OPEN -> "open — no device holds a claim"
-                    LeaseViewDto.HELD_HERE -> "held by this device (heartbeat every 30 s)"
-                    LeaseViewDto.IN_USE_ELSEWHERE -> "live claim by another device"
-                    LeaseViewDto.STALE -> "stale — heartbeat older than 90 s, reclaimable"
+                    LeaseViewDto.OPEN -> stringResource(R.string.hist_state_free_detail)
+                    LeaseViewDto.HELD_HERE -> stringResource(R.string.hist_state_held_here_detail)
+                    LeaseViewDto.IN_USE_ELSEWHERE -> stringResource(R.string.hist_state_elsewhere_detail)
+                    LeaseViewDto.STALE -> stringResource(R.string.hist_state_stale_detail)
                 },
             )
             Spacer(Modifier.height(16.dp))
@@ -403,11 +415,11 @@ private fun SessionSheet(
                     disabledContentColor = p.textDisabled,
                 ),
             ) {
-                Text(text = "Resume session", fontWeight = FontWeight.SemiBold)
+                Text(text = stringResource(R.string.hist_resume), fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = leaseReason ?: "Resuming opens the session over the RPC lane — this device holds the lease.",
+                text = leaseReason ?: stringResource(R.string.hist_resume_ok),
                 color = p.muted,
                 fontSize = 12.sp,
             )
@@ -417,14 +429,18 @@ private fun SessionSheet(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = if (isHeldHere) "Release lease" else "Take lease",
+                    text = if (isHeldHere) {
+                        stringResource(R.string.hist_release)
+                    } else {
+                        stringResource(R.string.hist_take)
+                    },
                     color = p.accent,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
             if (!isHeldHere && view == LeaseViewDto.STALE) {
                 Text(
-                    text = SessionsModel.RECLAIM_NOTE,
+                    text = stringResource(R.string.hist_note_reclaimed),
                     color = p.muted,
                     fontSize = 11.sp,
                 )
@@ -450,6 +466,68 @@ private fun SheetField(label: String, value: String) {    val p = LocalPalette.c
         )
     }
 }
+
+// --- S24-1: the localized words the pure SessionsModel contract renders ---
+
+/** The loading state of the list, localized: why it can be slow, and past
+ *  two seconds that it is still working (the same rule the pure
+ *  [SessionsModel.listingStatus] encodes and tests). */
+@Composable
+private fun listingStatus(elapsedMs: Long): String =
+    if (elapsedMs < SessionsModel.SLOW_LISTING_AFTER_MS) {
+        stringResource(R.string.hist_listing)
+    } else {
+        stringResource(R.string.hist_listing_slow, elapsedMs / 1000)
+    }
+
+/** The row's state word, localized (the pure [SessionsModel.stateWord] rule). */
+@Composable
+private fun stateWord(view: LeaseViewDto, reclaimed: Boolean = false): String = when (view) {
+    LeaseViewDto.OPEN -> stringResource(R.string.hist_state_free)
+    LeaseViewDto.HELD_HERE ->
+        if (reclaimed) stringResource(R.string.hist_state_reclaimed)
+        else stringResource(R.string.hist_state_held_here)
+    LeaseViewDto.IN_USE_ELSEWHERE -> stringResource(R.string.hist_state_elsewhere)
+    LeaseViewDto.STALE -> stringResource(R.string.hist_state_stale)
+}
+
+/** Why Resume is disabled for this row, localized (the pure
+ *  [SessionsModel.resumeReason] rule); `null` when it may run. */
+@Composable
+private fun resumeReason(view: LeaseViewDto, isHeldHere: Boolean): String? {
+    if (isHeldHere) return null
+    return when (view) {
+        LeaseViewDto.OPEN, LeaseViewDto.HELD_HERE -> stringResource(R.string.hist_resume_take_first)
+        LeaseViewDto.IN_USE_ELSEWHERE -> stringResource(R.string.hist_resume_elsewhere)
+        LeaseViewDto.STALE -> stringResource(R.string.hist_resume_stale)
+    }
+}
+
+/** Relative last-used time, localized (the pure [SessionsModel.relativeTime] rule). */
+@Composable
+private fun relativeTime(epochMs: Long, nowMs: Long): String {
+    val delta = (nowMs - epochMs).coerceAtLeast(0)
+    val minutes = delta / 60_000
+    val hours = delta / 3_600_000
+    val days = delta / 86_400_000
+    return when {
+        minutes < 1 -> stringResource(R.string.time_just_now)
+        hours < 1 -> stringResource(R.string.time_min_ago, minutes)
+        days < 1 -> stringResource(R.string.time_h_ago, hours)
+        else -> stringResource(R.string.time_d_ago, days)
+    }
+}
+
+/** The row's mono meta line, localized (the pure [SessionsModel.rowMeta] rule). */
+@Composable
+private fun rowMeta(session: SessionDto, relative: String): String =
+    listOfNotNull(
+        relative,
+        session.messageCount?.let {
+            pluralStringResource(R.plurals.messages_count, it.toInt(), it.toInt())
+        },
+        session.cwd,
+    ).joinToString(" · ")
 
 /** The group header: the word and the count, uppercase, quiet — the same
  *  rule as board 03 (the screen has its own: the shared one is private to

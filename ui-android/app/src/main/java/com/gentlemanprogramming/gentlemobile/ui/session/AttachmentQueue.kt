@@ -37,14 +37,18 @@ class AttachmentQueue {
     /**
      * Add a picked image in the ready state. Oversize files are refused
      * before they enter the queue — the UI shows the reason and nothing is
-     * ever half-added.
+     * ever half-added. [tooLargeMessage] builds the refusal in the user's
+     * language (S24-1); the default keeps the English contract the pure
+     * tests assert.
      */
-    fun add(displayName: String, storedName: String, sizeBytes: Long): AddResult {
+    fun add(
+        displayName: String,
+        storedName: String,
+        sizeBytes: Long,
+        tooLargeMessage: (sizeBytes: Long, maxBytes: Long) -> String = ::defaultTooLargeMessage,
+    ): AddResult {
         if (sizeBytes > MAX_UPLOAD_BYTES) {
-            return AddResult.Refused(
-                "the file is too large: ${formatBytes(sizeBytes)}, the host accepts up to " +
-                    formatBytes(MAX_UPLOAD_BYTES),
-            )
+            return AddResult.Refused(tooLargeMessage(sizeBytes, MAX_UPLOAD_BYTES))
         }
         val id = nextId++
         items.add(
@@ -122,6 +126,12 @@ class AttachmentQueue {
         if (index >= 0) items[index] = change(items[index])
     }
 }
+
+/** The default (English) oversize refusal, the pure contract the tests
+ *  rely on; the UI passes a localized builder instead (S24-1). */
+fun defaultTooLargeMessage(sizeBytes: Long, maxBytes: Long): String =
+    "the file is too large: ${formatBytes(sizeBytes)}, the host accepts up to " +
+        formatBytes(maxBytes)
 
 /** One attachment in the composer, with its honest state. */
 data class Attachment(

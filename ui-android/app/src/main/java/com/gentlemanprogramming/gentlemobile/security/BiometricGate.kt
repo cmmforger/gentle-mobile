@@ -5,6 +5,7 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.ui.theme.KeyValueStore
 
 /**
@@ -90,10 +91,11 @@ fun requireBiometricUnlock(
             }
         },
     )
+    // S24-1: the prompt's words follow the stored locale.
     prompt.authenticate(
         BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock Gentle Mobile")
-            .setSubtitle("Confirm it is you before opening the session.")
+            .setTitle(activity.getString(R.string.bio_title))
+            .setSubtitle(activity.getString(R.string.bio_subtitle))
             .setAllowedAuthenticators(
                 BiometricManager.Authenticators.BIOMETRIC_WEAK or
                     BiometricManager.Authenticators.DEVICE_CREDENTIAL,

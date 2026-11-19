@@ -44,14 +44,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.core.KnownHostDto
-import com.gentlemanprogramming.gentlemobile.notifications.notificationsRowDetail
-import com.gentlemanprogramming.gentlemobile.notifications.notificationsRowWord
 import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
 import com.gentlemanprogramming.gentlemobile.identity.OpenSshKey
 import com.gentlemanprogramming.gentlemobile.security.BiometricDecision
+import com.gentlemanprogramming.gentlemobile.ui.locale.AppLanguage
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
@@ -76,6 +78,8 @@ fun SettingsScreen(
     biometricDecision: BiometricDecision?,
     biometricEnabled: Boolean,
     theme: AppTheme,
+    language: AppLanguage,
+    onSetLanguage: (AppLanguage) -> Unit,
     connected: Boolean,
     regenerated: Boolean,
     /** T15 (S11): the notification permission as the device holds it —
@@ -110,18 +114,19 @@ fun SettingsScreen(
         // Compact top area (S24-2): one title next to the back chevron — the
         // duplicated small topbar word is gone.
         Row(verticalAlignment = Alignment.CenterVertically) {
+            val backCd = stringResource(R.string.cd_back)
             Box(
                 modifier = Modifier
                     .size(44.dp)
                     .clickable(onClick = onBack)
-                    .semantics { contentDescription = "Back" },
+                    .semantics { contentDescription = backCd },
                 contentAlignment = Alignment.Center,
             ) {
                 Text("‹", color = p.text, fontSize = 18.sp)
             }
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "Settings",
+                text = stringResource(R.string.set_title),
                 color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 22.sp,
                 lineHeight = 26.sp,
@@ -140,16 +145,20 @@ fun SettingsScreen(
         // where it lives. Regenerate is real (T18): a confirmation first —
         // it destroys the old key — then a fresh identity and cleared pins.
         SettingRow(
-            name = "Device key",
+            name = stringResource(R.string.set_device_key),
             sub = when {
-                identityError != null -> "The identity could not be read."
-                identity != null -> "ed25519 · ${keyFingerprint(identity.publicKeyLine) ?: "fingerprint unavailable"} · app-private storage"
-                else -> "Reading the key…"
+                identityError != null -> stringResource(R.string.set_device_key_error)
+                identity != null -> stringResource(
+                    R.string.set_device_key_sub,
+                    keyFingerprint(identity.publicKeyLine)
+                        ?: stringResource(R.string.set_device_key_fp_unavailable),
+                )
+                else -> stringResource(R.string.set_device_key_reading)
             },
             isMono = true,
             trailing = {
                 MiniButton(
-                    label = "Regenerate",
+                    label = stringResource(R.string.set_regenerate),
                     enabled = identity != null,
                     onClick = { confirmRegenerate = true },
                 )
@@ -165,14 +174,17 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "New key generated — the pinned hosts were cleared. " +
-                        "Each host must trust this key again before it connects.",
+                    text = stringResource(R.string.set_regenerated),
                     color = p.text,
                     fontSize = 12.sp,
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
-                MiniButton(label = "Copy key", enabled = identity != null, onClick = onCopyKey)
+                MiniButton(
+                    label = stringResource(R.string.set_copy_key),
+                    enabled = identity != null,
+                    onClick = onCopyKey,
+                )
             }
         }
 
@@ -180,18 +192,32 @@ fun SettingsScreen(
         // known_hosts store, with the fingerprint each connect challenge
         // shows. A forgotten host challenges its fingerprint again.
         SettingRow(
-            name = "Known hosts",
+            name = stringResource(R.string.set_known_hosts),
             sub = if (knownHosts.isEmpty()) {
-                "No hosts pinned yet — connect once and the host key pins itself."
+                stringResource(R.string.set_known_hosts_empty)
             } else {
-                if (hostsOpen) "${knownHosts.size} pinned — tap to hide" else
-                    "${knownHosts.joinToString(" · ") { it.spec }} — ${knownHosts.size} pinned"
+                if (hostsOpen) {
+                    pluralStringResource(R.plurals.pinned_count, knownHosts.size, knownHosts.size)
+                } else {
+                    stringResource(
+                        R.string.set_known_hosts_closed,
+                        knownHosts.joinToString(" · ") { it.spec },
+                        knownHosts.size,
+                    )
+                }
             },
             isMono = true,
             onClick = if (knownHosts.isEmpty()) null else ({ hostsOpen = !hostsOpen }),
             trailing = if (knownHosts.isEmpty()) null else {
                 {
-                    MiniButton(label = if (hostsOpen) "Hide" else "Manage", enabled = true) {
+                    MiniButton(
+                        label = if (hostsOpen) {
+                            stringResource(R.string.set_hide)
+                        } else {
+                            stringResource(R.string.set_manage)
+                        },
+                        enabled = true,
+                    ) {
                         hostsOpen = !hostsOpen
                     }
                 }
@@ -204,12 +230,12 @@ fun SettingsScreen(
                     sub = host.fingerprint,
                     isMono = true,
                     trailing = {
-                        MiniButton(label = "Forget", enabled = true) { onForgetHost(host) }
+                        MiniButton(label = stringResource(R.string.set_forget), enabled = true) { onForgetHost(host) }
                     },
                 )
             }
             UnavailableNote(
-                "Forgetting a host clears only its pin — the next connection asks you to confirm the host's fingerprint again.",
+                stringResource(R.string.set_forget_note),
             )
         }
 
@@ -218,8 +244,8 @@ fun SettingsScreen(
         // with the device credential as fallback. A device that cannot
         // enforce it keeps the switch off with the exact reason.
         SettingRow(
-            name = "Biometric unlock",
-            sub = "fingerprint before opening any session",
+            name = stringResource(R.string.set_biometric),
+            sub = stringResource(R.string.set_biometric_sub),
             trailing = {
                 GateSwitch(
                     checked = biometricEnabled,
@@ -230,20 +256,20 @@ fun SettingsScreen(
         )
         when (biometricDecision) {
             BiometricDecision.NOT_AVAILABLE -> UnavailableNote(
-                "This device has no usable biometric hardware — the switch stays off.",
+                stringResource(R.string.set_biometric_no_hw),
             )
             BiometricDecision.NOT_ENROLLED -> UnavailableNote(
-                "No fingerprint or device credential is enrolled — enrol one in Android settings first.",
+                stringResource(R.string.set_biometric_not_enrolled),
             )
-            null -> UnavailableNote("Checking this device's biometric capability…")
+            null -> UnavailableNote(stringResource(R.string.set_biometric_checking))
             else -> {}
         }
 
         // Host-key pinning is real and locked on: the core refuses a host
         // whose key changed, with no way to turn it off.
         SettingRow(
-            name = "Host-key pinning",
-            sub = "Refuses a host whose SSH key changed.",
+            name = stringResource(R.string.set_pinning),
+            sub = stringResource(R.string.set_pinning_sub),
             trailing = { DisabledSwitch(checked = true, locked = true) },
         )
         }
@@ -265,12 +291,12 @@ fun SettingsScreen(
             mutableStateOf(sessionsStore.getString(SessionsConfig.OVERRIDE_KEY))
         }
         SettingRow(
-            name = "Sessions directory",
+            name = stringResource(R.string.set_sessions_dir),
             sub = sessionsDirOverride?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "default · ~/.gentle-shell/agent/sessions",
+                ?: stringResource(R.string.set_sessions_dir_default),
             isMono = true,
             trailing = {
-                MiniButton(label = "Edit", enabled = true) {
+                MiniButton(label = stringResource(R.string.set_edit), enabled = true) {
                     sessionsDirDraft = sessionsDirOverride?.trim().orEmpty()
                     editingSessionsDir = true
                 }
@@ -279,12 +305,12 @@ fun SettingsScreen(
         if (editingSessionsDir) {
             AlertDialog(
                 onDismissRequest = { editingSessionsDir = false },
-                title = { Text("Sessions directory") },
+                title = { Text(stringResource(R.string.set_sessions_dir)) },
                 text = {
                     OutlinedTextField(
                         value = sessionsDirDraft,
                         onValueChange = { sessionsDirDraft = it },
-                        placeholder = { Text("blank = the host default") },
+                        placeholder = { Text(stringResource(R.string.set_sessions_dir_hint)) },
                         singleLine = true,
                     )
                 },
@@ -293,11 +319,11 @@ fun SettingsScreen(
                         sessionsStore.putString(SessionsConfig.OVERRIDE_KEY, sessionsDirDraft)
                         sessionsDirOverride = sessionsDirDraft
                         editingSessionsDir = false
-                    }) { Text("Save", color = p.accent) }
+                    }) { Text(stringResource(R.string.set_save), color = p.accent) }
                 },
                 dismissButton = {
                     TextButton(onClick = { editingSessionsDir = false }) {
-                        Text("Cancel", color = p.muted)
+                        Text(stringResource(R.string.set_cancel), color = p.muted)
                     }
                 },
                 containerColor = p.surfaceRaised,
@@ -317,34 +343,48 @@ fun SettingsScreen(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             LaneOption(
-                title = "Herdr TUI",
-                subtitle = "Attach to Herdr",
+                title = stringResource(R.string.set_lane_herdr),
+                subtitle = stringResource(R.string.set_lane_herdr_sub),
                 selected = true,
                 enabled = true,
                 modifier = Modifier.weight(1f),
             )
             LaneOption(
-                title = "Gentle Shell",
-                subtitle = "Start a shell session",
+                title = stringResource(R.string.set_lane_shell),
+                subtitle = stringResource(R.string.set_lane_shell_sub),
                 selected = false,
                 enabled = false,
                 modifier = Modifier.weight(1f),
             )
         }
-        UnavailableNote("Gentle Shell direct sessions are not in the core yet — Herdr TUI is the only lane.")
+        UnavailableNote(stringResource(R.string.set_lane_note))
 
         // T15 (S11): the permission, stated honestly. A denial is never a
         // silent failure — the row says notifications are off and why, and
         // the way back is one tap into the system's own settings.
         SettingRow(
-            name = "Agent notifications",
-            sub = notificationsRowDetail(notificationsGranted),
-            trailing = { Text(notificationsRowWord(notificationsGranted), color = p.muted, fontSize = 13.sp) },
+            name = stringResource(R.string.set_notifications),
+            sub = when (notificationsGranted) {
+                true -> stringResource(R.string.set_notifications_on_detail)
+                false -> stringResource(R.string.set_notifications_off_detail)
+                null -> stringResource(R.string.set_notifications_na_detail)
+            },
+            trailing = {
+                Text(
+                    text = if (notificationsGranted == false) {
+                        stringResource(R.string.set_notifications_off)
+                    } else {
+                        stringResource(R.string.set_notifications_on)
+                    },
+                    color = p.muted,
+                    fontSize = 13.sp,
+                )
+            },
         )
         if (notificationsGranted == false) {
             SettingRow(
-                name = "Enable notifications",
-                sub = "Opens Android's notification settings for Gentle Mobile.",
+                name = stringResource(R.string.set_enable_notifications),
+                sub = stringResource(R.string.set_enable_notifications_sub),
                 onClick = onOpenNotificationSettings,
                 trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
             )
@@ -358,13 +398,29 @@ fun SettingsScreen(
             onToggle = { openSection = if (openSection == Section.Appearance) null else Section.Appearance },
         ) {
         SettingRow(
-            name = "Theme · ${theme.label}",
+            name = stringResource(R.string.set_theme, theme.label),
             sub = if (theme == AppTheme.CUTE) {
-                "default · tap to pick Sexy or Gentle"
+                stringResource(R.string.set_theme_cute_sub)
             } else {
-                "tap to pick Cute, Sexy or Gentle"
+                stringResource(R.string.set_theme_sub)
             },
             onClick = onOpenThemes,
+            trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
+        )
+        // S24-1: the language lives here, next to the theme — one row, same
+        // style. Tapping switches between English and Español; the change
+        // applies immediately and persists.
+        SettingRow(
+            name = stringResource(R.string.set_language, language.displayName),
+            sub = stringResource(
+                R.string.set_language_switch_sub,
+                (if (language == AppLanguage.SPANISH) AppLanguage.ENGLISH else AppLanguage.SPANISH).displayName,
+            ),
+            onClick = {
+                onSetLanguage(
+                    if (language == AppLanguage.SPANISH) AppLanguage.ENGLISH else AppLanguage.SPANISH,
+                )
+            },
             trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
         )
         }
@@ -376,12 +432,12 @@ fun SettingsScreen(
         ) {
         val version = appVersion()
         SettingRow(
-            name = "Gentle Mobile $version",
-            sub = "protocol 22 · Apache-2.0",
+            name = stringResource(R.string.set_about_version, version),
+            sub = stringResource(R.string.set_about_sub),
             isMono = true,
-            trailing = { MiniButton(label = "What's new", enabled = false) },
+            trailing = { MiniButton(label = stringResource(R.string.set_whats_new), enabled = false) },
         )
-        UnavailableNote("No release notes yet — this is $version.")
+        UnavailableNote(stringResource(R.string.set_no_release_notes, version))
         }
         Spacer(Modifier.height(24.dp))
 
@@ -402,10 +458,10 @@ fun SettingsScreen(
                 disabledContentColor = p.textDisabled,
             ),
         ) {
-            Text(text = "Disconnect", fontWeight = FontWeight.SemiBold)
+            Text(text = stringResource(R.string.set_disconnect), fontWeight = FontWeight.SemiBold)
         }
         if (!connected) {
-            UnavailableNote("Not connected — the disconnect action belongs to a live session.")
+            UnavailableNote(stringResource(R.string.set_disconnect_note))
         }
         Spacer(Modifier.height(8.dp))
         Button(
@@ -422,22 +478,19 @@ fun SettingsScreen(
                 disabledContentColor = p.error,
             ),
         ) {
-            Text(text = "Revoke on this device", fontWeight = FontWeight.SemiBold)
+            Text(text = stringResource(R.string.set_revoke), fontWeight = FontWeight.SemiBold)
         }
         UnavailableNote(
-            "Wipes this phone's key and its pinned hosts. The host side still needs " +
-                "gentle-mobile-pair --revoke on each host — the app cannot run it: " +
-                "it holds only this phone's key, never a shell on the host.",
+            stringResource(R.string.set_revoke_note),
         )
         Spacer(Modifier.height(24.dp))
     }
 
     if (confirmRegenerate) {
         ConfirmDialog(
-            title = "Regenerate the device key?",
-            body = "This destroys the old key and clears every pinned host — a new key means new trust. " +
-                "Each host must trust the new key before it can connect.",
-            confirmLabel = "Regenerate",
+            title = stringResource(R.string.set_confirm_regenerate_title),
+            body = stringResource(R.string.set_confirm_regenerate_body),
+            confirmLabel = stringResource(R.string.set_regenerate),
             onConfirm = {
                 confirmRegenerate = false
                 onRegenerateKey()
@@ -447,11 +500,9 @@ fun SettingsScreen(
     }
     if (confirmRevoke) {
         ConfirmDialog(
-            title = "Revoke on this device?",
-            body = "This wipes this phone's key and every pinned host. The host still trusts the old key " +
-                "until you run gentle-mobile-pair --revoke on it — the app cannot run that for you: " +
-                "it holds only this phone's key, never a shell on the host.",
-            confirmLabel = "Revoke",
+            title = stringResource(R.string.set_confirm_revoke_title),
+            body = stringResource(R.string.set_confirm_revoke_body),
+            confirmLabel = stringResource(R.string.set_confirm_revoke),
             destructive = true,
             onConfirm = {
                 confirmRevoke = false
@@ -486,7 +537,9 @@ private fun ConfirmDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = p.muted) }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.set_cancel), color = p.muted)
+            }
         },
         containerColor = p.surfaceRaised,
         titleContentColor = MaterialTheme.colorScheme.onBackground,
@@ -497,11 +550,23 @@ private fun ConfirmDialog(
 /// The four Settings sections (S24-2): the screen opens as a compact index
 /// of these four rows, each collapsible, one open at a time, so no section
 /// can push the rest past one screen. `summary` is the collapsed one-liner.
-private enum class Section(val label: String, val summary: String) {
-    Security("Security", "device key · known hosts · biometrics · pinning"),
-    Connection("Connection", "lane · sessions directory · notifications"),
-    Appearance("Appearance", "theme"),
-    About("About", "version · what's new"),
+private enum class Section { Security, Connection, Appearance, About }
+
+/** The section's word and its collapsed one-liner (S24-1). */
+@Composable
+private fun sectionLabel(section: Section): String = when (section) {
+    Section.Security -> stringResource(R.string.set_section_security)
+    Section.Connection -> stringResource(R.string.set_section_connection)
+    Section.Appearance -> stringResource(R.string.set_section_appearance)
+    Section.About -> stringResource(R.string.set_section_about)
+}
+
+@Composable
+private fun sectionSummary(section: Section): String = when (section) {
+    Section.Security -> stringResource(R.string.set_summary_security)
+    Section.Connection -> stringResource(R.string.set_summary_connection)
+    Section.Appearance -> stringResource(R.string.set_summary_appearance)
+    Section.About -> stringResource(R.string.set_summary_about)
 }
 
 /** One collapsible section (S24-2): a full-width 44dp header row — label,
@@ -526,14 +591,14 @@ private fun SectionBody(
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                text = section.label.uppercase(),
+                text = sectionLabel(section).uppercase(),
                 color = p.muted,
                 fontSize = 11.sp,
                 letterSpacing = 0.8.sp,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = section.summary,
+                text = sectionSummary(section),
                 color = p.textDisabled,
                 fontSize = 11.sp,
             )

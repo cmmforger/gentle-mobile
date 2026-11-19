@@ -8,13 +8,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 
 /**
- * Why dictation asks for the microphone, shown before the system dialog
- * goes up and again if the answer is no (T14, S8).
- */
-const val DICTATION_PERMISSION_EXPLANATION =
-    "Dictation hears your voice and types it as text in the field — nothing is recorded or kept."
-
-/**
  * T14 (S8): one shared dictation session — the engine, the permission gate
  * and the state machine wired together, used identically by the live
  * session screen and the fixture so there is exactly one flow to verify.
@@ -47,7 +40,7 @@ class DictationSession(
         val update = controller.begin(
             currentDraft,
             needsPermission = engine.needsPermission,
-            explanation = DICTATION_PERMISSION_EXPLANATION,
+            explanation = engine.permissionExplanation,
         )
         onApply(update)
         if (update.state is DictationState.Listening) {

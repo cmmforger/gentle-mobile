@@ -15,6 +15,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import com.gentlemanprogramming.gentlemobile.MainActivity
 import com.gentlemanprogramming.gentlemobile.R
+import com.gentlemanprogramming.gentlemobile.ui.locale.AppLocale
 
 /**
  * T15 (S11): the Android foreground service that keeps an SSH connection
@@ -60,7 +61,8 @@ class ConnectionService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        val host = intent?.getStringExtra(EXTRA_HOST)?.takeIf { it.isNotBlank() } ?: "host"
+        val host = intent?.getStringExtra(EXTRA_HOST)?.takeIf { it.isNotBlank() }
+            ?: getString(R.string.notif_fallback_host)
         // ServiceCompat names the FGS type explicitly, which Android 14
         // requires for dataSync — the manifest declares the same type.
         ServiceCompat.startForeground(
@@ -109,15 +111,26 @@ object ForegroundHub {
  *  actually be seen. */
 fun ensureChannels(context: Context) {
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
+    // S24-1: channel names resolve in the stored locale, so a channel
+    // created after a language switch reads in the chosen language.
+    val ctx = AppLocale.wrapStored(context)
     manager.createNotificationChannel(
-        NotificationChannel(ConnectionService.CHANNEL_CONNECTION, "Connection", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "Shown while a host connection is live in the background."
+        NotificationChannel(
+            ConnectionService.CHANNEL_CONNECTION,
+            ctx.getString(R.string.notif_channel_connection),
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = ctx.getString(R.string.notif_channel_connection_desc)
             setShowBadge(false)
         },
     )
     manager.createNotificationChannel(
-        NotificationChannel(ConnectionService.CHANNEL_AGENTS, "Agent activity", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "An agent moved into needs you, or finished."
+        NotificationChannel(
+            ConnectionService.CHANNEL_AGENTS,
+            ctx.getString(R.string.notif_channel_agents),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = ctx.getString(R.string.notif_channel_agents_desc)
         },
     )
 }
@@ -127,6 +140,9 @@ fun ensureChannels(context: Context) {
  *  the same path as the in-app Disconnect (ForegroundServiceGate owns the
  *  pairing, so the service stops exactly once). */
 fun connectionNotification(context: Context, host: String): Notification {
+    // S24-1: the notification's words follow the stored locale, so a
+    // notification posted after a language switch reads in that language.
+    val ctx = AppLocale.wrapStored(context)
     val open = PendingIntent.getActivity(
         context,
         0,
@@ -139,12 +155,12 @@ fun connectionNotification(context: Context, host: String): Notification {
         ConnectionService.disconnectIntent(context),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
-    return NotificationCompat.Builder(context, ConnectionService.CHANNEL_CONNECTION)
+    return NotificationCompat.Builder(ctx, ConnectionService.CHANNEL_CONNECTION)
         .setSmallIcon(R.drawable.ic_notification)
-        .setContentTitle("connected · $host")
-        .setContentText("Your agents are reachable. Tap to open.")
+        .setContentTitle(ctx.getString(R.string.notif_connected, host))
+        .setContentText(ctx.getString(R.string.notif_connected_body))
         .setContentIntent(open)
-        .addAction(0, "Disconnect", disconnect)
+        .addAction(0, ctx.getString(R.string.notif_disconnect), disconnect)
         .setOngoing(true)
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .build()
@@ -162,8 +178,10 @@ fun postAgentAlert(context: Context, alert: AgentAlert) {
         // the grant would only throw.
         return
     }
-    ensureChannels(context)
-    val open = Intent(context, MainActivity::class.java).apply {
+    // S24-1: the alert's words follow the stored locale at post time.
+    val ctx = AppLocale.wrapStored(context)
+    ensureChannels(ctx)
+    val open = Intent(ctx, MainActivity::class.java).apply {
         putExtra(ConnectionService.EXTRA_OPEN_AGENT_PANE, alert.paneId)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
@@ -174,14 +192,18 @@ fun postAgentAlert(context: Context, alert: AgentAlert) {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
     val title = when (alert.kind) {
-        AlertKind.NEEDS_YOU -> "${alert.name} needs you"
-        AlertKind.DONE -> "${alert.name} is done"
+        AlertKind.NEEDS_YOU -> ctx.getString(R.string.notif_needs_you, alert.name)
+        AlertKind.DONE -> ctx.getString(R.string.notif_done, alert.name)
     }
-    val notification = NotificationCompat.Builder(context, ConnectionService.CHANNEL_AGENTS)
+    val body = alert.cwd ?: when (alert.kind) {
+        AlertKind.NEEDS_YOU -> ctx.getString(R.string.status_needs_you)
+        AlertKind.DONE -> ctx.getString(R.string.status_done)
+    }
+    val notification = NotificationCompat.Builder(ctx, ConnectionService.CHANNEL_AGENTS)
         .setSmallIcon(R.drawable.ic_notification)
         .setContentTitle(title)
-        .setContentText(alert.cwd ?: alert.kind.word)
-        .setStyle(NotificationCompat.BigTextStyle().bigText(alert.cwd ?: alert.kind.word))
+        .setContentText(body)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
         .setContentIntent(content)
         .setAutoCancel(true)
         .setCategory(NotificationCompat.CATEGORY_REMINDER)

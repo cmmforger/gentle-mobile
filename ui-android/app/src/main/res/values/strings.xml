@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every user-facing string of the app (S24-1). English is the default;
+  res/values-es/strings.xml carries the Spanish variant. Rules: sentence
+  case, no jargon (never "lease", "snapshot" or "protocol 22" in user
+  copy), plurals via <plurals> where a count appears. Never localised:
+  agent names, file paths, session ids, fingerprints, protocol numbers.
+-->
+<resources>
+    <!-- Content descriptions (screen readers) -->
+    <string name="cd_settings">Settings</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_back_to_hosts">Back to hosts</string>
+    <string name="cd_close_session">Close session — releases the session for other devices</string>
+
+    <!-- Pair screen -->
+    <string name="pair_title">Connect to your computer</string>
+    <string name="pair_intro">Run gentle-mobile-pair on the host, scan its QR — or paste the link — and the key is trusted in one step. The host key is confirmed once after.</string>
+    <string name="pair_key_label">This phone\u2019s key</string>
+    <string name="pair_creating_key">Creating the key\u2026</string>
+    <string name="pair_copy">Copy</string>
+    <string name="pair_copied">Copied</string>
+    <string name="pair_key_trust_hint">The host must trust this key before it can connect.</string>
+    <string name="pair_host_label">On the host</string>
+    <string name="pair_ready_when_key">Ready when this phone\u2019s key exists.</string>
+    <string name="pair_copied_command">Copied — run it on the host.</string>
+    <string name="pair_link_label">Connection link</string>
+    <string name="pair_paste">Paste</string>
+    <string name="pair_clipboard_empty">The clipboard is empty — copy the link the host printed.</string>
+    <string name="pair_will_pair">Will pair with %1$s \u00B7 ssh %2$s \u00B7 %3$s</string>
+    <string name="pair_will_connect">Will connect to %1$s \u00B7 %2$s \u00B7 %3$s</string>
+    <string name="pair_button">Connect</string>
+    <string name="pair_button_pairing">Pairing\u2026</string>
+    <string name="pair_button_connecting">Connecting\u2026</string>
+    <string name="pair_status_pairing">Pairing — sending this phone\u2019s key to %1$s\u2026</string>
+    <string name="pair_status_accepted">Key accepted — connecting\u2026</string>
+    <string name="pair_status_probing">Checking the host key, then opening the bridge\u2026</string>
+    <string name="pair_notifications_explaining">Android is asking whether Gentle Mobile may notify you — when an agent needs you, the phone should say so. Declining keeps everything working; Settings will show notifications are off.</string>
+    <string name="pair_scan_qr">Scan QR</string>
+    <string name="pair_camera_denied">Camera permission denied — paste the link instead.</string>
+    <string name="pair_no_camera">This device has no camera — paste the link instead.</string>
+    <string name="pair_no_key_yet">No client key on this phone yet — the identity must exist before pairing.</string>
+    <string name="pair_no_key_file">No client key at %1$s — the identity could not be prepared on this phone.</string>
+
+    <!-- Host-key challenge -->
+    <string name="chal_verify">Verify this host</string>
+    <string name="chal_presents">The host presented this key fingerprint:</string>
+    <string name="chal_pinned_differs">The saved key is different: %1$s. Accepting replaces the saved one.</string>
+    <string name="chal_accept">Accept &amp; connect</string>
+    <string name="chal_cancel">Cancel</string>
+
+    <!-- QR scanner -->
+    <string name="scan_hint">Point the camera at the QR the host printed.</string>
+    <string name="scan_cancel">Cancel</string>
+
+    <!-- Nodes (hosts) screen -->
+    <string name="nodes_state_connected">Connected</string>
+    <string name="nodes_state_connecting">Connecting</string>
+    <string name="nodes_state_interrupted">Interrupted</string>
+    <string name="nodes_state_failed">Failed</string>
+    <string name="nodes_disconnect">Disconnect</string>
+    <string name="nodes_waiting">Waiting for the first update\u2026</string>
+    <string name="nodes_your_hosts">Your hosts</string>
+    <string name="nodes_meta">%1$s \u00B7 port %2$s \u00B7 %3$s</string>
+    <string name="nodes_state_row_connected">connected</string>
+    <string name="nodes_state_row_interrupted">interrupted</string>
+    <string name="nodes_one_host">One host per install for now — adding a second host needs a later build.</string>
+    <string name="nodes_session_history">Session history</string>
+    <string name="nodes_session_history_sub">Open a Gentle Shell session that already exists on the host.</string>
+
+    <!-- Agent inbox groups -->
+    <string name="inbox_back">Agents</string>
+    <string name="inbox_group_needs_you">Needs you</string>
+    <string name="inbox_group_done">Done</string>
+    <string name="inbox_group_working">Working</string>
+    <string name="inbox_group_idle">Idle</string>
+    <string name="inbox_group_unknown">Unknown</string>
+    <string name="inbox_group_count">%1$s \u00B7 %2$d</string>
+    <string name="inbox_no_agents">No agents are running on this host right now.</string>
+    <string name="inbox_interrupted_title">Connection interrupted.</string>
+    <string name="inbox_interrupted_suffix">%1$s — what is on screen is the last information received.</string>
+    <string name="inbox_retry_now">Retry now</string>
+
+    <!-- Agent status words -->
+    <string name="status_idle">idle</string>
+    <string name="status_working">working</string>
+    <string name="status_needs_you">needs you</string>
+    <string name="status_done">done</string>
+    <string name="status_unknown">unknown</string>
+    <string name="status_live">live</string>
+    <string name="status_not_live">not live</string>
+
+    <!-- Agent session screen -->
+    <string name="session_refresh">Refresh</string>
+    <string name="session_live_line">%1$s \u00B7 what the agent shows right now</string>
+    <string name="session_not_live_line">%1$s \u00B7 this is what the screen showed before the connection dropped</string>
+    <string name="session_reading_pane">Reading the pane\u2026</string>
+    <string name="session_pane_empty">(the pane shows no text right now)</string>
+    <string name="session_pane_truncated">The host left out older rows.</string>
+    <string name="session_no_camera_app">no camera app is available on this device</string>
+    <string name="session_no_gallery_app">no gallery app is available on this device</string>
+    <string name="session_reason_link_down">the connection was down while the app was away</string>
+    <string name="session_reason_host_closed">the host closed the connection</string>
+    <string name="session_stats_line">%1$d\u00D7%2$d \u00B7 %3$d drawn cells \u00B7 %4$d colours</string>
+    <string name="session_stats_wide">\u00B7 wide \u0022%1$s\u0022</string>
+    <string name="session_stats_cursor">\u00B7 cursor</string>
+    <string name="session_stats_scroll">\u00B7 scroll \u2194</string>
+    <string name="session_stats_at_bottom">\u00B7 at bottom</string>
+    <string name="session_stats_scrolled">\u00B7 scrolled</string>
+    <string name="session_stats_sp">sp</string>
+
+    <!-- Composer -->
+    <string name="comp_sent">Sent — the host confirmed the submission.</string>
+    <string name="comp_listening">Listening\u2026</string>
+    <string name="comp_listening_partial">Listening\u2026 \u0022%1$s\u0022</string>
+    <string name="comp_stop">Stop</string>
+    <string name="comp_cancel">Cancel</string>
+    <string name="cd_camera">Take a photo with the camera</string>
+    <string name="cd_clip">Attach an image from the gallery</string>
+    <string name="cd_send">Send</string>
+    <string name="cd_send_waiting">Send — waiting for the attachments to finish</string>
+    <string name="cd_mic_stop">Stop dictation</string>
+    <string name="cd_mic_permission">Dictate — waiting for the microphone permission</string>
+    <string name="cd_mic">Dictate — speech becomes text</string>
+    <string name="cd_mic_reason">Dictate — speech becomes text. %1$s</string>
+    <string name="dictation_permission_explanation">Dictation hears your voice and types it as text in the field — nothing is recorded or kept.</string>
+
+    <!-- Attachments -->
+    <string name="att_preview_of">Preview of %1$s</string>
+    <string name="att_uploading">uploading \u00B7 %1$d %% \u00B7 %2$s / %3$s</string>
+    <string name="att_uploaded">\u2713 uploaded \u00B7 %1$s \u00B7 %2$s</string>
+    <string name="att_failed">Upload failed — %1$s</string>
+    <string name="att_ready">waiting to upload \u00B7 %1$s</string>
+    <string name="att_retry">Retry</string>
+    <string name="att_remove_cd">Remove image %1$s</string>
+    <string name="att_unreadable">the image could not be read</string>
+    <string name="att_unreadable_anymore">the image could not be read anymore</string>
+    <string name="att_too_large">the file is too large: %1$s, the host accepts up to %2$s</string>
+
+    <!-- Session history (the host\u2019s stored sessions) -->
+    <string name="hist_back">Nodes</string>
+    <string name="hist_one_device">one device at a time</string>
+    <string name="hist_title">Session history</string>
+    <string name="hist_subtitle">%1$s@%2$s \u00B7 gentle shell</string>
+    <string name="hist_listing">Reading the session files over the connection — a host with many sessions can take a while.</string>
+    <string name="hist_listing_slow">Still reading — the host\u2019s sessions are read one file at a time. (%1$d s so far)</string>
+    <string name="hist_list_error">The sessions could not be listed: %1$s</string>
+    <string name="hist_empty">No sessions in this directory.</string>
+    <string name="hist_state_free">free</string>
+    <string name="hist_state_held_here">open on this device</string>
+    <string name="hist_state_reclaimed">taken over just now</string>
+    <string name="hist_state_elsewhere">in use elsewhere</string>
+    <string name="hist_state_stale">can be taken over</string>
+    <string name="hist_note_taken">You took it over — this device can now resume it.</string>
+    <string name="hist_note_released">Released — the session is free again.</string>
+    <string name="hist_note_reclaimed">The session was left unfinished — you took it over and can resume it.</string>
+    <string name="hist_note_elsewhere_live">Another device is using this session right now — it was not taken.</string>
+    <string name="hist_fallback_name">session</string>
+    <string name="hist_sheet_session_id">Session id</string>
+    <string name="hist_sheet_file">File</string>
+    <string name="hist_sheet_dir">Working directory</string>
+    <string name="hist_sheet_last_write">Last write</string>
+    <string name="hist_sheet_messages">Messages</string>
+    <string name="hist_sheet_state">Session state</string>
+    <string name="hist_state_free_detail">free — no device is using it</string>
+    <string name="hist_state_held_here_detail">in use on this device</string>
+    <string name="hist_state_elsewhere_detail">in use on another device</string>
+    <string name="hist_state_stale_detail">left unfinished — the other device stopped responding, you can take it over</string>
+    <string name="hist_sheet_dir_missing">not recorded</string>
+    <string name="hist_sheet_messages_too_many">too large to count cheaply</string>
+    <string name="hist_resume">Resume session</string>
+    <string name="hist_resume_ok">Resuming opens the session as it was left — this device has it now.</string>
+    <string name="hist_resume_take_first">Take over the session first — resuming opens it for this device, and only one device may use it at a time.</string>
+    <string name="hist_resume_elsewhere">In use elsewhere — another device is using this session right now, so it must not be opened here.</string>
+    <string name="hist_resume_stale">The session was left unfinished on the host. Take it over first, then resume.</string>
+    <string name="hist_take">Take over</string>
+    <string name="hist_release">Release</string>
+
+    <!-- Relative time -->
+    <string name="time_just_now">just now</string>
+    <string name="time_min_ago">%1$d min ago</string>
+    <string name="time_h_ago">%1$d h ago</string>
+    <string name="time_d_ago">%1$d d ago</string>
+
+    <!-- Resumed session -->
+    <string name="res_back">Sessions</string>
+    <string name="res_lane">rpc lane</string>
+    <string name="res_header">resumed \u00B7 %1$s</string>
+    <string name="res_reclaimed">taken over just now</string>
+    <string name="res_empty">This session has no messages yet.</string>
+    <string name="res_role_you">you</string>
+    <string name="res_role_agent">agent</string>
+    <string name="res_closed">Session closed — the session ended and was released.</string>
+    <string name="res_close">Close session</string>
+    <string name="res_dialog_fallback">The agent needs you</string>
+    <string name="res_send_cd">Send</string>
+    <string name="res_send_waiting">Send — waiting for the agent to settle</string>
+    <string name="res_send_type_first">Send — type a prompt first</string>
+
+    <!-- Messages count -->
+    <plurals name="messages_count">
+        <item quantity="one">%d message</item>
+        <item quantity="other">%d messages</item>
+    </plurals>
+    <plurals name="agents_count">
+        <item quantity="one">%d agent</item>
+        <item quantity="other">%d agents</item>
+    </plurals>
+    <plurals name="pinned_count">
+        <item quantity="one">%d host saved</item>
+        <item quantity="other">%d hosts saved</item>
+    </plurals>
+
+    <!-- Settings -->
+    <string name="set_title">Settings</string>
+    <string name="set_section_security">Security</string>
+    <string name="set_section_connection">Connection</string>
+    <string name="set_section_appearance">Appearance</string>
+    <string name="set_section_about">About</string>
+    <string name="set_summary_security">device key \u00B7 saved hosts \u00B7 biometrics \u00B7 pinning</string>
+    <string name="set_summary_connection">lane \u00B7 sessions directory \u00B7 notifications</string>
+    <string name="set_summary_appearance">theme \u00B7 language</string>
+    <string name="set_summary_about">version \u00B7 what\u2019s new</string>
+
+    <string name="set_device_key">Device key</string>
+    <string name="set_device_key_error">The identity could not be read.</string>
+    <string name="set_device_key_sub">ed25519 \u00B7 %1$s \u00B7 app-private storage</string>
+    <string name="set_device_key_fp_unavailable">fingerprint unavailable</string>
+    <string name="set_device_key_reading">Reading the key\u2026</string>
+    <string name="set_regenerate">Regenerate</string>
+    <string name="set_regenerated">New key generated — the saved hosts were cleared. Each host must trust this key again before it connects.</string>
+    <string name="set_copy_key">Copy key</string>
+    <string name="set_known_hosts">Saved hosts</string>
+    <string name="set_known_hosts_empty">No hosts saved yet — connect once and the host key saves itself.</string>
+    <string name="set_known_hosts_open">%1$d saved — tap to hide</string>
+    <string name="set_known_hosts_closed">%1$s — %2$d saved</string>
+    <string name="set_hide">Hide</string>
+    <string name="set_manage">Manage</string>
+    <string name="set_forget">Forget</string>
+    <string name="set_forget_note">Forgetting a host clears only its saved key — the next connection asks you to confirm the host\u2019s fingerprint again.</string>
+    <string name="set_biometric">Biometric unlock</string>
+    <string name="set_biometric_sub">fingerprint before opening any session</string>
+    <string name="set_biometric_no_hw">This device has no usable biometric hardware — the switch stays off.</string>
+    <string name="set_biometric_not_enrolled">No fingerprint or device credential is enrolled — enrol one in Android settings first.</string>
+    <string name="set_biometric_checking">Checking this device\u2019s biometric capability\u2026</string>
+    <string name="set_pinning">Host-key pinning</string>
+    <string name="set_pinning_sub">Refuses a host whose SSH key changed.</string>
+
+    <string name="set_sessions_dir">Sessions directory</string>
+    <string name="set_sessions_dir_default">default \u00B7 ~/.gentle-shell/agent/sessions</string>
+    <string name="set_edit">Edit</string>
+    <string name="set_sessions_dir_hint">blank = the host default</string>
+    <string name="set_save">Save</string>
+    <string name="set_lane_herdr">Herdr TUI</string>
+    <string name="set_lane_herdr_sub">Attach to Herdr</string>
+    <string name="set_lane_shell">Gentle Shell</string>
+    <string name="set_lane_shell_sub">Start a shell session</string>
+    <string name="set_lane_note">Gentle Shell direct sessions are not in the core yet — Herdr TUI is the only lane.</string>
+    <string name="set_notifications">Agent notifications</string>
+    <string name="set_enable_notifications">Enable notifications</string>
+    <string name="set_enable_notifications_sub">Opens Android\u2019s notification settings for Gentle Mobile.</string>
+    <string name="set_notifications_on">On</string>
+    <string name="set_notifications_off">Off</string>
+    <string name="set_notifications_on_detail">The phone will tell you when an agent needs you.</string>
+    <string name="set_notifications_off_detail">Off — notifications were denied, so the phone stays quiet while an agent needs you. Enable them in Android settings.</string>
+    <string name="set_notifications_na_detail">This Android version does not ask — notifications are the system\u2019s to allow.</string>
+
+    <string name="set_theme">Theme</string>
+    <string name="set_theme_cute_sub">default \u00B7 tap to pick Sexy or Gentle</string>
+    <string name="set_theme_sub">tap to pick Cute, Sexy or Gentle</string>
+    <string name="set_language">Language · %1$s</string>
+    <string name="set_cancel">Cancel</string>
+    <string name="set_language_switch_sub">Tap to switch to %1$s</string>
+
+    <string name="set_about_version">Gentle Mobile %1$s</string>
+    <string name="set_about_sub">Apache-2.0</string>
+    <string name="set_whats_new">What\u2019s new</string>
+    <string name="set_no_release_notes">No release notes yet — this is %1$s.</string>
+    <string name="set_disconnect">Disconnect</string>
+    <string name="set_disconnect_note">Not connected — the disconnect action belongs to a live session.</string>
+    <string name="set_revoke">Revoke on this device</string>
+    <string name="set_revoke_note">Wipes this phone\u2019s key and its saved hosts. The host side still needs gentle-mobile-pair --revoke on each host — the app cannot run it: it holds only this phone\u2019s key, never a shell on the host.</string>
+    <string name="set_confirm_regenerate_title">Regenerate the device key?</string>
+    <string name="set_confirm_regenerate_body">This destroys the old key and clears every saved host — a new key means new trust. Each host must trust the new key before it can connect.</string>
+    <string name="set_confirm_revoke_title">Revoke on this device?</string>
+    <string name="set_confirm_revoke_body">This wipes this phone\u2019s key and every saved host. The host still trusts the old key until you run gentle-mobile-pair --revoke on it — the app cannot run that for you: it holds only this phone\u2019s key, never a shell on the host.</string>
+    <string name="set_confirm_revoke">Revoke</string>
+
+    <!-- Theme picker -->
+    <string name="theme_title">Theme</string>
+    <string name="theme_intro">Same layout, new colours — the terminal and the app chrome switch together.</string>
+    <string name="theme_accent">accent %1$s</string>
+    <string name="theme_default">DEFAULT</string>
+
+    <!-- Biometric prompt -->
+    <string name="bio_title">Unlock Gentle Mobile</string>
+    <string name="bio_subtitle">Confirm it is you before opening the session.</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_connection">Connection</string>
+    <string name="notif_channel_connection_desc">Shown while a host connection is live in the background.</string>
+    <string name="notif_channel_agents">Agent activity</string>
+    <string name="notif_channel_agents_desc">An agent needs you, or finished.</string>
+    <string name="notif_connected">connected \u00B7 %1$s</string>
+    <string name="notif_connected_body">Your agents are reachable. Tap to open.</string>
+    <string name="notif_disconnect">Disconnect</string>
+    <string name="notif_needs_you">%1$s needs you</string>
+    <string name="notif_done">%1$s is done</string>
+    <string name="notif_fallback_host">host</string>
+
+    <!-- Dictation engine reasons -->
+    <string name="dict_no_recognizer">No speech recognizer is installed on this device — dictation is unavailable.</string>
+    <string name="dict_start_failed">The recognizer could not start: %1$s</string>
+    <string name="dict_no_speech">No speech heard — nothing was dictated.</string>
+    <string name="dict_silent">No speech heard — the microphone stayed quiet.</string>
+    <string name="dict_permission_refused">The microphone permission was refused, so nothing was heard.</string>
+    <string name="dict_network_failed">The recognizer\u2019s network service failed — the on-device engine avoids this.</string>
+    <string name="dict_busy">The recognizer was busy — try again in a moment.</string>
+    <string name="dict_failed">Dictation failed (recognizer error %1$d).</string>
+
+    <!-- Pairing refusals -->
+    <string name="pair_err_unreachable">Could not reach the pairing endpoint at %1$s — run gentle-mobile-pair on the host and start again. (%2$s)</string>
+    <string name="pair_err_token">The host refused the token — this link does not match the running gentle-mobile-pair.</string>
+    <string name="pair_err_expired">Pairing expired — run gentle-mobile-pair on the host and scan or paste the new link.</string>
+    <string name="pair_err_used">That pairing was already used — run gentle-mobile-pair on the host for a new one.</string>
+    <string name="pair_err_key_detail">The host refused the key: %1$s</string>
+    <string name="pair_err_key_malformed">The host refused the key as malformed.</string>
+    <string name="pair_err_other">The host refused the pairing (HTTP %1$d)</string>
+    <string name="pair_err_detail_suffix"> — %1$s</string>
+    <string name="pair_invalid_empty">Paste the link printed by gentle-mobile-pair (gc://host:port?user=…).</string>
+    <string name="pair_invalid_not_gc">That is not a gc:// link — copy the \u201CConnection link\u201D line the pair command prints.</string>
+    <string name="pair_invalid_missing_query">The link is missing ?user=… — copy the full connection link.</string>
+    <string name="pair_invalid_token_without_pair">The link carries a pairing token but no &amp;pair=host:port — copy the full link.</string>
+    <string name="pair_invalid_pair_without_token">The link carries a pairing endpoint but no &amp;t=token — copy the full link.</string>
+    <string name="pair_invalid_bad_token">The link\u2019s pairing token looks malformed.</string>
+    <string name="pair_invalid_bad_pair_hostport">The link\u2019s pair endpoint needs host:port, like &amp;pair=192.168.1.24:8787.</string>
+    <string name="pair_invalid_bad_authority">The link needs host:port before the ?, like gc://192.168.1.24:22?user=me.</string>
+    <string name="pair_invalid_bad_host">The link\u2019s host name looks malformed.</string>
+    <string name="pair_invalid_bad_port">The link\u2019s port must be a number from 1 to 65535.</string>
+    <string name="pair_invalid_bad_user_url">The link\u2019s user name is not valid URL text.</string>
+    <string name="pair_invalid_bad_user_name">The link\u2019s user name looks malformed.</string>
+
+    <!-- Errors the core surfaces through the UI -->
+    <string name="err_host_key_mismatch">Host key mismatch: saved %1$s, presented %2$s.</string>
+    <string name="err_host_key_unknown">Unknown host key: %1$s.</string>
+    <string name="err_request_refused">The host refused it (%1$s): %2$s</string>
+    <string name="err_unsupported_method">This host does not offer %1$s.</string>
+    <string name="err_transport">The connection to the host failed: %1$s</string>
+    <string name="err_timeout">The host took too long to answer: %1$s</string>
+</resources>
