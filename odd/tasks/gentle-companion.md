@@ -275,6 +275,20 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   and offer the explicit fallback of showing the **whole pane** scaled down — the old mirror mode as a deliberate choice, never
   as the default. When the desktop lets go, the session returns to 1:1 with no typing. Any notice that changes the card's
   height must not change the derived grid, or a failed claim re-fires itself forever.
+
+- **S32 — Borrowed from `tuan3w/herdr-mobile`, not its code.** The human weighed replacing this app with that
+  Flutter client and chose to keep ours: same stack, same Apache-2.0 licence, and take the two ideas it does better.
+  Its own README states the same limit we measured — "herdr can't resize a pane to the phone's width over its API",
+  answered there with a client-side **wrap mode** and pinch-zoom.
+  1. **Wrap mode (S32a).** When the granted grid crops wider pane content, the phone must be able to **re-wrap the
+     pane's text to its own columns** at a readable size, instead of only cropping or shrinking the whole pane. This
+     is the honest answer to the daemon limit and the closest thing to "like Moshi" that upstream allows. The sharp
+     1:1 grid stays the default when nothing is cropped; the whole-pane view stays available as the exact-layout
+     fallback.
+  2. **Approval board (S32b).** A board grouped by what each agent needs (needs you, working, done, idle), where a
+     waiting agent shows the command it wants to run and its options become one-tap answers, and a risky answer is
+     held rather than tapped. One "needs you" count everywhere.
+
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -336,6 +350,8 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T26 | Robust reflow (survives bind, rebind, tab switch and keyboard change, never painting a stale width), the grid derived in both axes so the frame fills the card, write to the split the human is looking at, and a `+` that picks a disk (all the machine's disks) and browses to a folder to create the workspace | S31 S31a S31b | worker | — |
 | T27 | Disk and directory browsing for `+`: over SFTP, list the machine's real disks (mount points with their labels) and a directory's folders, so a workspace can be created by tapping through disks and folders instead of typing an absolute path | S30 S31 | worker | core `56b2401`, UI pending |
 | T28 | **Deferred, after T26 is green:** evaluate the `kitknox/herdr` fork as the host for a terminal control stream (raw output + snapshots + `tab.set_geometry` claim semantics) so the phone renders locally with native scrollback. Gated on its license, on the cost of a second modified herdr on a host that already runs `0.9.5-mustaccin`, and on an explicit human decision to install it. Until then the app stays on upstream `remote-client-bridge` surfaces. | S31 S31b | inline | — |
+| T30 | Wrap mode: re-wrap the pane's text to the phone's columns when the granted grid crops it, readable and colour-preserving where the read carries it, with the sharp 1:1 grid as the default and the whole pane kept as the exact-layout fallback | S32a | worker | — |
+| T31 | Approval board: agents grouped by what they need, the exact command before an approval, one-tap answers with a re-read before sending, risky answers held, one needs-you count everywhere | S32b | worker | — |
 | T29 | Honest crop: detect that the granted grid crops wider pane content, say it in one line, and offer the whole pane scaled as an explicit fallback; anchor every notice so it cannot change the derived grid and re-fire the claim | S31c | worker | — |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
@@ -701,3 +717,17 @@ dimensions); regenerated from the core.
 The daemon fact stands and is the honest limit of "like Moshi" on upstream: while the human's desktop TUI is attached, every
 pane's PTY stays at the TUI width — even a workspace the TUI is not showing — so the phone can be sharp and cropped, or complete
 and small, but not reflowed and large. That needs the desktop detached, or T28.
+
+**L26 (the fork question, answered: no fork, take the ideas):** The human proposed replacing this app with
+`tuan3w/herdr-mobile` (Flutter, Android, ~37 stars, one author, v0.1.67, **GPL-3.0-only**), connecting it to their own
+herdr, with our QR/SSH pairing and the Gentleman Programming themes. Checked before answering: that app drives herdr over
+SSH with a persistent multiplexed channel that runs a **python3 script on the host** (falling back to
+`herdr remote-api-bridge`, then `socat`), pins host keys, keeps keys in the platform keychain, and generates an Ed25519 key
+on the phone with a one-line `authorized_keys` command — the same security model we already ship. It adds an approval
+board and ACP chat, and its own README records the limitation this repo measured today: *"herdr can't resize a pane to the
+phone's width over its API, so wide panes are pinch-zoomed or re-flowed by the app's wrap mode"*. Its `pi` support is
+declared unverified ("starts but has not completed a turn yet"), which matters here because pi is what the human runs.
+Decision: **keep our app** (Kotlin/Compose + Rust, Apache-2.0, 372 JVM + 179 core tests, QR pairing, themes, dictation,
+lease, workspace creation) and **take the two ideas it does better** — the wrap mode (S32a) and the approval board
+(S32b). Rejected for now: forking it (GPL-3.0 would relicense this project and force source on any distribution, and
+Flutter would discard every fix and test here).
