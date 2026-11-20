@@ -766,3 +766,10 @@ honest states, nothing clipped) and the dressing (no chrome, key row, composer, 
 brief was corrected mid-flight: a new board `11-terminal-in-the-phone.html` carries the three states, and the approval board
 also shows a tool call with a tappable path, a diff and a test result. Not a read-only terminal: the wrapped state must still
 look typeable, because ours is a live grid and theirs is text.
+
+**L29 (the wrap wording, approved):** The human approved the copy the design proposed for the wrapped state: EN "Wrapped to
+this phone's width — nothing is cut." / ES "Ajustado al ancho de este teléfono — no se corta nada." It lives in the same
+reserved slot the crop notice uses, replaces it rather than stacking, and is pinned by the same length rule so it cannot
+ellipsize. With this, T32 is accepted as designed: Paper as the fourth theme, the air rules with their numbers, the approval
+block as content, and the three terminal states in `11-terminal-in-the-phone.html`. Next in order: T33 (Paper tokens and the
+air pass, after T30 releases the same files), then T31 (the approval board).
