@@ -267,6 +267,14 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   width and the cell size, number of rows from the card's height. The frame must fill the card in both directions — no empty band at
   the bottom, no letterboxing — and it must be the *complete* terminal the pane runs, not a window onto it. Moshi is the reference
   for what "complete" means: the whole terminal, phone-shaped, rendered 1:1.
+
+- **S31c — When the host will not give the geometry, the phone says so instead of cropping silently.** Chosen by the human
+  after the T26 measurement (L22): the daemon confirms the phone's claim but keeps the pane's PTY at the desktop width while
+  the desktop client is attached, so the phone receives frames of its own grid whose content was cut. The phone must **detect**
+  that state (the pane's visible lines are wider than the grid it was granted), **say it in one line** on the session screen,
+  and offer the explicit fallback of showing the **whole pane** scaled down — the old mirror mode as a deliberate choice, never
+  as the default. When the desktop lets go, the session returns to 1:1 with no typing. Any notice that changes the card's
+  height must not change the derived grid, or a failed claim re-fires itself forever.
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -328,6 +336,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T26 | Robust reflow (survives bind, rebind, tab switch and keyboard change, never painting a stale width), the grid derived in both axes so the frame fills the card, write to the split the human is looking at, and a `+` that picks a disk (all the machine's disks) and browses to a folder to create the workspace | S31 S31a S31b | worker | — |
 | T27 | Disk and directory browsing for `+`: over SFTP, list the machine's real disks (mount points with their labels) and a directory's folders, so a workspace can be created by tapping through disks and folders instead of typing an absolute path | S30 S31 | worker | core `56b2401`, UI pending |
 | T28 | **Deferred, after T26 is green:** evaluate the `kitknox/herdr` fork as the host for a terminal control stream (raw output + snapshots + `tab.set_geometry` claim semantics) so the phone renders locally with native scrollback. Gated on its license, on the cost of a second modified herdr on a host that already runs `0.9.5-mustaccin`, and on an explicit human decision to install it. Until then the app stays on upstream `remote-client-bridge` surfaces. | S31 S31b | inline | — |
+| T29 | Honest crop: detect that the granted grid crops wider pane content, say it in one line, and offer the whole pane scaled as an explicit fallback; anchor every notice so it cannot change the derived grid and re-fire the claim | S31c | worker | — |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
@@ -671,3 +680,8 @@ line that changes the card height, which changes the derived grid, which re-fire
 ~40 s, their agent was mid-turn) and the `ERP-WEB-FRONT` session, backing out immediately. No typing and no resizing into
 their panes; the release restored the desktop geometry. Recorded because a phone client that claims geometry can disturb a
 live desktop session, and that is exactly the risk the blocker above is about.
+
+**L24 (S31c, the human's call):** Faced with the daemon arbitration from L22, the human chose **detect and tell the truth, no
+fork**: when the granted grid crops wider pane content the phone says so in one line and offers the whole pane scaled as an
+explicit fallback, never as the default; when the desktop lets go, the session returns to 1:1 with no typing. T28 stays
+deferred. This is T29.
