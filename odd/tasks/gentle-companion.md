@@ -791,3 +791,17 @@ translated"; the platform UI face; the bundled JetBrainsMono Nerd Font Mono), de
 app cannot back. `04-session.html` had its send triangle replaced by the **Iconoir** solid `send` paper-plane (MIT, credited in
 the file) inside the same 44 dp accent circle. Both are board changes: T33 must carry them into the app (the drawable
 `ic_send` is still a plain triangle) and the settings screen must lose the Connection choice.
+
+**L32 (wrap closed, and a correction to what we believed about the daemon):** T30 is in (`1ae1358`): when the granted grid cuts
+wider pane content the phone can re-flow the pane's own text — 12 dp gutter per side, 32 columns of reading width, 16 sp floor,
+hard break inside over-long tokens — with the sharp 1:1 grid still the default and the whole pane still the exact-layout
+fallback. The first attempt shipped at 21 columns and a 73.5 px font with every glyph flush to the card edge: complete content
+that *looked* clipped, which is the worst of both. Numbers now: 32 columns, 47.4 px (≈18.1 sp), the phrase in six pieces that
+concatenate to the exact 162 characters, verified on the **real** cropped flow (widest 182 against a granted 38) with the
+preview switch built but not needed. 396 JVM tests. The debug preview is gated on `FLAG_DEBUGGABLE` and only touches the view
+layer; the decision tests pass unmodified.
+**Correction to L22 and to memory:** between 16:56 and 17:05 the daemon **did** reflow fresh panes' PTYs to the phone's claim
+(37–38 columns, nothing cropped, the app correctly showed no notice), and by 17:19 it was holding panes wide again — with the
+same desktop TUI attached throughout and no change on our side. So "never reflows while the desktop is attached" was too
+strong: the arbitration flips with daemon state we do not control. The honest consequence is that wrap is a fallback for a
+state that comes and goes, not a permanent answer, and that the phone must keep detecting rather than assuming.
