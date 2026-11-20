@@ -327,6 +327,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T25 | Fifth phone test: reduce the top padding, fix the pane/painted width mismatch on a warm rebind, route prompts to the visible pane, drop the Sent note, re-fit the card when the keyboard opens, and make attachment failures honest and short | S30 | worker | — |
 | T26 | Robust reflow (survives bind, rebind, tab switch and keyboard change, never painting a stale width), the grid derived in both axes so the frame fills the card, write to the split the human is looking at, and a `+` that picks a disk (all the machine's disks) and browses to a folder to create the workspace | S31 S31a S31b | worker | — |
 | T27 | Disk and directory browsing for `+`: over SFTP, list the machine's real disks (mount points with their labels) and a directory's folders, so a workspace can be created by tapping through disks and folders instead of typing an absolute path | S30 S31 | worker | core `56b2401`, UI pending |
+| T28 | **Deferred, after T26 is green:** evaluate the `kitknox/herdr` fork as the host for a terminal control stream (raw output + snapshots + `tab.set_geometry` claim semantics) so the phone renders locally with native scrollback. Gated on its license, on the cost of a second modified herdr on a host that already runs `0.9.5-mustaccin`, and on an explicit human decision to install it. Until then the app stays on upstream `remote-client-bridge` surfaces. | S31 S31b | inline | — |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
@@ -612,3 +613,22 @@ height is spent on padding. Painted geometry comes from the **frame**, not the c
 (`DESKTOP_SURFACE`, `375`), so the first thing painted is a scaled desktop frame — exactly what S31 forbids. Every width fix is verified
 with S31a.
 
+
+**L20 (rootshell is the reference, not the codebase):** The human pointed at
+`https://github.com/kitknox/rootshell` and asked whether we should apply "más o menos lo que tiene". Read the repo and its
+`docs/herdr-control-mode.md`. Decision, confirmed by the human: **adopt the model on upstream herdr now, evaluate the fork
+later** (T28). Findings worth keeping:
+
+- rootshell is Swift + Metal + libghostty on Apple platforms (MIT, 844 stars, one main author, ~5.5k files). **Not portable**:
+  libghostty has no Android renderer (Zig + Metal, macOS/Linux-GTK targets), and almost every subsystem leans on Apple
+  frameworks. Porting it is rewriting this app to gain features nobody asked for.
+- Its herdr document solves *our* defect list by design: **geometry ownership** (`tab.set_geometry` with `claim:false` for
+  routine updates, one *claiming* request per activation, so a delayed resize cannot undo a newer handoff), **activation that
+  re-claims on return and ends when the app is backgrounded**, **layout changes that hold output until the native surfaces use
+  the new grid and recover superseded layouts through snapshots instead of failing**, and a host-side extra `SIGWINCH` at
+  250 ms for programs that missed the resize. Our client does the opposite on every one of those points (L19).
+- The `claim`/`set_geometry`/raw-stream half lives in the **experimental `kitknox/herdr` fork**, not upstream. Against upstream,
+  rootshell falls back to the same server-rendered endpoint surfaces we already use. So the model transfers; the code does not.
+- Open before T28: the fork's license (not yet checked), the risk of a second modified herdr on a host already running
+  `0.9.5-mustaccin`, and the fact that their document states **mosh cannot carry this control mode** — which is what our P1
+  excluded and what our rotation-drops-the-connection pain would want.
