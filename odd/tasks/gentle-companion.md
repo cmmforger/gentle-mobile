@@ -261,6 +261,12 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   renders at native size, and never scales the picture. The work is making that reflow **reliable**: it must survive a bind, a rebind, a
   tab switch and a keyboard change, and never paint a frame with the previous width. The desktop reflows while the phone is connected
   and returns to its own width on exit — accepted by the human.
+
+- **S31b — Width *and* height, as complete as Moshi.** "arrancamos con lo de ancho y largo que debe ser lo mas completo posible como
+  moshi". The grid the phone claims is derived in **both** axes from the card it actually paints: number of columns from the card's
+  width and the cell size, number of rows from the card's height. The frame must fill the card in both directions — no empty band at
+  the bottom, no letterboxing — and it must be the *complete* terminal the pane runs, not a window onto it. Moshi is the reference
+  for what "complete" means: the whole terminal, phone-shaped, rendered 1:1.
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -319,8 +325,8 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T23 | Fourth phone test: working tabs via `tab.focus`, accent header glyphs, a surface derived from the card so the frame fills the phone, workspaces nested under their host without duplication, and a workspace screen that enters the session directly | S28 | worker | — |
 | T24 | Hide the desktop composer rows from the phone's frame: detect the composer, drop those rows, shift the rest up, keep the metrics, and take the freed rows as extra conversation (request that many more rows) | S29 | worker | — |
 | T25 | Fifth phone test: reduce the top padding, fix the pane/painted width mismatch on a warm rebind, route prompts to the visible pane, drop the Sent note, re-fit the card when the keyboard opens, and make attachment failures honest and short | S30 | worker | — |
-| T26 | Robust reflow (survives bind, rebind, tab switch and keyboard change, never painting a stale width), write to the split the human is looking at, and a `+` that picks a disk (all the machine's disks) and browses to a folder to create the workspace | S31 | worker | — |
-| T27 | Disk and directory browsing for `+`: over SFTP, list the machine's real disks (mount points with their labels) and a directory's folders, so a workspace can be created by tapping through disks and folders instead of typing an absolute path | S30 S31 | worker | — |
+| T26 | Robust reflow (survives bind, rebind, tab switch and keyboard change, never painting a stale width), the grid derived in both axes so the frame fills the card, write to the split the human is looking at, and a `+` that picks a disk (all the machine's disks) and browses to a folder to create the workspace | S31 S31a S31b | worker | — |
+| T27 | Disk and directory browsing for `+`: over SFTP, list the machine's real disks (mount points with their labels) and a directory's folders, so a workspace can be created by tapping through disks and folders instead of typing an absolute path | S30 S31 | worker | core `56b2401`, UI pending |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
@@ -562,4 +568,16 @@ screens, and a real transcript (needs a phone with a microphone).
 Next session order: multi-host with the Name field already stored (S24-4) → start a session from repositories with
 history (S24-5) → the agent row showing only the project name (S24-8) → cache the sessions index so 200 sessions do
 not take two minutes → then the release APK, which the human releases only on approval (S23).
+
+**L18 (T27 first, then width and height like Moshi):** Between L17 and now the app went through the third to sixth phone
+reviews, all closed in commits `292c471`…`09d27eb`: the frame fills the card and is derived from it, `tab.focus` is real,
+workspaces nest under their host, loads are branch-aware, network failures are classified, sessions carry a lease, and the
+desktop composer rows stop being painted while its metrics survive. T27 (disks and folders for `+`) landed as core-only in an
+isolated worktree (`129fde7`, 172 core tests) and is now cherry-picked onto `main` as `56b2401`. The human then set the order,
+verbatim: "dejemos T27 cableado primero y arrancamos con lo de ancho y largo que debe ser lo mas completo posible como moshi".
+Recorded as **S31b**: the grid is derived in both axes from the painted card, the frame fills it in both directions and shows
+the complete terminal, and Moshi is the reference for "complete". Sequence: T27 wiring (UniFFI + UI), then T26 — the reflow
+contradiction (PTY reports 184×41 while the phone paints 57 columns; hypothesis: claim+resize at connect works, a warm resize
+kills the frame stream), the 38–48 column target, and the control phrase in the four moments: open, reopen, tab switch,
+keyboard.
 
