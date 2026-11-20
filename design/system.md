@@ -14,6 +14,7 @@ Scope: the mobile app (Android first, iPhone prepared). The in-app terminal keep
 | `Gentleman-Cute` | default | `gentle-pi/themes/Gentleman-Cute.json` (installed package, Apache-2.0) |
 | `Gentleman-Sexy` | selectable | `gentle-pi/themes/Gentleman-Sexy.json` |
 | `Gentle` | selectable, cool/neutral | `gentle-pi/themes/Gentle.json` |
+| `Gentleman-Paper` | light, fourth choice (S33) | designed in T32 from the Cute/brand accent family; the theme file lands in T33 |
 
 Source paths (installed package root):
 `~/.gentle-shell/versions/4.8.0-1.5.2/node_modules/.pnpm/gentle-pi@4.8.0_*/node_modules/gentle-pi/themes/`
@@ -101,24 +102,60 @@ and has no pink; it is the "no-brand" reading theme.
 fails WCAG AA for essential text. Use it only for decorative or disabled text; essential secondary
 labels use `secondary` `#A3B5D6`. Cute and Sexy `muted` `#A78E9B` measures about 7 : 1 and is safe.
 
+## Gentleman-Paper (designed in T32, L27 — enters as the fourth choice)
+
+Paper is the S33 light pass: airy surfaces, soft shadow, large titles. It is **derived from the brand
+pink family, not from the reference app's greys** — the accent stays recognisably pink in a light skin.
+These values are design decisions measured for contrast at design time (artboards `08`–`11`), **not
+captured from a theme source file**; T33 moves them into `themes/Gentleman-Paper.json` in the Pi theme
+shape. This is the one table in this document where invention is deliberate, and it is labelled as such.
+
+| Token | Value | Usage |
+|---|---|---|
+| `bg` | `#FAF5F6` | app background: faint rose-tinted paper (from the Cute page family, lifted) |
+| `surface` | `#FFFFFF` | cards, sheets |
+| `surfaceRaised` | `#FBEFF4` | fields, composer, switch tracks — a rose wash one step off white |
+| `border` | `#E3CBD6` | strong hairlines, focus borders on fields |
+| `borderSubtle` | `#F0E2E8` | inactive borders, row separators |
+| `text` | `#36242C` | primary text (warm dark plum ink, the Cute text family inverted) |
+| `muted` | `#8A6675` | secondary text (rose grey) |
+| `dim` | `#B39CA7` | tertiary, disabled — decorative only |
+| `accent` | `#C2417F` | primary action: brand rose deepened for AA on white (text and fills) |
+| `accentPressed` | `#A63269` | pressed accent |
+| `accentEdge` | `#E0479F` | accent borders, focus rings (the brand pink kept bright) |
+| `selection` | `#FBE4EF` | selected rows, lanes, list highlight |
+| `success` | `#2F6B45` | success text, test results, diff added (on `diffAddedBg`) |
+| `diffAddedBg` | `#E7F4EC` | drawn diff added lines |
+| `warning` | `#B26B1F` | warning glyph on risky approval answers |
+| `error` | `#D6365B` | error, diff removed (on `diffRemovedBg`) |
+| `diffRemovedBg` | `#FCE9ED` | drawn diff removed lines |
+| `terminal` | `#100A0F` | unchanged — the terminal keeps Herdr's dark palette in every theme |
+
+Measured contrast (WCAG, on white `#FFFFFF` unless stated): `text` 14.5 : 1 · `muted` 4.96 : 1
+(4.59 on `bg`) · `accent` 4.82 : 1 as text and as fill with white text · `accentEdge` 3.77 : 1
+(border/focus, ≥3 : 1 UI minimum) · `success` 6.34 : 1 · `warning` 4.19 : 1 · `error` 4.63 : 1 ·
+`dim` 2.55 : 1 (decorative/disabled only). Hierarchy on light reads differently than on the dark
+themes: the **page is tinted and the cards are white**, so cards are distinguished by hairline +
+shadow instead of a darker surface; fields are the rose wash and never sit on a same-value surface.
+
 ## Semantic → theme mapping
 
 The app uses semantic tokens only; a theme swap rewrites the backing values.
 
-| Semantic token | Cute | Sexy | Gentle | Source of the mapping |
-|---|---|---|---|---|
-| `surface` | `#100A0F` | `#100A0F` | `#06080f` | `bgPanel` / `bg` |
-| `surfaceRaised` | `#2A1720` | `#2A1720` | `#161D2E` | `borderSubtle` / `userMessageBg` |
-| `textPrimary` | `#F6EFF3` | `#F6EFF3` | `#F3F6F9` | `text` |
-| `textSecondary` | `#A78E9B` | `#A78E9B` | `#5C6170` | `muted` |
-| `textDisabled` | `#76616B` | `#76616B` | `#5C6170` | `dim` |
-| `accent` | `#F095C8` | `#F43888` | `#E0C15A` | `accent` |
-| `accentPressed` | `#C96AA2` | `#BF0F50` | `#B5B2D0` | `deepPink` / `secondary` |
-| `accentEdge` | `#FFB1DD` | `#FF4F9A` | `#7FB4CA` | `activePink` / `blue` |
-| `success` | `#B4E7C7` | `#D2CBD0` | `#B7CC85` | `success` |
-| `warning` | `#F2B86D` | `#F2B86D` | `#DEBA87` | `warning` |
-| `error` | `#FF718F` | `#FF718F` | `#CB7C94` | `error` |
-| `selection` | `#28121E` | `#28121E` | `#232A40` | `selection` |
+| Semantic token | Cute | Sexy | Gentle | Paper | Source of the mapping |
+|---|---|---|---|---|---|
+| `surface` | `#100A0F` | `#100A0F` | `#06080f` | `#FFFFFF` | `bgPanel` / `bg` |
+| `surfaceRaised` | `#2A1720` | `#2A1720` | `#161D2E` | `#FBEFF4` | `borderSubtle` / `userMessageBg` / Paper rose wash |
+| `textPrimary` | `#F6EFF3` | `#F6EFF3` | `#F3F6F9` | `#36242C` | `text` |
+| `textSecondary` | `#A78E9B` | `#A78E9B` | `#5C6170` | `#8A6675` | `muted` |
+| `textDisabled` | `#76616B` | `#76616B` | `#5C6170` | `#B39CA7` | `dim` |
+| `accent` | `#F095C8` | `#F43888` | `#E0C15A` | `#C2417F` | `accent` |
+| `accentPressed` | `#C96AA2` | `#BF0F50` | `#B5B2D0` | `#A63269` | `deepPink` / `secondary` |
+| `accentEdge` | `#FFB1DD` | `#FF4F9A` | `#7FB4CA` | `#E0479F` | `activePink` / `blue` |
+| `success` | `#B4E7C7` | `#D2CBD0` | `#B7CC85` | `#2F6B45` | `success` |
+| `warning` | `#F2B86D` | `#F2B86D` | `#DEBA87` | `#B26B1F` | `warning` |
+| `error` | `#FF718F` | `#FF718F` | `#CB7C94` | `#D6365B` | `error` |
+| `selection` | `#28121E` | `#28121E` | `#232A40` | `#FBE4EF` | `selection` / Paper from `userMessageBg` lifted |
 
 **App-level selection (`--selection`).** The mobile app paints the selected row, lane and list highlight with
 the theme's `userMessageBg`, not with the terminal `selection` token, because `userMessageBg` is the value that
@@ -260,15 +297,17 @@ Cute does **not** use the theme file's near-black chrome. It uses the palette
 Runtime proof (measured, not assumed): page `rgb(26,18,24)`, panel `rgb(32,22,30)`, field `rgb(36,24,34)`,
 terminal `rgb(16,10,15)`.
 
-**Sexy and Gentle keep their captured palettes**, with no extension layer:
+**Sexy and Gentle keep their captured palettes**, with no extension layer. Paper joins them with its
+designed values (see its own section above):
 
-| Slot | Sexy | Gentle |
-|---|---|---|
-| `--bg` | `#060407` | `#06080F` |
-| `--surface` | `#100A0F` | `#0D0F14` |
-| `--surfaceRaised` | `#2A1720` | `#161D2E` |
-| `--borderSubtle` | `#2A1720` | `#232A40` |
-| `--selection` | `#2E0F1F` | `#232A40` |
+| Slot | Sexy | Gentle | Paper |
+|---|---|---|---|
+| `--bg` | `#060407` | `#06080F` | `#FAF5F6` |
+| `--surface` | `#100A0F` | `#0D0F14` | `#FFFFFF` |
+| `--surfaceRaised` | `#2A1720` | `#161D2E` | `#FBEFF4` |
+| `--borderSubtle` | `#2A1720` | `#232A40` | `#F0E2E8` |
+| `--selection` | `#2E0F1F` | `#232A40` | `#FBE4EF` |
+| `--shadow` | none | none | `0 6px 16px rgba(26,18,24,.10)` |
 
 Gentle's page is `#06080F` (its own `bg`), never the lifted `#161D2E` that an earlier iteration used — that
 correction came from canvas comment `d3vqi9m`. Every value in this table exists in `Gentleman-Sexy.json` or
@@ -286,6 +325,66 @@ Rules that come with it:
   background; that is how the composer became invisible when `bg` was raised without lifting the rest.
 - When a brand value is needed, read it from the site's own CSS variables and record the variable name here.
   Never approximate a brand colour by eye.
+
+## Air rules (fixed in T32, L27 — the S33 pass, every theme)
+
+These turn the proposed starter geometry into the numbers the boards (`10-air-rules.html` and the
+S33 pass) actually use. They apply to all four themes; only the shadow differs.
+
+**Type** (system UI stack; mono = bundled Nerd Font face):
+
+| Role | Numbers | Where |
+|---|---|---|
+| Title | 28 px / 700 / 1.2 | screen h1 |
+| Row name | 15 / 600 / 1.35 | hosts, agents, list rows |
+| Body | 15 / 400 / **1.5** | subtitles, approval question context |
+| Question | 15 / 600 / 1.4 | approval block |
+| Command | 13 mono / 1.55 | exact command chip, paths |
+| Section label | 11 / 500 / uppercase / .08em tracking | group labels |
+| Meta | 11 mono / 1.5 | timestamps, versions, cwd |
+
+**Rhythm:** screen side padding 16, top 12 (S30: no dead space above the card), bottom 16; between
+cards 12; group labels 24 above / 4 below; rows 12–14 vertical with min-height 44; card inner
+padding 16; every visible action ≥ 44 dp with 18–20 px glyphs (S27 quiet header).
+
+**Surface:** card radius 16, terminal/composer radius 12, fields radius 8; hairlines are 1 px
+`borderSubtle` everywhere; the **shadow is one flat layer** `0 6px 16px rgba(26,18,24,.10)` and only
+in Paper — dark themes keep hairline-only cards (no blur stacks, S6). Colour budget unchanged:
+one accent + one error per screen.
+
+## Approval block (S32b — content, never a dialog)
+
+- The agent's question, the **exact command in mono** (`Command: …` chip, `surfaceRaised`, radius 8),
+  and **full-width option rows** at ≥ 44 dp separated by hairlines.
+- Risky answers carry the warning triangle in `warning`; the safe answer carries none. Nothing else
+  is marked.
+- The needs-you count is **one count everywhere**: the group label (`needs you · 2`) and a single
+  floating pill (`2 need you`); no per-row status chips (redundancy rule).
+- Copy EN default: `May I run the migration on staging?` · `1. Yes` · `2. Yes, don't ask again` ·
+  `3. No` · `2 need you`. ES: `¿Puedo ejecutar la migración en staging?` · `1. Sí` ·
+  `2. Sí, no me vuelvas a preguntar` · `3. No` · `2 te necesitan`.
+
+## Agent activity drawn, not dumped (S33)
+
+- One card in the session flow: tool call lines (`Read(path)`, `Edit(path)`, `Bash(cmd)`) with the
+  path as an underlined tappable link, a one-line result sub-line, and `+n −m` counts at the row end.
+- Diff rows carry **coloured line numbers**: removed on `diffRemovedBg`/`error`, added on
+  `diffAddedBg`/`success` (Paper); dark themes use `toolSuccessBg` with the theme's diff colours.
+- Test results render as words with a colour, never a dump: `128 passed in 14.2s` in `success`.
+
+## Terminal presentation states (S31b / S31c / S32a — artboard `11`)
+
+The dressing never changes: quiet header (project name only), workspace tabs strip on the card,
+reserved notice slot, key row and composer — every state stays **typeable**, never read-only.
+
+| State | When | What the phone shows |
+|---|---|---|
+| Sharp 1:1 | the pane fits the granted grid | full frame, cell grid, nothing cut, notice slot **empty** |
+| Cut | the desktop owns the pane (S31c) | lines clipped at the right edge, the one-line notice in `error` (`The desktop is using this pane, so long lines arrive cut.` / ES `El escritorio usa este panel: las líneas llegan cortadas.`) + `Show the whole pane` action; the notice lives in a slot reserved in every state so it never changes the derived grid |
+| Whole (fallback) | explicit choice from the cut state | the entire pane scaled to fit, `… — showing it whole.` / ES `… se muestra entero.` |
+| Wrap (T30) | the granted grid crops, chosen re-flow | the pane's text re-wrapped to the phone's columns at a readable size, nothing clipped, cursor + key row + composer intact; proposed notice copy: `Wrapped to this phone's width — nothing is cut.` / ES `Ajustado al ancho de este teléfono. Nada se corta.` — **new copy, flagged for T30 to confirm** |
+
+Every state keeps the terminal palette truth: the app chrome never repaints the pane.
 
 ## Component rules (stated in the feature, not derived from tokens)
 

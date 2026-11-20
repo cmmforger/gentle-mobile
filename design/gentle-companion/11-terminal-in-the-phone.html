@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390">
+<title>Gentle Companion — 11 The terminal in the phone, three honest states</title>
+<style>
+*{box-sizing:border-box}
+:root{
+--bg:#1A1218;--surface:#20161E;--surfaceRaised:#241822;--border:#342230;--borderSubtle:#342230;--terminal:#100A0F;
+--textPrimary:#F6EFF3;--textSecondary:#A78E9B;--textDisabled:#76616B;
+--accent:#FF76C3;--accentPressed:#5F1E3C;--accentEdge:#FF8ACE;
+--error:#FF718F;--selection:#342230;--shadow:none;
+--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+--r-sm:8px;--r-md:12px;--r-lg:16px;--r-pill:999px;
+--t11:11px;--t13:13px;--t15:15px;--t28:28px;
+--mono:"JetBrainsMono Nerd Font Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+--sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+html[data-theme="paper"]{
+--bg:#FAF5F6;--surface:#FFFFFF;--surfaceRaised:#FBEFF4;--border:#E3CBD6;--borderSubtle:#F0E2E8;--terminal:#100A0F;
+--textPrimary:#36242C;--textSecondary:#8A6675;--textDisabled:#B39CA7;
+--accent:#C2417F;--accentPressed:#A63269;--accentEdge:#E0479F;
+--error:#D6365B;--selection:#FBE4EF;
+--shadow:0 6px 16px rgba(26,18,24,.10)}
+.theme-bar{display:flex;gap:var(--s2);align-items:center;margin-bottom:var(--s4);flex-wrap:wrap}
+.theme-bar span{font-size:var(--t11);letter-spacing:.08em;text-transform:uppercase;color:var(--textSecondary)}
+.theme-bar button{min-height:44px;padding:0 var(--s4);border-radius:var(--r-pill);border:1px solid var(--borderSubtle);background:transparent;color:var(--textPrimary);font-size:var(--t13);cursor:pointer}
+.theme-bar button[aria-pressed="true"]{border-color:var(--accentEdge);color:var(--accentEdge)}
+html,body{margin:0}
+body{min-height:100vh;background:var(--bg);color:var(--textPrimary);font-family:var(--sans);font-size:var(--t15);line-height:1.5;display:flex;flex-direction:column;align-items:center;padding:var(--s5) var(--s4) var(--s6)}
+.caption{color:var(--textSecondary);font-size:var(--t13);text-align:center;max-width:70ch;margin-bottom:var(--s4)}
+.caption b{color:var(--textPrimary);font-weight:600}
+.state-label{width:390px;font-size:var(--t11);letter-spacing:.1em;text-transform:uppercase;color:var(--textSecondary);font-family:var(--mono);margin:0 0 var(--s2);font-weight:500}
+.phone{width:390px;height:844px;flex:none;background:var(--bg);border:1px solid var(--borderSubtle);border-radius:var(--r-lg);overflow:hidden;display:flex;flex-direction:column;margin-bottom:var(--s2)}
+.topbar{flex:none;display:grid;grid-template-columns:44px 1fr 44px;align-items:center;padding:var(--s2) var(--s3);border-bottom:1px solid var(--borderSubtle)}
+.topbar-title{min-height:44px;background:transparent;border:0;font:inherit;font-size:var(--t13);font-weight:600;color:var(--textPrimary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-radius:var(--r-sm)}
+.icon-btn{width:44px;height:44px;display:grid;place-items:center;background:transparent;border:0;color:var(--textPrimary);font:inherit;font-size:var(--t15);cursor:pointer;border-radius:var(--r-sm);padding:0}
+button{font:inherit}
+.screen{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--s2);padding:var(--s2) var(--s3) var(--s3);overflow:hidden}
+/* workspace tabs strip: the card's own top strip */
+.tabs{display:flex;gap:var(--s2)}
+.tab{min-height:44px;display:inline-flex;align-items:center;padding:0 var(--s3);border-radius:var(--r-md);border:1px solid var(--borderSubtle);background:var(--surface);color:var(--textSecondary);font-size:var(--t11);font-family:var(--mono);cursor:pointer;white-space:nowrap}
+.tab[aria-current="true"]{border-color:var(--accentEdge);color:var(--accentEdge);background:var(--selection)}
+.tab-more{margin-left:auto}
+/* the terminal card: no measurement line, no live line, no chrome */
+.terminal{flex:1;min-height:0;overflow:hidden;background:var(--terminal);border:1px solid var(--borderSubtle);border-radius:var(--r-md);padding:var(--s3) var(--s4);font-family:var(--mono);line-height:1.55}
+.terminal.small{font-size:var(--t11)}
+.terminal.big{font-size:var(--t15)}
+.tl{white-space:pre-wrap;word-break:break-all;color:#F6EFF3}
+.terminal.cut .tl{white-space:pre;overflow:hidden}
+.tp{color:#F095C8}.tt{color:#F6EFF3}.tg{color:#B4E7C7}.ty{color:#E0C27A}.tb{color:#A9C7EE}.tm{color:#D7A0B8}.td{color:#A78E9B}
+/* reserved notice slot: same height in every state, so a notice can never change the derived grid */
+.notice{flex:none;min-height:56px;display:flex;flex-direction:column;justify-content:center;gap:var(--s1);padding:0 var(--s1)}
+.notice p{margin:0;font-size:var(--t13);line-height:1.5;color:var(--textPrimary);display:flex;gap:var(--s2);align-items:baseline}
+.notice p.cut{color:var(--error)}
+.notice p.cut svg{flex:none;transform:translateY(2px);color:var(--error)}
+.notice .fallback{align-self:flex-start;min-height:44px;display:inline-flex;align-items:center;padding:0 var(--s3);border-radius:var(--r-sm);border:1px solid var(--borderSubtle);background:transparent;color:var(--accentEdge);font-size:var(--t13);font-weight:600;cursor:pointer}
+.keys{display:flex;gap:2px;flex-wrap:wrap;margin-bottom:var(--s1)}
+.key{position:relative;isolation:isolate;font-family:var(--mono);font-size:10px;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:0;color:var(--textPrimary);padding:0 var(--s1);cursor:pointer}
+.key::after{content:"";position:absolute;inset:8px 3px;border:1px solid var(--borderSubtle);border-radius:var(--r-sm);background:var(--surfaceRaised);z-index:-1}
+.composer{display:grid;grid-template-columns:1fr 44px 44px 44px;gap:var(--s2);align-items:end}
+.composer textarea{font:inherit;font-size:16px;min-height:44px;max-height:96px;line-height:1.35;background:var(--surfaceRaised);color:var(--textPrimary);border:1px solid var(--borderSubtle);border-radius:var(--r-sm);padding:11px var(--s3);width:100%;resize:none}
+.composer textarea::placeholder{color:var(--textSecondary)}
+.c-btn{width:44px;height:44px;display:grid;place-items:center;background:transparent;border:0;color:var(--textSecondary);font-size:var(--t15);cursor:pointer;border-radius:var(--r-sm)}
+.send{width:44px;height:44px;display:grid;place-items:center;background:var(--accent);color:#FFFFFF;border:0;border-radius:var(--r-pill);cursor:pointer}
+.send.on-dark{color:var(--bg)}
+:focus-visible{outline:2px solid var(--accentEdge);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<p class="caption"><b>11 · La terminal en el teléfono — los tres estados que la app puede alcanzar, uno al lado del otro.</b> El contenido es <b>el mismo panel</b> (incluida la frase de control S31a), así las diferencias se leen de una: <b>A</b> 1:1 nítido cuando el panel entra (grilla 38 columnas, nada cortado); <b>B</b> el escritorio tiene el panel: las líneas llegan cortadas — aviso de una línea con la frase exacta ya medida, en su slot reservado que nunca cambia la grilla, más la salida explícita «Show the whole pane»; <b>C</b> wrap (T30/S32a): el texto del panel re-flujado a las columnas del teléfono, nada cortado, letra legible. <b>Ninguno es un terminal de solo lectura</b>: en los tres hay cursor, fila de teclas y composer — la envolvente no cambia, cambia solo la tarjeta. Terminal siempre con la paleta Herdr; ES: «El escritorio usa este panel: las líneas llegan cortadas.» / «… se muestra entero.» / «Ajustado al ancho de este teléfono.» (frase nueva propuesta para T30).</p>
+
+<div class="theme-bar" role="group" aria-label="Re-render the three states in each appearance">
+  <span>Theme</span>
+  <button type="button" data-set="cute" aria-pressed="true">Cute</button>
+  <button type="button" data-set="paper" aria-pressed="false">Paper</button>
+</div>
+
+<p class="state-label">A · sharp 1:1 — the pane fits, nothing cut · notice slot empty</p>
+<section class="phone" aria-label="Terminal state A: sharp 1:1 grid, pane fits">
+  <header class="topbar">
+    <button class="icon-btn" type="button" aria-label="Back to workspaces">←</button>
+    <button class="topbar-title" type="button" aria-label="Session for review-payments">review-payments</button>
+    <button class="icon-btn" type="button" aria-label="Session menu">⋯</button>
+  </header>
+  <main class="screen">
+    <div class="tabs" aria-label="Workspace tabs">
+      <button class="tab" type="button" aria-current="true">payments</button>
+      <button class="tab" type="button">notes</button>
+      <button class="tab tab-more" type="button" aria-label="Open the pane map">⊞ 2/3</button>
+    </div>
+    <div class="terminal small" role="img" aria-label="Terminal at 38 columns, rendered 1:1, complete">
+      <div class="tl"><span class="tp">❯</span> <span class="tt">pytest tests/payments -k 409</span></div>
+      <div class="tl"><span class="tg">PASSED</span> <span class="tt">14 · </span><span class="ty">skipped 2</span> <span class="td">· 3.41 s</span></div>
+      <div class="tl"><span class="tp">❯</span> <span class="tt">git diff --stat</span></div>
+      <div class="tl"> <span class="tb">src/payments/retry.rs</span> <span class="td">| 42</span> <span class="tg">++++++</span><span class="tr" style="color:#FF718F">--</span></div>
+      <div class="tl"><span class="tm">▌ agent: the 409 comes from two retried</span></div>
+      <div class="tl"><span class="tm">▌ PUTs that landed on the same</span></div>
+      <div class="tl"><span class="tm">▌ idempotency key. Proposing a per-</span></div>
+      <div class="tl"><span class="tm">▌ request key. Approve to continue?</span></div>
+      <div class="tl"><span class="tp">❯</span> <span class="tt">LA-FRASE-DE-CONTROL-CRUZA-VARIAS-</span></div>
+      <div class="tl"><span class="tt">LINEAS-EN-UN-PANE-DE-38-COLUMNAS-Y-</span></div>
+      <div class="tl"><span class="tt">CADA-PALABRA-DEBE-VERSE-COMPLETA-SI</span></div>
+      <div class="tl"><span class="tt">N-UN-SOLO-CARACTER-CORTADO-EN-EL-BO</span></div>
+      <div class="tl"><span class="tt">RDE-DERECHO-DE-LA-GRILLA</span><span class="tm">▌</span></div>
+    </div>
+    <div class="notice" aria-hidden="true"></div>
+    <div class="keys" aria-label="Extra keys">
+      <button class="key" type="button">Esc</button>
+      <button class="key" type="button">Tab</button>
+      <button class="key" type="button">Ctrl</button>
+      <button class="key" type="button">Alt</button>
+      <button class="key" type="button">↑</button>
+      <button class="key" type="button">↓</button>
+      <button class="key" type="button">Enter</button>
+    </div>
+    <div class="composer">
+      <textarea rows="1" aria-label="Message review-payments">Approve the key fix?</textarea>
+      <button class="c-btn" type="button" aria-label="Attach image or file"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5 12.6 19a4.6 4.6 0 0 1-6.5-6.5l8-8a3.1 3.1 0 0 1 4.4 4.4l-8 8a1.6 1.6 0 0 1-2.3-2.3l7.2-7.2"/></svg></button>
+      <button class="c-btn" type="button" aria-label="Take a photo"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h2.6L8 6.4h8l1.4 2.1H20a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1Z"/><circle cx="12" cy="14" r="3.2"/></svg></button>
+      <button class="send on-dark" type="button" aria-label="Send"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></button>
+    </div>
+  </main>
+</section>
+
+<p class="state-label">B · cropped — the desktop owns the pane · notice + explicit whole-pane fallback</p>
+<section class="phone" aria-label="Terminal state B: granted grid crops the pane, notice shown, whole pane offered">
+  <header class="topbar">
+    <button class="icon-btn" type="button" aria-label="Back to workspaces">←</button>
+    <button class="topbar-title" type="button" aria-label="Session for review-payments">review-payments</button>
+    <button class="icon-btn" type="button" aria-label="Session menu">⋯</button>
+  </header>
+  <main class="screen">
+    <div class="tabs" aria-label="Workspace tabs">
+      <button class="tab" type="button" aria-current="true">payments</button>
+      <button class="tab" type="button">notes</button>
+      <button class="tab tab-more" type="button" aria-label="Open the pane map">⊞ 2/3</button>
+    </div>
+    <div class="terminal small cut" role="img" aria-label="Terminal whose granted grid crops wider pane lines: characters are cut at the right edge">
+      <div class="tl"><span class="tp">❯</span> <span class="tt">pytest tests/payments -k 409</span></div>
+      <div class="tl"><span class="tg">PASSED</span> <span class="tt">14 · </span><span class="ty">skipped 2</span> <span class="td">· 3.41 s</span></div>
+      <div class="tl"><span class="tp">❯</span> <span class="tt">git diff --stat</span></div>
+      <div class="tl"> <span class="tb">src/payments/retry.rs</span> <span class="td">| 42</span> <span class="tg">++++++</span><span class="tr" style="color:#FF718F">--</span></div>
+      <div class="tl"><span class="tm">▌ agent: the 409 comes from two retried PUTs that</span></div>
+      <div class="tl"><span class="tm">▌ landed on the same idempotency key. Proposing</span></div>
+      <div class="tl"><span class="tp">❯</span> <span class="tt">LA-FRASE-DE-CONTROL-CRUZA-VARIAS-LINEAS-EN-UN-PANE-DE-3</span></div>
+      <div class="tl"><span class="tt">8-COLUMNAS-Y-CADA-PALABRA-DEBE-VERSE-COMPLETA-SIN-UN-SOL</span></div>
+      <div class="tl"><span class="tt">O-CARACTER-CORTADO-EN-EL-BORDE-DERECHO-DE-LA-GRILLA</span><span class="tm">▌</span></div>
+    </div>
+    <div class="notice">
+      <p class="cut"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.5 3.5 19h17z"/><path d="M12 10v4.2"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>The desktop is using this pane, so long lines arrive cut.</p>
+      <button class="fallback" type="button">Show the whole pane</button>
+    </div>
+    <div class="keys" aria-label="Extra keys">
+      <button class="key" type="button">Esc</button>
+      <button class="key" type="button">Tab</button>
+      <button class="key" type="button">Ctrl</button>
+      <button class="key" type="button">Alt</button>
+      <button class="key" type="button">↑</button>
+      <button class="key" type="button">↓</button>
+      <button class="key" type="button">Enter</button>
+    </div>
+    <div class="composer">
+      <textarea rows="1" aria-label="Message review-payments">Approve the key fix?</textarea>
+      <button class="c-btn" type="button" aria-label="Attach image or file"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5 12.6 19a4.6 4.6 0 0 1-6.5-6.5l8-8a3.1 3.1 0 0 1 4.4 4.4l-8 8a1.6 1.6 0 0 1-2.3-2.3l7.2-7.2"/></svg></button>
+      <button class="c-btn" type="button" aria-label="Take a photo"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h2.6L8 6.4h8l1.4 2.1H20a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1Z"/><circle cx="12" cy="14" r="3.2"/></svg></button>
+      <button class="send on-dark" type="button" aria-label="Send"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></button>
+    </div>
+  </main>
+</section>
+
+<p class="state-label">C · wrapped (T30) — the pane re-flows to the phone, nothing cut, still typeable</p>
+<section class="phone" aria-label="Terminal state C: wrap mode, the pane re-wrapped to the phone's columns, readable and typeable">
+  <header class="topbar">
+    <button class="icon-btn" type="button" aria-label="Back to workspaces">←</button>
+    <button class="topbar-title" type="button" aria-label="Session for review-payments">review-payments</button>
+    <button class="icon-btn" type="button" aria-label="Session menu">⋯</button>
+  </header>
+  <main class="screen">
+    <div class="tabs" aria-label="Workspace tabs">
+      <button class="tab" type="button" aria-current="true">payments</button>
+      <button class="tab" type="button">notes</button>
+      <button class="tab tab-more" type="button" aria-label="Open the pane map">⊞ 2/3</button>
+    </div>
+    <div class="terminal big" role="img" aria-label="Terminal wrapped to the phone's width at a readable size, nothing clipped">
+      <div class="tl"><span class="tp">❯</span> <span class="tt">pytest tests/payments -k 409</span></div>
+      <div class="tl"><span class="tg">PASSED</span> <span class="tt">14 · </span><span class="ty">skipped 2</span> <span class="td">· 3.41 s</span></div>
+      <div class="tl"><span class="tp">❯</span> <span class="tt">git diff --stat</span></div>
+      <div class="tl"> <span class="tb">src/payments/retry.rs</span> <span class="td">| 42</span> <span class="tg">++++++</span><span class="tr" style="color:#FF718F">--</span></div>
+      <div class="tl"><span class="tm">▌ agent: the 409 comes from two retried PUTs that landed on the same idempotency key. Proposing a per-request key. Approve to continue?</span></div>
+      <div class="tl"><span class="tp">❯</span> <span class="tt">LA-FRASE-DE-CONTROL-CRUZA-VARIAS-LINEAS-EN-UN-PANE-DE-38-COLUMNAS-Y-CADA-PALABRA-DEBE-VERSE-COMPLETA-SIN-UN-SOLO-CARACTER-CORTADO-EN-EL-BORDE-DERECHO-DE-LA-GRILLA</span><span class="tm">▌</span></div>
+    </div>
+    <div class="notice">
+      <p><span aria-hidden="true" style="color:var(--accentEdge)">⤶</span>Wrapped to this phone's width — nothing is cut.</p>
+    </div>
+    <div class="keys" aria-label="Extra keys">
+      <button class="key" type="button">Esc</button>
+      <button class="key" type="button">Tab</button>
+      <button class="key" type="button">Ctrl</button>
+      <button class="key" type="button">Alt</button>
+      <button class="key" type="button">↑</button>
+      <button class="key" type="button">↓</button>
+      <button class="key" type="button">Enter</button>
+    </div>
+    <div class="composer">
+      <textarea rows="1" aria-label="Message review-payments">Approve the key fix?</textarea>
+      <button class="c-btn" type="button" aria-label="Attach image or file"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5 12.6 19a4.6 4.6 0 0 1-6.5-6.5l8-8a3.1 3.1 0 0 1 4.4 4.4l-8 8a1.6 1.6 0 0 1-2.3-2.3l7.2-7.2"/></svg></button>
+      <button class="c-btn" type="button" aria-label="Take a photo"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h2.6L8 6.4h8l1.4 2.1H20a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1Z"/><circle cx="12" cy="14" r="3.2"/></svg></button>
+      <button class="send on-dark" type="button" aria-label="Send"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></button>
+    </div>
+  </main>
+</section>
+<script>
+  const buttons = document.querySelectorAll('.theme-bar button');
+  for (const button of buttons) {
+    button.addEventListener('click', () => {
+      document.documentElement.dataset.theme = button.dataset.set;
+      for (const other of buttons) other.setAttribute('aria-pressed', String(other === button));
+    });
+  }
+</script>
+</body>
+</html>

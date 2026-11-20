@@ -61,6 +61,23 @@
     --bg: #06080f;
   }
 
+  html[data-theme="paper"] {
+    --surface: #FFFFFF;
+    --surfaceRaised: #FBEFF4;
+    --textPrimary: #36242C;
+    --textSecondary: #8A6675;
+    --textDisabled: #B39CA7;
+    --accent: #C2417F;
+    --accentPressed: #A63269;
+    --accentEdge: #E0479F;
+    --success: #2F6B45;
+    --warning: #B26B1F;
+    --error: #D6365B;
+    --selection: #FBE4EF;
+    --bg: #FAF5F6;
+    --shadow: 0 6px 16px rgba(26, 18, 24, .10);
+  }
+
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -238,11 +255,13 @@
 
 <header id="system">
   <p class="eyebrow">Gentle Companion · design system</p>
-  <h1>One token set, three themes, one terminal palette</h1>
+  <h1>One token set, four themes, one terminal palette</h1>
   <p class="lede">
     Colours come from <code>gentle-pi/themes/Gentleman-Cute.json</code>,
     <code>Gentleman-Sexy.json</code> and <code>Gentle.json</code>, plus Herdr's
-    <code>[theme.custom]</code> for the terminal. Spacing, radius and type scale are
+    <code>[theme.custom]</code> for the terminal. <strong>Gentleman-Paper</strong> is the S33 light
+    pass, designed in T32 from the brand pink family and measured in <code>design/system.md</code>;
+    its theme file lands in T33. Spacing, radius and type scale are
     proposals marked in <code>design/system.md</code>, not captured project tokens.
   </p>
   <div class="theme-switch" role="group" aria-label="Preview theme">
@@ -250,6 +269,7 @@
     <button type="button" data-set="cute" aria-pressed="true">Gentleman-Cute</button>
     <button type="button" data-set="sexy" aria-pressed="false">Gentleman-Sexy</button>
     <button type="button" data-set="gentle" aria-pressed="false">Gentle</button>
+    <button type="button" data-set="paper" aria-pressed="false">Gentleman-Paper</button>
   </div>
 </header>
 
@@ -291,19 +311,19 @@
     <h2 id="h-map">Semantic mapping per theme</h2>
     <p class="section-note">Values are the captured ones; switching theme rewrites only these.</p>
     <table>
-      <thead><tr><th>Semantic</th><th>Cute</th><th>Sexy</th><th>Gentle</th></tr></thead>
+      <thead><tr><th>Semantic</th><th>Cute</th><th>Sexy</th><th>Gentle</th><th>Paper</th></tr></thead>
       <tbody>
-        <tr><td class="mono">surface</td><td class="mono">#100A0F</td><td class="mono">#100A0F</td><td class="mono">#06080f</td></tr>
-        <tr><td class="mono">surfaceRaised</td><td class="mono">#2A1720</td><td class="mono">#2A1720</td><td class="mono">#161D2E</td></tr>
-        <tr><td class="mono">textPrimary</td><td class="mono">#F6EFF3</td><td class="mono">#F6EFF3</td><td class="mono">#F3F6F9</td></tr>
-        <tr><td class="mono">textSecondary</td><td class="mono">#A78E9B</td><td class="mono">#A78E9B</td><td class="mono">#5C6170</td></tr>
-        <tr><td class="mono">accent</td><td class="mono">#F095C8</td><td class="mono">#F43888</td><td class="mono">#E0C15A</td></tr>
-        <tr><td class="mono">accentPressed</td><td class="mono">#C96AA2</td><td class="mono">#BF0F50</td><td class="mono">#B5B2D0</td></tr>
-        <tr><td class="mono">accentEdge</td><td class="mono">#FFB1DD</td><td class="mono">#FF4F9A</td><td class="mono">#7FB4CA</td></tr>
-        <tr><td class="mono">success</td><td class="mono">#B4E7C7</td><td class="mono">#D2CBD0</td><td class="mono">#B7CC85</td></tr>
-        <tr><td class="mono">warning</td><td class="mono">#F2B86D</td><td class="mono">#F2B86D</td><td class="mono">#DEBA87</td></tr>
-        <tr><td class="mono">error</td><td class="mono">#FF718F</td><td class="mono">#FF718F</td><td class="mono">#CB7C94</td></tr>
-        <tr><td class="mono">selection</td><td class="mono">#28121E</td><td class="mono">#28121E</td><td class="mono">#232A40</td></tr>
+        <tr><td class="mono">surface</td><td class="mono">#100A0F</td><td class="mono">#100A0F</td><td class="mono">#06080f</td><td class="mono">#FFFFFF</td></tr>
+        <tr><td class="mono">surfaceRaised</td><td class="mono">#2A1720</td><td class="mono">#2A1720</td><td class="mono">#161D2E</td><td class="mono">#FBEFF4</td></tr>
+        <tr><td class="mono">textPrimary</td><td class="mono">#F6EFF3</td><td class="mono">#F6EFF3</td><td class="mono">#F3F6F9</td><td class="mono">#36242C</td></tr>
+        <tr><td class="mono">textSecondary</td><td class="mono">#A78E9B</td><td class="mono">#A78E9B</td><td class="mono">#5C6170</td><td class="mono">#8A6675</td></tr>
+        <tr><td class="mono">accent</td><td class="mono">#F095C8</td><td class="mono">#F43888</td><td class="mono">#E0C15A</td><td class="mono">#C2417F</td></tr>
+        <tr><td class="mono">accentPressed</td><td class="mono">#C96AA2</td><td class="mono">#BF0F50</td><td class="mono">#B5B2D0</td><td class="mono">#A63269</td></tr>
+        <tr><td class="mono">accentEdge</td><td class="mono">#FFB1DD</td><td class="mono">#FF4F9A</td><td class="mono">#7FB4CA</td><td class="mono">#E0479F</td></tr>
+        <tr><td class="mono">success</td><td class="mono">#B4E7C7</td><td class="mono">#D2CBD0</td><td class="mono">#B7CC85</td><td class="mono">#2F6B45</td></tr>
+        <tr><td class="mono">warning</td><td class="mono">#F2B86D</td><td class="mono">#F2B86D</td><td class="mono">#DEBA87</td><td class="mono">#B26B1F</td></tr>
+        <tr><td class="mono">error</td><td class="mono">#FF718F</td><td class="mono">#FF718F</td><td class="mono">#CB7C94</td><td class="mono">#D6365B</td></tr>
+        <tr><td class="mono">selection</td><td class="mono">#28121E</td><td class="mono">#28121E</td><td class="mono">#232A40</td><td class="mono">#FBE4EF</td></tr>
       </tbody>
     </table>
   </section>
@@ -491,7 +511,7 @@
   <code>~/.local/share/herdr-mustaccin/compatible-cute.toml</code> and <code>compatible-sexy.toml</code>.</p>
   <p><strong>Not captured.</strong> Brand palette from gentlemanprogramming.com (pending, becomes
   <code>Gentleman-Brand</code>), and geometry (spacing, radius, type scale) which is proposed here and
-  awaits acceptance.</p>
+  awaits acceptance. Paper is designed (T32), not captured — see <code>design/system.md</code>.</p>
 </footer>
 
 <script>
@@ -499,7 +519,8 @@
   const sets = {
     cute: { pressed: 0, label: 'Gentleman-Cute' },
     sexy: { pressed: 1, label: 'Gentleman-Sexy' },
-    gentle: { pressed: 2, label: 'Gentle' }
+    gentle: { pressed: 2, label: 'Gentle' },
+    paper: { pressed: 3, label: 'Gentleman-Paper' }
   };
   for (const button of buttons) {
     button.addEventListener('click', () => {

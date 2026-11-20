@@ -281,6 +281,45 @@
       "sentAt": "2026-11-17T17:14:37.967Z",
       "resolvedAt": "2026-11-17T17:16:13.709Z",
       "resolution": "Reemplazado por la versión nueva del logo: reprocesé ConnectionMonitorPhone.png (transparente, recortado, 420 px) sobre design/gentle-companion/assets/ y volví a embeberlo como data URI en el splash."
+    },
+    {
+      "id": "ksahuw57",
+      "file": "07-settings.html",
+      "selector": "body > section > main > div:nth-of-type(5) > button:nth-of-type(2)",
+      "excerpt": "Gentle Shell Start a shell session",
+      "comment": "ya no usaria este boton porque nos conectamos a herdr por endetodo esto de connections, no va. Dejaria algo como esto en settings que se presenta en la imagen",
+      "createdAt": "2026-11-20T20:03:40.433Z",
+      "status": "resolved",
+      "sentAt": "2026-11-20T20:03:41.050Z",
+      "resolvedAt": "2026-11-20T20:05:57.068Z",
+      "screenshot": ".screenshots/ksahuw57.png",
+      "resolution": "Removed the Connection section (Herdr TUI / Gentle Shell) and added Appearance (Follow the phone + pinned theme Cute/Paper/Sexy/Gentle), Language, Typeface and Terminal font rows, with the honest values the app really has."
+    },
+    {
+      "id": "rf58y9lf",
+      "file": "04-session.html",
+      "selector": "body > section:nth-of-type(1) > main > div:nth-of-type(3) > button:nth-of-type(3)",
+      "excerpt": "Send",
+      "comment": "este boton lo cambiaria por el icono que tiene este repositorio https://github.com/AltanS/collie",
+      "createdAt": "2026-11-20T20:04:51.640Z",
+      "status": "resolved",
+      "sentAt": "2026-11-20T20:04:51.843Z",
+      "resolvedAt": "2026-11-20T20:08:43.381Z",
+      "screenshot": ".screenshots/rf58y9lf.png",
+      "resolution": "Replaced the plain triangle with the Iconoir solid \"send\" paper-plane glyph (MIT, credited in the file), keeping the 44dp accent circle and the aria-label; the board's composer note now names it."
+    },
+    {
+      "id": "8gzen98c",
+      "file": "07-settings.html",
+      "selector": "body > section > main",
+      "excerpt": "Settings SECURITY Device key ed25519 · 5f:2a:9c:…:d1 · Keystore Regenerate Known hosts workspace · api-box · pi-lab — 3 pinned Manage Biometric unlock fingerprint before opening any session Host-key pinning Refuses a host whose SSH key changed. APPEARANCE Follow the phone Cute when the phone is dark",
+      "comment": "Estan muy apegados dividelos por tarjetas como esta en esta imagen",
+      "createdAt": "2026-11-20T20:11:40.567Z",
+      "status": "resolved",
+      "sentAt": "2026-11-20T20:11:40.723Z",
+      "resolvedAt": "2026-11-20T20:14:33.038Z",
+      "screenshot": ".screenshots/8gzen98c.png",
+      "resolution": "Settings is now grouped into cards, one per area, each with an icon, a title and a line saying what it is for; rows inside keep hairlines, and the screen scrolls since six cards no longer fit one phone frame."
     }
   ]
 }
