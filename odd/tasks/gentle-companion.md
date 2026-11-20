@@ -581,3 +581,34 @@ contradiction (PTY reports 184×41 while the phone paints 57 columns; hypothesis
 kills the frame stream), the 38–48 column target, and the control phrase in the four moments: open, reopen, tab switch,
 keyboard.
 
+**L19 (the reflow defect is in our client, and the map says exactly where):** A read-only pass over the claim path found the
+contradiction is reproducible from the code alone, no daemon needed. Ranked by evidence strength:
+
+1. **A released pane is never re-claimed.** `MainActivity.kt:2958-2971` releases the surface on back but does not clear
+   `askedCols/askedRows`; those are only cleared per *new connection* (`resetBaseline`, `598-599`, called at `1724`). Reopening the same
+   agent reuses its `SessionUi` with the old size, `PanePresentation.reflow` returns null (`PanePresentation.kt:39-46`) and no activation or
+   resize is ever sent again. That is the 184×41-forever state: the host went back to the desktop geometry and nothing claims it back.
+2. **Activation is unconditional and "already asked" outlives a release.** Every reflow sends `setSurfaceActive(true)` again
+   (`PanePresentation.kt:38-47`, `MainActivity.kt:3819`), even when the surface is already active, and `PanePresentationTest.kt:111`
+   bakes the reopen hole in as expected behaviour.
+3. **Bookkeeping records "queued", not "confirmed".** `resizeSurface` and `setSurfaceActive` are enqueued without waiting
+   (`crates/herdr-client/src/handle.rs:243-249` documents that the matching response *should* be awaited; `core/src/connection.rs:574-586`
+   discards the request id). One lost activation poisons the session and the UI only logs it (`MainActivity.kt:3812-3817`).
+4. **Refusals are invisible.** `core/src/connection.rs:681-684` swallows `CommandRejected` and `Response` in a `_ => {}` arm, so a host
+   that does not support surface interest looks identical to a host that accepted it.
+5. **Two calls, two threads, no ordering.** The reflow sends activation and resize as separate calls on a 2-thread pool
+   (`MainActivity.kt:358`, `3819-3820`), so two effect firings (keyboard open then close) can land the older size last.
+6. **A geometry change is connection-fatal.** `crates/herdr-client/src/session.rs:575-589` refuses a frame whose revision does not
+   advance, and `crates/herdr-protocol/src/surface_delta.rs:145-153` refuses a delta whose geometry changed; either error propagates out of
+   `run_connection` (`session.rs:365` → `connect.rs:167` `Disconnected`) and the UI reports the host closed. The baseline is never replaced
+   after a resize, and no fixture pins what arrives after one. This is the strongest candidate for "a warm resize kills the stream" and it
+   also explains a stale width surviving until the connection dies.
+
+The grid arithmetic today: `CardSurface.kt:84-118` derives **both** axes from the card (`cols = usableW/cellW`, `rows = usableH/cellH`, with
+`MIN_COLS=56`, `MAX_COLS=96`, font clamped to 10–28 sp), so height is already phone-derived; but the ask is `rows + 4`
+(`ComposerCrop.requestRows`, `MainActivity.kt:3797`) and the crop pads blank rows at the top (`ComposerCrop.kt:169-186`), so blank card
+height is spent on padding. Painted geometry comes from the **frame**, not the card (`MainActivity.kt:3731-3732`), and nothing compares
+`cols` with `askedCols`: on a cold connect the claim can only happen *after* the first hello frame, which is still the 110×40 desktop size
+(`DESKTOP_SURFACE`, `375`), so the first thing painted is a scaled desktop frame — exactly what S31 forbids. Every width fix is verified
+with S31a.
+
