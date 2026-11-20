@@ -297,6 +297,14 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   option rows with a warning glyph on the risky ones; and agent activity **drawn** rather than dumped (tool calls with
   tappable paths, diffs with coloured lines and numbers, test results). The light theme arrives as a **fourth choice**
   ("Paper"), `cute` stays the default, and the air/typography pass plus the approval block apply to every theme. The
+
+  **The centre of this is the terminal inside the phone, not the palette** — the human corrected the emphasis: *"no es solo el
+  theme si no el cómo se visualiza, cómo se muestra la terminal dentro del teléfono"*. So S33 covers (a) the **fitting**: the
+  same pane in its three honest states — sharp 1:1 when it fits, cropped with the one-line truth today, and **wrapped** to the
+  phone's columns (T30) — with nothing ever clipped; and (b) the **dressing**: no chrome, the key row, the rounded composer,
+  and agent activity drawn rather than dumped (tool calls with tappable paths, diffs with coloured line numbers, test
+  results). The reference app's pane is read-only text; ours stays a live grid the human can type into, so the wrapped state
+  must still read as a terminal, not as a log.
   structured activity view is the biggest piece and is built on the lane this app already has (`gentle-shell --mode rpc`
   gives structured transcript entries and dialogs), not on a new one.
 
@@ -751,3 +759,10 @@ an approval block that reads as content (question, exact command in mono, full-w
 activity drawn rather than dumped (tool calls, diffs, test results). Decision taken with the human: the light theme arrives
 as a **fourth** choice ("Paper"), `cute` stays the default, and the air and approval rules apply to every theme. Design first
 (T32), then implementation (T33), because the human should see it on the canvas before any screen changes.
+
+**L28 (the emphasis: the terminal in the phone, not the theme):** The human clarified S33 — the goal is not a recolour but
+*how the terminal is displayed inside the phone*, which they connected to the wrap work. Recorded in S33: the fitting (three
+honest states, nothing clipped) and the dressing (no chrome, key row, composer, activity drawn rather than dumped). The design
+brief was corrected mid-flight: a new board `11-terminal-in-the-phone.html` carries the three states, and the approval board
+also shows a tool call with a tappable path, a diff and a test result. Not a read-only terminal: the wrapped state must still
+look typeable, because ours is a live grid and theirs is text.
