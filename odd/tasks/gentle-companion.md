@@ -685,3 +685,19 @@ live desktop session, and that is exactly the risk the blocker above is about.
 fork**: when the granted grid crops wider pane content the phone says so in one line and offers the whole pane scaled as an
 explicit fallback, never as the default; when the desktop lets go, the session returns to 1:1 with no typing. T28 stays
 deferred. This is T29.
+
+**L25 (T29 closed — the phone stops lying about what it shows):** S31c is implemented and verified. Once per confirmed claim the
+phone measures the pane's widest visible line in cells (wide characters twice) and compares it with the grid it was granted; when
+the pane is wider it says so in one line and offers the whole pane scaled — the session asks the host for the pane's own width,
+fits the full grid into the card and letterboxes it. The four sentences ship (EN cut "The desktop is using this pane, so long
+lines arrive cut." / EN whole "… — showing it whole." / ES cut "El escritorio usa este panel: las líneas llegan cortadas." / ES
+whole "El escritorio usa este panel: se muestra entero."), each pinned by a length rule so none ellipsizes, and each true for its
+state. Every notice now lives in an always-reserved slot, so the derived grid no longer depends on whether one is showing: the
+`38x24↔38x26` claim oscillation is gone (flat 38×23 → whole 184×23 → flat 38×23 with the grid constant). Number seen on screen:
+whole pane at font 8 px, grid 883×243 px, control phrase complete in one line, `t29b-5-whole-en.png`; the ES cut sentence whole in
+`t29b-1-notice-zoom.png`. 372 JVM + 179 core tests. Commits `06edaea` (T26), `2ab79e6` (T29). Also fixed there: HEAD carried
+**stale Kotlin bindings** (`resizeSurface` with two arguments against a core asking four, so no resize could carry cell
+dimensions); regenerated from the core.
+The daemon fact stands and is the honest limit of "like Moshi" on upstream: while the human's desktop TUI is attached, every
+pane's PTY stays at the TUI width — even a workspace the TUI is not showing — so the phone can be sharp and cropped, or complete
+and small, but not reflowed and large. That needs the desktop detached, or T28.
