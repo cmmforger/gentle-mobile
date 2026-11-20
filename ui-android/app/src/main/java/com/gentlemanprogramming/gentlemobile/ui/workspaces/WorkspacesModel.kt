@@ -121,11 +121,25 @@ object WorkspacesModel {
         BrowseState.Disks -> ""
     }
 
-    /** Back navigation: from a folder up to the disk list; from the disk
-     *  list the browser closes (`null` — the caller leaves the screen). */
-    fun browseBack(state: BrowseState): BrowseState? = when (state) {
-        is BrowseState.InFolder -> BrowseState.Disks
+    /** Back navigation: one level up inside the machine; from a disk's mount
+     *  point, or from the filesystem root, back to the disk list; from the
+     *  disk list the browser closes (`null` — the caller leaves the screen).
+     *  The mount points are where "up" stops, so a deep folder returns to its
+     *  parent instead of jumping to the top in one press. */
+    fun browseBack(state: BrowseState, mountPoints: List<String>): BrowseState? = when (state) {
+        is BrowseState.InFolder ->
+            if (state.path in mountPoints) BrowseState.Disks
+            else parentOf(state.path)?.let { BrowseState.InFolder(it) } ?: BrowseState.Disks
         BrowseState.Disks -> null
+    }
+
+    /** The folder that holds [path], or `null` when [path] is the
+     *  filesystem root (which is a mount point anyway). */
+    private fun parentOf(path: String): String? {
+        val trimmed = path.trimEnd('/')
+        if (trimmed.isEmpty()) return null
+        val slash = trimmed.lastIndexOf('/')
+        return if (slash <= 0) "/" else trimmed.substring(0, slash)
     }
 
     /** The disk rows in the order the core sent them — root first, then by

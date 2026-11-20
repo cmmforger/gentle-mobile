@@ -209,15 +209,32 @@ class WorkspacesModelTest {
         )
     }
 
+    private val disks = listOf("/", "/mnt/D-SSD", "/mnt/WD-Black")
+
     @Test
-    fun back_from_a_folder_returns_to_the_disk_list() {
-        val state = WorkspacesModel.BrowseState.InFolder("/mnt/D-SSD/projects")
-        assertEquals(WorkspacesModel.BrowseState.Disks, WorkspacesModel.browseBack(state))
+    fun back_from_a_nested_folder_returns_to_its_parent() {
+        val state = WorkspacesModel.BrowseState.InFolder("/mnt/D-SSD/personal/projects")
+        assertEquals(
+            WorkspacesModel.BrowseState.InFolder("/mnt/D-SSD/personal"),
+            WorkspacesModel.browseBack(state, disks),
+        )
+    }
+
+    @Test
+    fun back_from_a_disks_mount_point_returns_to_the_disk_list() {
+        val state = WorkspacesModel.BrowseState.InFolder("/mnt/D-SSD")
+        assertEquals(WorkspacesModel.BrowseState.Disks, WorkspacesModel.browseBack(state, disks))
+    }
+
+    @Test
+    fun back_from_the_filesystem_root_returns_to_the_disk_list() {
+        val state = WorkspacesModel.BrowseState.InFolder("/")
+        assertEquals(WorkspacesModel.BrowseState.Disks, WorkspacesModel.browseBack(state, disks))
     }
 
     @Test
     fun back_from_the_disk_list_leaves_the_browser() {
-        assertNull(WorkspacesModel.browseBack(WorkspacesModel.BrowseState.Disks))
+        assertNull(WorkspacesModel.browseBack(WorkspacesModel.BrowseState.Disks, disks))
     }
 
     // --- the label of a chosen folder reuses the typed-path rule -----------------

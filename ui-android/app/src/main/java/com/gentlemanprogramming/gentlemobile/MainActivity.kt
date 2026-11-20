@@ -1392,10 +1392,22 @@ fun ConnectScreen(
                     }
                 },
                 onBrowseBack = {
-                    // The state machine decides: a folder goes up to the disk
-                    // list; the disk list asks for `null` (close) and the
-                    // close handler answers instead.
-                    WorkspacesModel.browseBack(screen.browseLevel)?.let { screen.browseLevel = it }
+                    // The state machine decides: a nested folder climbs to its
+                    // parent, a mount point goes back to the disk list, and the
+                    // disk list asks for `null` (close) — the close handler
+                    // answers instead. Climbing re-reads the parent, so the
+                    // list never keeps showing the folder we just left.
+                    when (
+                        val target = WorkspacesModel
+                            .browseBack(screen.browseLevel, screen.disks.orEmpty().map { it.mountPoint })
+                    ) {
+                        null -> Unit
+                        WorkspacesModel.BrowseState.Disks -> screen.browseLevel = WorkspacesModel.BrowseState.Disks
+                        is WorkspacesModel.BrowseState.InFolder -> {
+                            screen.browseLevel = target
+                            loadFolders(screen, currentUi.connection, target.path)
+                        }
+                    }
                 },
                 onCloseBrowse = {
                     screen.browseOpen = false
