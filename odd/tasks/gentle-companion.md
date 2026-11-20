@@ -289,6 +289,17 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
      waiting agent shows the command it wants to run and its options become one-tap answers, and a risky answer is
      held rather than tapped. One "needs you" count everywhere.
 
+
+- **S33 — The look of `tuan3w/herdr-mobile`, taken as direction, not as theme replacement.** The human's words: *"incluso
+  las imágenes que presenta de la app son súper buenas, el cómo se visualiza, a eso quiero llegar"*. What those screens
+  actually show, checked on the shipped captures: light airy surfaces with soft shadows and large titles; status chips with
+  counts; an **approval block** that is content, not a dialog — the question, the exact command in mono, and full-width
+  option rows with a warning glyph on the risky ones; and agent activity **drawn** rather than dumped (tool calls with
+  tappable paths, diffs with coloured lines and numbers, test results). The light theme arrives as a **fourth choice**
+  ("Paper"), `cute` stays the default, and the air/typography pass plus the approval block apply to every theme. The
+  structured activity view is the biggest piece and is built on the lane this app already has (`gentle-shell --mode rpc`
+  gives structured transcript entries and dialogs), not on a new one.
+
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -351,6 +362,8 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T27 | Disk and directory browsing for `+`: over SFTP, list the machine's real disks (mount points with their labels) and a directory's folders, so a workspace can be created by tapping through disks and folders instead of typing an absolute path | S30 S31 | worker | core `56b2401`, UI pending |
 | T28 | **Deferred, after T26 is green:** evaluate the `kitknox/herdr` fork as the host for a terminal control stream (raw output + snapshots + `tab.set_geometry` claim semantics) so the phone renders locally with native scrollback. Gated on its license, on the cost of a second modified herdr on a host that already runs `0.9.5-mustaccin`, and on an explicit human decision to install it. Until then the app stays on upstream `remote-client-bridge` surfaces. | S31 S31b | inline | — |
 | T30 | Wrap mode: re-wrap the pane's text to the phone's columns when the granted grid crops it, readable and colour-preserving where the read carries it, with the sharp 1:1 grid as the default and the whole pane kept as the exact-layout fallback | S32a | worker | — |
+| T32 | Design pass: artboards for the light "Paper" theme as a fourth choice, the airy type and spacing rules, and the approval block as content (question, exact command in mono, full-width option rows, risky answers marked) | S33 | design | — |
+| T33 | Implement the Paper theme as a fourth option with its tokens, and the air/typography pass across the existing screens | S33 | worker | — |
 | T31 | Approval board: agents grouped by what they need, the exact command before an approval, one-tap answers with a re-read before sending, risky answers held, one needs-you count everywhere | S32b | worker | — |
 | T29 | Honest crop: detect that the granted grid crops wider pane content, say it in one line, and offer the whole pane scaled as an explicit fallback; anchor every notice so it cannot change the derived grid and re-fire the claim | S31c | worker | — |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
@@ -731,3 +744,10 @@ Decision: **keep our app** (Kotlin/Compose + Rust, Apache-2.0, 372 JVM + 179 cor
 lease, workspace creation) and **take the two ideas it does better** — the wrap mode (S32a) and the approval board
 (S32b). Rejected for now: forking it (GPL-3.0 would relicense this project and force source on any distribution, and
 Flutter would discard every fix and test here).
+
+**L27 (light as a fourth choice, designed before coded):** The human wants the app to *look* like `tuan3w/herdr-mobile`'s
+captures. Reviewed the shipped images: the look is light and airy with soft shadows and large type, status chips with counts,
+an approval block that reads as content (question, exact command in mono, full-width answers, risky ones marked) and agent
+activity drawn rather than dumped (tool calls, diffs, test results). Decision taken with the human: the light theme arrives
+as a **fourth** choice ("Paper"), `cute` stays the default, and the air and approval rules apply to every theme. Design first
+(T32), then implementation (T33), because the human should see it on the canvas before any screen changes.
