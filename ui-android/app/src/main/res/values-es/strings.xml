@@ -122,6 +122,17 @@
     <string name="ws_no_permission">Sin permiso para abrir ese directorio en el host: %1$s</string>
     <string name="ws_is_git">repositorio git</string>
     <string name="ws_not_git">no es un repositorio git — se puede agregar igual</string>
+    <!-- T27 (S30-3): el `+` recorre los discos y las carpetas de la máquina -->
+    <string name="ws_browse_title">Elegí la carpeta</string>
+    <string name="ws_browse_choose">Usar esta carpeta</string>
+    <string name="ws_browse_disks">Discos</string>
+    <string name="ws_browse_folder">Carpeta</string>
+    <string name="ws_browse_reading">Leyendo los discos…</string>
+    <string name="ws_browse_reading_folder">Leyendo la carpeta…</string>
+    <string name="ws_browse_empty">Acá no hay carpetas</string>
+    <string name="ws_browse_git">git</string>
+    <string name="ws_browse_symlink">→ %1$s</string>
+    <string name="ws_browse_host">El host no pudo responder el listado: %1$s</string>
 
     <!-- Grupos de la bandeja de agentes -->
     <string name="inbox_back">Agentes</string>

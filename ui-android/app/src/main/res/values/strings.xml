@@ -121,6 +121,17 @@
     <string name="ws_no_permission">No permission to open that directory on the host: %1$s</string>
     <string name="ws_is_git">git repository</string>
     <string name="ws_not_git">not a git repository — it can still be added</string>
+    <!-- T27 (S30-3): the `+` browses the machine\'s disks and folders -->
+    <string name="ws_browse_title">Choose the folder</string>
+    <string name="ws_browse_choose">Use this folder</string>
+    <string name="ws_browse_disks">Disks</string>
+    <string name="ws_browse_folder">Folder</string>
+    <string name="ws_browse_reading">Reading the disks…</string>
+    <string name="ws_browse_reading_folder">Reading the folder…</string>
+    <string name="ws_browse_empty">No folders here</string>
+    <string name="ws_browse_git">git</string>
+    <string name="ws_browse_symlink">→ %1$s</string>
+    <string name="ws_browse_host">The host could not answer the listing: %1$s</string>
 
     <!-- Agent inbox groups -->
     <string name="inbox_back">Agents</string>

@@ -142,6 +142,10 @@ pub struct Disk {
     /// The short human label the list shows: the last path component
     /// (`D-SSD`), or `System` for the root.
     pub label: String,
+    /// The filesystem type `/proc/mounts` reported (`ext4`, `btrfs`,
+    /// `nfs4`, …) — what the browser's disk rows show next to the mount
+    /// point.
+    pub fs_type: String,
     /// The device class when the fs source and fs type make it knowable.
     pub device_type: Option<DeviceType>,
 }
@@ -414,6 +418,7 @@ pub fn parse_mounts(mounts_text: &str) -> Vec<Disk> {
             Disk {
                 mount_point,
                 label: String::new(),
+                fs_type: fstype.to_owned(),
                 device_type,
             },
         ));
@@ -704,6 +709,18 @@ mod tests {
             assert_eq!(points, vec!["/", "/mnt/My Disk"]);
             assert_eq!(disks[0].label, "System");
             assert_eq!(disks[1].label, "My Disk");
+        }
+
+        #[test]
+        fn parse_mounts_exposes_the_filesystem_type() {
+            // The browser's disk rows show the filesystem type next to the
+            // mount point (T27 surface): it must survive the parse, not be
+            // invented in the UI.
+            let disks = parse_mounts(FIXTURE_MOUNTS);
+            assert_eq!(disks[0].fs_type, "btrfs");
+            assert_eq!(disks[1].fs_type, "ext4");
+            assert_eq!(disks[2].fs_type, "ext4");
+            assert_eq!(disks[3].fs_type, "nfs4");
         }
 
         #[test]

@@ -123,6 +123,8 @@ import com.gentlemanprogramming.gentlemobile.core.AgentStatusDto
 import com.gentlemanprogramming.gentlemobile.core.CompanionConnection
 import com.gentlemanprogramming.gentlemobile.core.CompanionException
 import com.gentlemanprogramming.gentlemobile.core.ConnectOutcome
+import com.gentlemanprogramming.gentlemobile.core.DiskDto
+import com.gentlemanprogramming.gentlemobile.core.FolderEntryDto
 import com.gentlemanprogramming.gentlemobile.core.KnownHostDto
 import com.gentlemanprogramming.gentlemobile.core.HostProfileDto
 import com.gentlemanprogramming.gentlemobile.core.PaneDto
@@ -453,10 +455,19 @@ private class ScreenState {
     var creatingWorkspace by mutableStateOf(false)
     var createWorkspaceError by mutableStateOf<String?>(null)
 
-    /** S26-3: the recent paths the `+` field offers, derived from the
-     *  sessions the host already recorded (nothing scanned). */
-    var recentPaths by mutableStateOf<List<com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel.RepoEntry>>(emptyList())
-    var recentLoading by mutableStateOf(false)
+    /** T27 (S30-3): the `+` browser — open, where it stands (the machine's
+     *  disks, or inside a folder), and what each level read. `null` lists
+     *  mean "not loaded yet" — an empty list is the host's own answer. */
+    var browseOpen by mutableStateOf(false)
+    var browseLevel by mutableStateOf<com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel.BrowseState>(
+        com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel.BrowseState.Disks,
+    )
+    var disks by mutableStateOf<List<com.gentlemanprogramming.gentlemobile.core.DiskDto>?>(null)
+    var disksLoading by mutableStateOf(false)
+    var disksError by mutableStateOf<String?>(null)
+    var folders by mutableStateOf<List<com.gentlemanprogramming.gentlemobile.core.FolderEntryDto>?>(null)
+    var foldersLoading by mutableStateOf(false)
+    var foldersError by mutableStateOf<String?>(null)
 
     /** T8c supervision: the four words (connecting, connected, interrupted,
      * failed) and the liveness rule, in one tested place. Screens read this
@@ -1025,6 +1036,9 @@ fun ConnectScreen(
                                 connection.createWorkspace(path, WorkspacesModel.workspaceLabel(path))
                                 mainHandler.post {
                                     state.creatingWorkspace = false
+                                    // T27: the browser closes on success — the
+                                    // refreshed workspaces list is the answer.
+                                    state.browseOpen = false
                                     loadWorkspaces(state, connection)
                                 }
                             } catch (e: Exception) {
@@ -1045,30 +1059,67 @@ fun ConnectScreen(
         }
     }
 
-    /** S26-3: the recent paths the `+` field offers — the working
-     *  directories the host's sessions already recorded, served from the
-     *  sessions cache when it is fresh, read over SFTP otherwise (the same
-     *  listing the Session history screen uses, never a scan). */
-    fun loadRecentPaths(state: ScreenState, profile: HostProfileDto, deviceLeaseId: String) {
-        if (state.recentLoading) return
-        val sessionsDir = sessionsDirOverride ?: defaultSessionsDir(profile.user)
-        val cacheKey = com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsCache.key(profile, sessionsDir)
-        val cached = com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsCache.fresh(cacheKey, System.currentTimeMillis())
-        if (cached != null) {
-            state.recentPaths = com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel.repositories(cached)
-            return
-        }
-        state.recentLoading = true
+    /** A typed listing failure is its own sentence (T27): the same plain
+     *  words the path check uses, plus the host-level answer. */
+    fun describeBrowse(context: Context, error: Exception): String = when (error) {
+        is CompanionException.BrowseMissing ->
+            context.getString(R.string.ws_path_missing, error.path)
+        is CompanionException.BrowseNotADirectory ->
+            context.getString(R.string.ws_not_a_directory, error.path)
+        is CompanionException.BrowseNoPermission ->
+            context.getString(R.string.ws_no_permission, error.path)
+        is CompanionException.BrowseHost ->
+            context.getString(R.string.ws_browse_host, error.detail)
+        else -> describe(context, error)
+    }
+
+    /** T27 (S30-3): the `+` browser — the machine's disks over the same
+     *  one-shot SFTP lane the uploads use. The rows are exactly what the
+     *  core sent (root first, then by mount point); a failure is typed and
+     *  shown as its own sentence, never an empty list. */
+    fun openBrowse(state: ScreenState, connection: CompanionConnection) {
+        if (state.disksLoading) return
+        state.browseOpen = true
+        state.browseLevel = com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel.BrowseState.Disks
+        state.addVerdict = null
+        state.createWorkspaceError = null
+        if (state.disks != null) return
+        state.disksLoading = true
+        state.disksError = null
         executor.execute {
             try {
-                val listed = com.gentlemanprogramming.gentlemobile.core.listSessions(profile, sessionsDir, deviceLeaseId)
+                val listed = connection.listDisks()
                 mainHandler.post {
-                    com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsCache.put(cacheKey, listed, System.currentTimeMillis())
-                    state.recentPaths = com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel.repositories(listed)
-                    state.recentLoading = false
+                    state.disks = listed
+                    state.disksLoading = false
                 }
-            } catch (_: Exception) {
-                mainHandler.post { state.recentLoading = false }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    state.disksLoading = false
+                    state.disksError = describeBrowse(AppLocale.wrapStored(state.appContext), e)
+                }
+            }
+        }
+    }
+
+    /** The folders of the directory the human tapped into (T27): loaded on
+     *  every entry, so up-and-down navigation never shows a stale folder. */
+    fun loadFolders(state: ScreenState, connection: CompanionConnection, path: String) {
+        state.folders = null
+        state.foldersLoading = true
+        state.foldersError = null
+        executor.execute {
+            try {
+                val listed = connection.listFolders(path)
+                mainHandler.post {
+                    state.folders = listed
+                    state.foldersLoading = false
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    state.foldersLoading = false
+                    state.foldersError = describeBrowse(AppLocale.wrapStored(state.appContext), e)
+                }
             }
         }
     }
@@ -1298,7 +1349,6 @@ fun ConnectScreen(
         val currentUi = screen.ui
         if (currentUi is UiState.Connected) {
             val wsProfile = screen.profile
-            val wsDeviceId = screen.deviceLeaseId
             LaunchedEffect(Unit) {
                 loadWorkspaces(screen, currentUi.connection)
             }
@@ -1306,29 +1356,56 @@ fun ConnectScreen(
                 rows = screen.workspaces,
                 loading = screen.workspacesLoading,
                 error = screen.workspacesError,
-                addChecking = screen.addChecking,
-                addVerdict = screen.addVerdict,
+                browseOpen = screen.browseOpen,
+                browseLevel = screen.browseLevel,
+                disks = screen.disks,
+                disksLoading = screen.disksLoading,
+                disksError = screen.disksError,
+                folders = screen.folders,
+                foldersLoading = screen.foldersLoading,
+                foldersError = screen.foldersError,
+                checking = screen.addChecking,
+                verdict = screen.addVerdict,
                 creating = screen.creatingWorkspace,
                 createError = screen.createWorkspaceError,
-                recentPaths = screen.recentPaths,
-                recentLoading = screen.recentLoading,
                 onOpen = { row -> openWorkspace(screen, currentUi.connection, row) },
-                onAddPath = { path ->
+                onBrowseOpened = { openBrowse(screen, currentUi.connection) },
+                onSelectDisk = { disk ->
+                    screen.browseLevel = WorkspacesModel.selectDisk(screen.browseLevel, disk)
+                    loadFolders(screen, currentUi.connection, disk.mountPoint)
+                },
+                onSelectFolder = { folder ->
+                    // A row tap only moves the browser (T27): descending is
+                    // navigation, the choice is the screen's one accent
+                    // action — never a side effect of moving.
+                    screen.browseLevel = WorkspacesModel.selectFolder(screen.browseLevel, folder)
+                    loadFolders(screen, currentUi.connection, folder.path)
+                },
+                onChooseFolder = {
                     screen.addVerdict = null
                     screen.createWorkspaceError = null
                     if (wsProfile != null) {
-                        addProject(screen, currentUi.connection, wsProfile, path)
+                        // Choosing a folder is the action: the same
+                        // validated create the typed path used, from the
+                        // folder the human is standing in.
+                        addProject(screen, currentUi.connection, wsProfile, WorkspacesModel.chosenPath(screen.browseLevel))
                     }
                 },
-                onRecentOpened = {
-                    if (wsProfile != null && wsDeviceId != null) {
-                        loadRecentPaths(screen, wsProfile, wsDeviceId)
-                    }
+                onBrowseBack = {
+                    // The state machine decides: a folder goes up to the disk
+                    // list; the disk list asks for `null` (close) and the
+                    // close handler answers instead.
+                    WorkspacesModel.browseBack(screen.browseLevel)?.let { screen.browseLevel = it }
+                },
+                onCloseBrowse = {
+                    screen.browseOpen = false
+                    screen.addVerdict = null
+                    screen.createWorkspaceError = null
                 },
                 onBack = {
                     // Leaving the screen keeps the list cached in the state:
                     // re-entering re-reads it, but a mid-add pause does not
-                    // wipe what the human typed.
+                    // lose the work.
                     route = Route.Main
                 },
             )
@@ -2555,118 +2632,13 @@ fun ConnectScreen(
                     Spacer(Modifier.height(8.dp))
                 }
                 if (screen.inboxOpen) {
-                    // --- 03-inbox.html: one surface, groups in the fixed ---
-                    // --- order needs you → done → working → idle; the    ---
-                    // --- group label carries the word and the count, and ---
-                    // --- no row repeats it with a status chip.           ---
-                    // S24-7: the chevron alone explains the way back — no
-                    // repeated `Hosts` word. The row keeps a screen-reader
-                    // label because the chevron glyph reads as nothing.
-                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        val backToHosts = stringResource(R.string.cd_back_to_hosts)
-                        Text(
-                            text = "‹",
-                            color = LocalPalette.current.accent,
-                            fontSize = 20.sp,
-                            modifier = Modifier
-                                .clickable {
-                                    // The agent list is the workspace's own
-                                    // (S28-4/S28-5): back is the workspaces
-                                    // screen, where it was entered from.
-                                    route = Route.Workspaces
-                                }
-                                .semantics { contentDescription = backToHosts }
-                                .padding(horizontal = 12.dp, vertical = 12.dp),
-                        )
-                        Spacer(Modifier.weight(1f))
-                        Text(
-                            text = stringResource(R.string.nodes_disconnect),
-                            color = LocalPalette.current.muted,
-                            fontSize = 11.sp,
-                            modifier = Modifier
-                                .clickable { disconnectLive() }
-                                .padding(horizontal = 12.dp, vertical = 12.dp),
-                        )
-                    }
-                    val snapshot = current.snapshot
-                    when {
-                        snapshot == null -> Text(
-                            text = stringResource(R.string.nodes_waiting),
-                            color = LocalPalette.current.muted,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                        )
-                        else -> {
-                            // S28-4: the agent list is always the chosen
-                            // workspace's own — there is no flat all-agents
-                            // list to duplicate it, and no line repeating
-                            // the workspace's name (S28-5).
-                            val agents = WorkspacesModel.agentsInWorkspace(
-                                snapshot.agents,
-                                screen.workspaceFilter,
-                            )
-                            when {
-                                agents.isEmpty() -> Text(
-                                    text = stringResource(R.string.inbox_no_agents),
-                                    color = LocalPalette.current.muted,
-                                    fontSize = 13.sp,
-                                )
-                                else -> {
-                            // `unknown` is not on the board; it keeps its own
-                            // honest group last rather than lying as idle.
-                            // S24-6: human words in sentence case, and the
-                            // count only when it is not one. S24-8: rows
-                            // lead with the project name, not the path.
-                            listOf(
-                                Triple(
-                                    stringResource(R.string.inbox_group_needs_you),
-                                    agents.filter { it.status == AgentStatusDto.BLOCKED },
-                                    true,
-                                ),
-                                Triple(
-                                    stringResource(R.string.inbox_group_done),
-                                    agents.filter { it.status == AgentStatusDto.DONE },
-                                    false,
-                                ),
-                                Triple(
-                                    stringResource(R.string.inbox_group_working),
-                                    agents.filter { it.status == AgentStatusDto.WORKING },
-                                    false,
-                                ),
-                                Triple(
-                                    // S27-8: the word `Idle` never renders —
-                                    // idle agents list quietly after Working,
-                                    // with no group label of their own.
-                                    "",
-                                    agents.filter { it.status == AgentStatusDto.IDLE },
-                                    false,
-                                ),
-                                Triple(
-                                    stringResource(R.string.inbox_group_unknown),
-                                    agents.filter { it.status == AgentStatusDto.UNKNOWN },
-                                    false,
-                                ),
-                            ).forEach { (label, groupAgents, needsYou) ->
-                                if (groupAgents.isNotEmpty()) {
-                                    if (label.isNotEmpty()) {
-                                        GroupLabel(groupLabelWithCount(label, groupAgents.size), uppercase = false)
-                                    }
-                                    groupAgents.forEach { agent ->
-                                        InboxRow(
-                                            agent,
-                                            activity = screen.activity,
-                                            needsYou = needsYou,
-                                            onOpen = {
-                                                openAgentSession(current, agent)
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-                                }
-                            }
-                        }
-                    }
+                    InboxSection(
+                        screen = screen,
+                        current = current,
+                        onBackToWorkspaces = { route = Route.Workspaces },
+                        onDisconnect = { disconnectLive() },
+                        onOpenAgent = { openAgentSession(current, it) },
+                    )
                 } else {
                     // --- 02-nodes.html: hosts as hairline rows on one ---
                     // --- surface, state as a plain word, agents count ---
@@ -3546,6 +3518,134 @@ private fun pollPane(
  * Supervision (T8c) rides in as `supervision`: while the connection is not
  * live, the header says so — a frozen grid never passes as current — and the
  * board's interrupted notice with Retry now sits above the terminal. */
+/**
+ * The inbox (03-inbox.html) as the connected host's agent list: one
+ * surface, groups in the fixed order needs you → done → working → idle,
+ * the group label carrying the word and the count. Extracted verbatim
+ * from ConnectScreen (S28-4: the agent list is always the chosen
+ * workspace's own) — the captures become explicit parameters, nothing
+ * else changes.
+ */
+@Composable
+private fun InboxSection(
+    screen: ScreenState,
+    current: UiState.Connected,
+    onBackToWorkspaces: () -> Unit,
+    onDisconnect: () -> Unit,
+    onOpenAgent: (AgentDto) -> Unit,
+) {
+                    // --- 03-inbox.html: one surface, groups in the fixed ---
+                // --- order needs you → done → working → idle; the    ---
+                // --- group label carries the word and the count, and ---
+                // --- no row repeats it with a status chip.           ---
+                // S24-7: the chevron alone explains the way back — no
+                // repeated `Hosts` word. The row keeps a screen-reader
+                // label because the chevron glyph reads as nothing.
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    val backToHosts = stringResource(R.string.cd_back_to_hosts)
+                    Text(
+                        text = "‹",
+                        color = LocalPalette.current.accent,
+                        fontSize = 20.sp,
+                        modifier = Modifier
+                            .clickable {
+                                // The agent list is the workspace's own
+                                // (S28-4/S28-5): back is the workspaces
+                                // screen, where it was entered from.
+                                onBackToWorkspaces()
+                            }
+                            .semantics { contentDescription = backToHosts }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = stringResource(R.string.nodes_disconnect),
+                        color = LocalPalette.current.muted,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .clickable { onDisconnect() }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                    )
+                }
+                val snapshot = current.snapshot
+                when {
+                    snapshot == null -> Text(
+                        text = stringResource(R.string.nodes_waiting),
+                        color = LocalPalette.current.muted,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    else -> {
+                        // S28-4: the agent list is always the chosen
+                        // workspace's own — there is no flat all-agents
+                        // list to duplicate it, and no line repeating
+                        // the workspace's name (S28-5).
+                        val agents = WorkspacesModel.agentsInWorkspace(
+                            snapshot.agents,
+                            screen.workspaceFilter,
+                        )
+                        when {
+                            agents.isEmpty() -> Text(
+                                text = stringResource(R.string.inbox_no_agents),
+                                color = LocalPalette.current.muted,
+                                fontSize = 13.sp,
+                            )
+                            else -> {
+                        // `unknown` is not on the board; it keeps its own
+                        // honest group last rather than lying as idle.
+                        // S24-6: human words in sentence case, and the
+                        // count only when it is not one. S24-8: rows
+                        // lead with the project name, not the path.
+                        listOf(
+                            Triple(
+                                stringResource(R.string.inbox_group_needs_you),
+                                agents.filter { it.status == AgentStatusDto.BLOCKED },
+                                true,
+                            ),
+                            Triple(
+                                stringResource(R.string.inbox_group_done),
+                                agents.filter { it.status == AgentStatusDto.DONE },
+                                false,
+                            ),
+                            Triple(
+                                stringResource(R.string.inbox_group_working),
+                                agents.filter { it.status == AgentStatusDto.WORKING },
+                                false,
+                            ),
+                            Triple(
+                                // S27-8: the word `Idle` never renders —
+                                // idle agents list quietly after Working,
+                                // with no group label of their own.
+                                "",
+                                agents.filter { it.status == AgentStatusDto.IDLE },
+                                false,
+                            ),
+                            Triple(
+                                stringResource(R.string.inbox_group_unknown),
+                                agents.filter { it.status == AgentStatusDto.UNKNOWN },
+                                false,
+                            ),
+                        ).forEach { (label, groupAgents, needsYou) ->
+                            if (groupAgents.isNotEmpty()) {
+                                if (label.isNotEmpty()) {
+                                    GroupLabel(groupLabelWithCount(label, groupAgents.size), uppercase = false)
+                                }
+                                groupAgents.forEach { agent ->
+                                    InboxRow(
+                                        agent,
+                                        activity = screen.activity,
+                                        needsYou = needsYou,
+                                        onOpen = { onOpenAgent(agent) },
+                                    )
+                                }
+                            }
+                        }
+                            }
+                        }
+                    }
+                }
+}
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun SessionScreen(

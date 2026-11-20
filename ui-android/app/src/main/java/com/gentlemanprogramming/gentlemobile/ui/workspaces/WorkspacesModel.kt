@@ -5,6 +5,8 @@ import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.core.AgentDto
 import com.gentlemanprogramming.gentlemobile.core.AgentStatusDto
 import com.gentlemanprogramming.gentlemobile.core.DirVerdictDto
+import com.gentlemanprogramming.gentlemobile.core.DiskDto
+import com.gentlemanprogramming.gentlemobile.core.FolderEntryDto
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
 
 /**
@@ -88,4 +90,68 @@ object WorkspacesModel {
     @StringRes
     fun gitNoteRes(isGitRepo: Boolean): Int =
         if (isGitRepo) R.string.ws_is_git else R.string.ws_not_git
+
+    // --- T27 (S30-3): the disk and folder browser of the `+` -----------------
+
+    /** Where the browser stands: the machine's disks, or inside one folder
+     *  (the path carrying the absolute location the human tapped into). */
+    sealed interface BrowseState {
+        /** The machine's disks, root first, exactly in the order the core
+         *  sent. */
+        data object Disks : BrowseState
+
+        /** Inside a folder: the path is where the next listing happens and
+         *  what the workspace would be created from. */
+        data class InFolder(val path: String) : BrowseState
+    }
+
+    /** Tapping a disk opens its mount point for browsing. */
+    fun selectDisk(state: BrowseState, disk: DiskDto): BrowseState =
+        BrowseState.InFolder(disk.mountPoint)
+
+    /** Tapping a folder descends into it — the choice is a separate
+     *  action, never a side effect of moving ([chosenPath]). */
+    fun selectFolder(state: BrowseState, folder: FolderEntryDto): BrowseState =
+        BrowseState.InFolder(folder.path)
+
+    /** The folder the workspace would be created from: the one the human
+     *  is standing in — what the screen's choose action sends. */
+    fun chosenPath(state: BrowseState): String = when (state) {
+        is BrowseState.InFolder -> state.path
+        BrowseState.Disks -> ""
+    }
+
+    /** Back navigation: from a folder up to the disk list; from the disk
+     *  list the browser closes (`null` — the caller leaves the screen). */
+    fun browseBack(state: BrowseState): BrowseState? = when (state) {
+        is BrowseState.InFolder -> BrowseState.Disks
+        BrowseState.Disks -> null
+    }
+
+    /** The disk rows in the order the core sent them — root first, then by
+     *  mount point; never re-sorted here. */
+    fun diskRows(disks: List<DiskDto>): List<DiskDto> = disks
+
+    /** The mono meta of a disk row: the mount point and the filesystem
+     *  type the host reported. */
+    fun diskMeta(disk: DiskDto): String = "${disk.mountPoint} · ${disk.fsType}"
+
+    /** What a folder row says besides its name: a `.git` marker when the
+     *  folder is a repository, a symlink's target (never followed) when it
+     *  is a link. The symlink decides first — the core never claims a git
+     *  verdict for a symlink, and only one badge ever renders. */
+    sealed interface FolderBadge {
+        /** The folder carries a `.git` entry. */
+        data object Git : FolderBadge
+
+        /** A symlink: the target the host reported, or `null` when even
+         *  the target could not be read — the row stays honest either way. */
+        data class Symlink(val target: String?) : FolderBadge
+    }
+
+    fun folderBadge(row: FolderEntryDto): FolderBadge? = when {
+        row.isSymlink -> FolderBadge.Symlink(row.target)
+        row.isGitRepo -> FolderBadge.Git
+        else -> null
+    }
 }

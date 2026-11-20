@@ -161,6 +161,19 @@ pub enum CompanionError {
     /// The resumed session has ended (closed, EOF, or transport death).
     #[error("the RPC session is closed")]
     RpcSessionClosed,
+    /// The browsed path does not exist on the host (T27, S30-3).
+    #[error("{path} does not exist on the host")]
+    BrowseMissing { path: String },
+    /// The browsed path exists but is not a directory.
+    #[error("{path} is not a directory")]
+    BrowseNotADirectory { path: String },
+    /// The directory exists but cannot be read.
+    #[error("{path} cannot be read (permission denied)")]
+    BrowseNoPermission { path: String },
+    /// The host could not answer the listing at all — never an empty list
+    /// pretending success.
+    #[error("the host could not answer the listing: {detail}")]
+    BrowseHost { detail: String },
 }
 
 impl From<Error> for CompanionError {
@@ -174,6 +187,21 @@ impl From<Error> for CompanionError {
             }
             Error::Timeout(message) => CompanionError::Timeout { detail: message.to_owned() },
             other => CompanionError::Transport { detail: other.to_string() },
+        }
+    }
+}
+
+impl From<crate::paths::BrowseError> for CompanionError {
+    fn from(error: crate::paths::BrowseError) -> Self {
+        match error {
+            crate::paths::BrowseError::Missing { path } => CompanionError::BrowseMissing { path },
+            crate::paths::BrowseError::NotADirectory { path } => {
+                CompanionError::BrowseNotADirectory { path }
+            }
+            crate::paths::BrowseError::NoPermission { path } => {
+                CompanionError::BrowseNoPermission { path }
+            }
+            crate::paths::BrowseError::Host { detail } => CompanionError::BrowseHost { detail },
         }
     }
 }
@@ -1211,6 +1239,85 @@ impl CompanionConnection {
             prompt_suffix: outcome.prompt_suffix,
         })
     }
+
+    /// List the machine's disks (T27, S30-3): `/proc/mounts`, read and
+    /// parsed over the same one-shot pinned SSH + SFTP lane the uploads
+    /// use. Root first, then by mount point; kernel plumbing is skipped on
+    /// the host side. A transport failure is typed, never an empty list.
+    pub fn list_disks(&self) -> Result<Vec<DiskDto>, CompanionError> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| CompanionError::Transport {
+                detail: format!("the disk-listing runtime could not start: {error}"),
+            })?
+            .block_on(crate::paths::list_host_disks_over_sftp(&self.profile))
+            .map_err(CompanionError::from)
+            .map(|disks| disks.into_iter().map(DiskDto::from).collect())
+    }
+
+    /// List one directory's folders (T27, S30-3): folders only, hidden
+    /// entries skipped, `.git` detected, symlinks reported with their
+    /// target and never followed — over the same one-shot pinned lane.
+    /// A missing, unreadable or non-directory path is typed, never an
+    /// empty list pretending success.
+    pub fn list_folders(&self, path: String) -> Result<Vec<FolderEntryDto>, CompanionError> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| CompanionError::Transport {
+                detail: format!("the folder-listing runtime could not start: {error}"),
+            })?
+            .block_on(crate::paths::list_host_folders_over_sftp(
+                &self.profile,
+                &path,
+            ))
+            .map_err(CompanionError::from)
+            .map(|rows| rows.into_iter().map(FolderEntryDto::from).collect())
+    }
+}
+
+/// One disk the `+` picker offers as a place to start a project: the mount
+/// point, the short human label, and the filesystem type the row shows.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct DiskDto {
+    pub mount_point: String,
+    pub label: String,
+    pub fs_type: String,
+}
+
+impl From<crate::paths::Disk> for DiskDto {
+    fn from(disk: crate::paths::Disk) -> Self {
+        DiskDto {
+            mount_point: disk.mount_point,
+            label: disk.label,
+            fs_type: disk.fs_type,
+        }
+    }
+}
+
+/// One folder of a browsed directory: a `.git` marker when the folder is a
+/// repository, and a symlink shown with its target and never followed.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FolderEntryDto {
+    pub name: String,
+    pub path: String,
+    pub is_symlink: bool,
+    /// The symlink's target when it could be read; never followed.
+    pub target: Option<String>,
+    pub is_git_repo: bool,
+}
+
+impl From<crate::paths::FolderEntry> for FolderEntryDto {
+    fn from(row: crate::paths::FolderEntry) -> Self {
+        FolderEntryDto {
+            name: row.name,
+            path: row.path,
+            is_symlink: row.is_symlink,
+            target: row.target,
+            is_git_repo: row.is_git_repo,
+        }
+    }
 }
 
 /// Pin the presented key for `host:port`. The `key_blob` comes from the
@@ -1689,6 +1796,31 @@ mod tests {
         std::fs::write(&junk, "short-line\nhost.example ssh-ed25519 not-base64!!\n")?;
         assert!(list_known_hosts(junk.to_str().expect("utf8 path").to_owned()).is_empty());
         Ok(())
+    }
+
+    // --- browse errors (T27, S30-3): typed, never a fake empty list -------------
+
+    #[test]
+    fn browse_errors_map_to_typed_companion_variants() {
+        let missing = CompanionError::from(crate::paths::BrowseError::Missing {
+            path: "/nope".to_owned(),
+        });
+        assert!(matches!(missing, CompanionError::BrowseMissing { ref path } if path == "/nope"), "{missing:?}");
+
+        let not_dir = CompanionError::from(crate::paths::BrowseError::NotADirectory {
+            path: "/file".to_owned(),
+        });
+        assert!(matches!(not_dir, CompanionError::BrowseNotADirectory { ref path } if path == "/file"), "{not_dir:?}");
+
+        let denied = CompanionError::from(crate::paths::BrowseError::NoPermission {
+            path: "/locked".to_owned(),
+        });
+        assert!(matches!(denied, CompanionError::BrowseNoPermission { ref path } if path == "/locked"), "{denied:?}");
+
+        let host = CompanionError::from(crate::paths::BrowseError::Host {
+            detail: "transport died".to_owned(),
+        });
+        assert!(matches!(host, CompanionError::BrowseHost { ref detail } if detail == "transport died"), "{host:?}");
     }
 
 #[test]

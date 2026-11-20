@@ -737,6 +737,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_latest_surface(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_list_disks(
+    ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_list_folders(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_list_workspaces(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_probe_liveness(
@@ -813,6 +817,10 @@ internal object UniffiLib {
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_is_disconnected(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_latest_surface(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_list_disks(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_list_folders(`ptr`: Long,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_list_workspaces(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1063,6 +1071,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_latest_surface() and 0xFFFF) != 1162) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_list_disks() and 0xFFFF) != 24168) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_list_folders() and 0xFFFF) != 33703) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_list_workspaces() and 0xFFFF) != 53467) {
@@ -1657,6 +1671,23 @@ public interface CompanionConnectionInterface {
     fun `latestSurface`(): SurfaceDto?
     
     /**
+     * List the machine's disks (T27, S30-3): `/proc/mounts`, read and
+     * parsed over the same one-shot pinned SSH + SFTP lane the uploads
+     * use. Root first, then by mount point; kernel plumbing is skipped on
+     * the host side. A transport failure is typed, never an empty list.
+     */
+    fun `listDisks`(): List<DiskDto>
+    
+    /**
+     * List one directory's folders (T27, S30-3): folders only, hidden
+     * entries skipped, `.git` detected, symlinks reported with their
+     * target and never followed — over the same one-shot pinned lane.
+     * A missing, unreadable or non-directory path is typed, never an
+     * empty list pretending success.
+     */
+    fun `listFolders`(`path`: kotlin.String): List<FolderEntryDto>
+    
+    /**
      * The host's workspace list (S26-2): one row per workspace, with the
      * branch from the repo behind it (a per-workspace `worktree.list`,
      * measured read-only; a `not_git_worktree` refusal means no branch,
@@ -1945,6 +1976,48 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
     UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_latest_surface(
         it,
         _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * List the machine's disks (T27, S30-3): `/proc/mounts`, read and
+     * parsed over the same one-shot pinned SSH + SFTP lane the uploads
+     * use. Root first, then by mount point; kernel plumbing is skipped on
+     * the host side. A transport failure is typed, never an empty list.
+     */
+    @Throws(CompanionException::class)override fun `listDisks`(): List<DiskDto> {
+            return FfiConverterSequenceTypeDiskDto.lift(
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_list_disks(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * List one directory's folders (T27, S30-3): folders only, hidden
+     * entries skipped, `.git` detected, symlinks reported with their
+     * target and never followed — over the same one-shot pinned lane.
+     * A missing, unreadable or non-directory path is typed, never an
+     * empty list pretending success.
+     */
+    @Throws(CompanionException::class)override fun `listFolders`(`path`: kotlin.String): List<FolderEntryDto> {
+            return FfiConverterSequenceTypeFolderEntryDto.lift(
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_list_folders(
+        it,
+        
+        FfiConverterString.lower(`path`),_status)
 }
     }
     )
@@ -2947,6 +3020,113 @@ public object FfiConverterTypeDirCheckDto: FfiConverterRustBuffer<DirCheckDto> {
 
     override fun write(value: DirCheckDto, buf: ByteBuffer) {
             FfiConverterTypeDirVerdictDto.write(value.`verdict`, buf)
+            FfiConverterBoolean.write(value.`isGitRepo`, buf)
+    }
+}
+
+
+
+/**
+ * One disk the `+` picker offers as a place to start a project: the mount
+ * point, the short human label, and the filesystem type the row shows.
+ */
+data class DiskDto (
+    val `mountPoint`: kotlin.String
+    , 
+    val `label`: kotlin.String
+    , 
+    val `fsType`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDiskDto: FfiConverterRustBuffer<DiskDto> {
+    override fun read(buf: ByteBuffer): DiskDto {
+        return DiskDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DiskDto) = (
+            FfiConverterString.allocationSize(value.`mountPoint`) +
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterString.allocationSize(value.`fsType`)
+    )
+
+    override fun write(value: DiskDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`mountPoint`, buf)
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterString.write(value.`fsType`, buf)
+    }
+}
+
+
+
+/**
+ * One folder of a browsed directory: a `.git` marker when the folder is a
+ * repository, and a symlink shown with its target and never followed.
+ */
+data class FolderEntryDto (
+    val `name`: kotlin.String
+    , 
+    val `path`: kotlin.String
+    , 
+    val `isSymlink`: kotlin.Boolean
+    , 
+    /**
+     * The symlink's target when it could be read; never followed.
+     */
+    val `target`: kotlin.String?
+    , 
+    val `isGitRepo`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFolderEntryDto: FfiConverterRustBuffer<FolderEntryDto> {
+    override fun read(buf: ByteBuffer): FolderEntryDto {
+        return FolderEntryDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FolderEntryDto) = (
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`path`) +
+            FfiConverterBoolean.allocationSize(value.`isSymlink`) +
+            FfiConverterOptionalString.allocationSize(value.`target`) +
+            FfiConverterBoolean.allocationSize(value.`isGitRepo`)
+    )
+
+    override fun write(value: FolderEntryDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`path`, buf)
+            FfiConverterBoolean.write(value.`isSymlink`, buf)
+            FfiConverterOptionalString.write(value.`target`, buf)
             FfiConverterBoolean.write(value.`isGitRepo`, buf)
     }
 }
@@ -4069,6 +4249,51 @@ sealed class CompanionException: kotlin.Exception() {
             get() = ""
     }
     
+    /**
+     * The browsed path does not exist on the host (T27, S30-3).
+     */
+    class BrowseMissing(
+        
+        val `path`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "path=${ `path` }"
+    }
+    
+    /**
+     * The browsed path exists but is not a directory.
+     */
+    class BrowseNotADirectory(
+        
+        val `path`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "path=${ `path` }"
+    }
+    
+    /**
+     * The directory exists but cannot be read.
+     */
+    class BrowseNoPermission(
+        
+        val `path`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "path=${ `path` }"
+    }
+    
+    /**
+     * The host could not answer the listing at all — never an empty list
+     * pretending success.
+     */
+    class BrowseHost(
+        
+        val `detail`: kotlin.String
+        ) : CompanionException() {
+        override val message
+            get() = "detail=${ `detail` }"
+    }
+    
 
     
 
@@ -4139,6 +4364,18 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
                 FfiConverterString.read(buf),
                 )
             16 -> CompanionException.RpcSessionClosed()
+            17 -> CompanionException.BrowseMissing(
+                FfiConverterString.read(buf),
+                )
+            18 -> CompanionException.BrowseNotADirectory(
+                FfiConverterString.read(buf),
+                )
+            19 -> CompanionException.BrowseNoPermission(
+                FfiConverterString.read(buf),
+                )
+            20 -> CompanionException.BrowseHost(
+                FfiConverterString.read(buf),
+                )
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -4231,6 +4468,26 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
+            is CompanionException.BrowseMissing -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`path`)
+            )
+            is CompanionException.BrowseNotADirectory -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`path`)
+            )
+            is CompanionException.BrowseNoPermission -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`path`)
+            )
+            is CompanionException.BrowseHost -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`detail`)
+            )
         }
     }
 
@@ -4320,6 +4577,26 @@ public object FfiConverterTypeCompanionError : FfiConverterRustBuffer<CompanionE
             }
             is CompanionException.RpcSessionClosed -> {
                 buf.putInt(16)
+                Unit
+            }
+            is CompanionException.BrowseMissing -> {
+                buf.putInt(17)
+                FfiConverterString.write(value.`path`, buf)
+                Unit
+            }
+            is CompanionException.BrowseNotADirectory -> {
+                buf.putInt(18)
+                FfiConverterString.write(value.`path`, buf)
+                Unit
+            }
+            is CompanionException.BrowseNoPermission -> {
+                buf.putInt(19)
+                FfiConverterString.write(value.`path`, buf)
+                Unit
+            }
+            is CompanionException.BrowseHost -> {
+                buf.putInt(20)
+                FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -4964,6 +5241,62 @@ public object FfiConverterSequenceTypeCellDto: FfiConverterRustBuffer<List<CellD
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeCellDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeDiskDto: FfiConverterRustBuffer<List<DiskDto>> {
+    override fun read(buf: ByteBuffer): List<DiskDto> {
+        val len = buf.getInt()
+        return List<DiskDto>(len) {
+            FfiConverterTypeDiskDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<DiskDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeDiskDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<DiskDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeDiskDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFolderEntryDto: FfiConverterRustBuffer<List<FolderEntryDto>> {
+    override fun read(buf: ByteBuffer): List<FolderEntryDto> {
+        val len = buf.getInt()
+        return List<FolderEntryDto>(len) {
+            FfiConverterTypeFolderEntryDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FolderEntryDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFolderEntryDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FolderEntryDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFolderEntryDto.write(it, buf)
         }
     }
 }

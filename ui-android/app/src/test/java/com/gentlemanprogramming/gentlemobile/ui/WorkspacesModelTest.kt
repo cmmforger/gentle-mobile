@@ -3,6 +3,8 @@ package com.gentlemanprogramming.gentlemobile.ui
 import com.gentlemanprogramming.gentlemobile.core.AgentDto
 import com.gentlemanprogramming.gentlemobile.core.AgentStatusDto
 import com.gentlemanprogramming.gentlemobile.core.DirVerdictDto
+import com.gentlemanprogramming.gentlemobile.core.DiskDto
+import com.gentlemanprogramming.gentlemobile.core.FolderEntryDto
 import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel
 import org.junit.Assert.assertEquals
@@ -106,6 +108,128 @@ class WorkspacesModelTest {
     fun the_git_note_says_what_the_path_is() {
         assertEquals(R.string.ws_is_git, WorkspacesModel.gitNoteRes(true))
         assertEquals(R.string.ws_not_git, WorkspacesModel.gitNoteRes(false))
+    }
+
+    // --- T27 (S30-3): the disk and folder browser of the `+` -------------------
+
+    private fun disk(mountPoint: String, label: String, fsType: String) = DiskDto(
+        mountPoint = mountPoint,
+        label = label,
+        fsType = fsType,
+    )
+
+    private fun folder(name: String, path: String, isSymlink: Boolean = false, target: String? = null, isGit: Boolean = false) = FolderEntryDto(
+        name = name,
+        path = path,
+        isSymlink = isSymlink,
+        target = target,
+        isGitRepo = isGit,
+    )
+
+    /** The rows keep the order the core sent — root first, then by mount
+     *  point; sorting again here would move the root away from the top. */
+    @Test
+    fun disk_rows_keep_the_core_order() {
+        val fromCore = listOf(
+            disk("/", "System", "btrfs"),
+            disk("/mnt/D-SSD", "D-SSD", "ext4"),
+            disk("/mnt/WD-Black", "WD-Black", "ext4"),
+        )
+        val rows = WorkspacesModel.diskRows(fromCore)
+        assertEquals(fromCore, rows)
+    }
+
+    /** The row meta is the mount point and the filesystem type, mono — the
+     *  hardware's own words, nothing invented. */
+    @Test
+    fun a_disk_row_says_its_mount_point_and_filesystem() {
+        assertEquals("/mnt/D-SSD · ext4", WorkspacesModel.diskMeta(disk("/mnt/D-SSD", "D-SSD", "ext4")))
+        assertEquals("/ · btrfs", WorkspacesModel.diskMeta(disk("/", "System", "btrfs")))
+    }
+
+    /** The disk's own label is the title the human recognises. */
+    @Test
+    fun a_disk_row_shows_the_disk_label_not_the_path() {
+        val rows = WorkspacesModel.diskRows(listOf(disk("/mnt/D-SSD", "D-SSD", "ext4")))
+        assertEquals("D-SSD", rows.single().label)
+    }
+
+    // --- folder badges: `.git` marker, symlink target ---------------------------
+
+    @Test
+    fun a_git_folder_carries_the_git_marker() {
+        val badge = WorkspacesModel.folderBadge(folder("work", "/repos/work", isGit = true))
+        assertEquals(WorkspacesModel.FolderBadge.Git, badge)
+    }
+
+    @Test
+    fun a_symlink_shows_its_target_and_never_a_git_verdict() {
+        val badge = WorkspacesModel.folderBadge(folder("old", "/repos/old", isSymlink = true, target = "/srv/archive/repos/old"))
+        assertEquals(WorkspacesModel.FolderBadge.Symlink("/srv/archive/repos/old"), badge)
+    }
+
+    @Test
+    fun a_symlink_without_a_readable_target_is_still_a_symlink() {
+        val badge = WorkspacesModel.folderBadge(folder("broken", "/repos/broken", isSymlink = true, target = null))
+        assertEquals(WorkspacesModel.FolderBadge.Symlink(null), badge)
+    }
+
+    @Test
+    fun a_plain_folder_carries_no_badge() {
+        assertNull(WorkspacesModel.folderBadge(folder("scratch", "/repos/scratch")))
+    }
+
+    // --- the browsing state machine: disk → folder → back ------------------------
+
+    @Test
+    fun tapping_a_disk_opens_its_mount_point() {
+        val next = WorkspacesModel.selectDisk(WorkspacesModel.BrowseState.Disks, disk("/mnt/D-SSD", "D-SSD", "ext4"))
+        assertEquals(WorkspacesModel.BrowseState.InFolder("/mnt/D-SSD"), next)
+    }
+
+    @Test
+    fun tapping_a_folder_descends_into_it() {
+        val state = WorkspacesModel.BrowseState.InFolder("/mnt/D-SSD")
+        val next = WorkspacesModel.selectFolder(state, folder("projects", "/mnt/D-SSD/projects"))
+        assertEquals(WorkspacesModel.BrowseState.InFolder("/mnt/D-SSD/projects"), next)
+    }
+
+    /** T27 (S30-3): a row tap only moves the browser; the workspace is
+     *  created from the folder the human is standing in, by the screen's
+     *  one accent action — never as a side effect of descending. */
+    @Test
+    fun the_chosen_path_is_the_folder_the_human_is_standing_in() {
+        assertEquals(
+            "/mnt/D-SSD/projects/foo",
+            WorkspacesModel.chosenPath(WorkspacesModel.BrowseState.InFolder("/mnt/D-SSD/projects/foo")),
+        )
+        assertEquals(
+            "/",
+            WorkspacesModel.chosenPath(WorkspacesModel.BrowseState.InFolder("/")),
+        )
+    }
+
+    @Test
+    fun back_from_a_folder_returns_to_the_disk_list() {
+        val state = WorkspacesModel.BrowseState.InFolder("/mnt/D-SSD/projects")
+        assertEquals(WorkspacesModel.BrowseState.Disks, WorkspacesModel.browseBack(state))
+    }
+
+    @Test
+    fun back_from_the_disk_list_leaves_the_browser() {
+        assertNull(WorkspacesModel.browseBack(WorkspacesModel.BrowseState.Disks))
+    }
+
+    // --- the label of a chosen folder reuses the typed-path rule -----------------
+
+    @Test
+    fun the_chosen_folders_label_is_its_name() {
+        assertEquals("foo", WorkspacesModel.workspaceLabel("/mnt/D-SSD/projects/foo"))
+    }
+
+    @Test
+    fun a_folder_chosen_at_the_root_labels_itself_the_same_way() {
+        assertEquals("foo", WorkspacesModel.workspaceLabel("/foo"))
     }
 
     // --- workspaceEntry (S28-5): where tapping a workspace row goes ---------------
