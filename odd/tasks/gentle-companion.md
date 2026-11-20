@@ -632,3 +632,17 @@ later** (T28). Findings worth keeping:
 - Open before T28: the fork's license (not yet checked), the risk of a second modified herdr on a host already running
   `0.9.5-mustaccin`, and the fact that their document states **mosh cannot carry this control mode** — which is what our P1
   excluded and what our rotation-drops-the-connection pain would want.
+
+**L21 (T27 closed on the phone-shaped flow):** The interrupted worker's work survived the power cut intact (9 files,
++1306/−370) and passed 174 core and 346 JVM tests; the app received a host over SSH to the real machine and walked the
+browser end to end: disks (`System` btrfs, `D-SSD`, `WD-Black` ext4), folders, a `git` badge on every real repository
+(`gs-lab`, `projects`, `bellterm`, `ew1429-rebuild`, all twelve in `personal/projects`), symlinks rendered with their target
+and never followed (`bin → usr/bin`, `lib → lib64 → usr/lib`), an honest `No folders here`, and a workspace created through
+the daemon (`t27-workspace`, closed again with `herdr workspace close` — the session is back to its eight workspaces).
+Walking it, not reading it, surfaced two defects the tests could not: **back from a nested folder jumped straight to the disk
+list**, and **the jump changed the title and the path without re-reading the listing**, so the previous folder's rows stayed on
+screen (the load was wired to the tap handlers only). Both fixed: back climbs to the parent, stops at a disk's mount point or
+the root, and re-reads the folder it lands in (348 JVM tests). Commits `9cac0ea`, `da2df63`.
+Machine note: `sshd` was down after the power cut and is **disabled** at boot — the human started it for this verification and
+it stops again afterwards. The emulator's key was registered with `gentle-mobile-pair --add-key` (marker
+`gentle-mobile-20261120-115353`), left in place as before.
