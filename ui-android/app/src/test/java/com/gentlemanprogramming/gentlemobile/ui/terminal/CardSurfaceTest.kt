@@ -37,6 +37,17 @@ class CardSurfaceTest {
 
     // --- the column range [56, 96] ------------------------------------------
 
+    // --- the column range [38, 48] ---------------------------------------------
+
+    @Test
+    fun `the calibrated range is the phone target 38 to 48 columns (S31b)`() {
+        // The fifth-round target: ~42 columns like Moshi, at the largest
+        // cell that still fits — 56–96 landed at ~57 columns, too dense at
+        // small text on a phone card.
+        assertEquals(38, CardSurface.MIN_COLS)
+        assertEquals(48, CardSurface.MAX_COLS)
+    }
+
     @Test
     fun `a phone card keeps its columns inside the calibrated range`() {
         val surface = CardSurface.derive(
@@ -111,29 +122,33 @@ class CardSurfaceTest {
     // --- the keyboard-open card ---------------------------------------------
 
     @Test
-    fun `a keyboard-open card keeps at least 40 columns when the width allows`() {
+    fun `a keyboard-open card keeps at least the column floor when the width allows`() {
         // The keyboard shrinks the HEIGHT, not the width: the column count
-        // must not collapse with it.
+        // must not collapse with it. Under the S31b calibration the floor
+        // itself is 38 (the 56–96 range landed at ~57 columns, too dense).
         val surface = CardSurface.derive(
             pixel6CardWidth, 656f, advance, lineHeight,
             minFontPx = 1f, maxFontPx = maxFont,
         )
-        assertTrue("cols ${surface.cols} must stay >= 40", surface.cols >= 40)
-        assertTrue(surface.cols >= minCols)
+        assertTrue("cols ${surface.cols} must stay >= $minCols", surface.cols >= minCols)
     }
 
     @Test
     fun `a truly narrow card still derives a drawable grid and never goes negative`() {
         // A card too narrow for the column floor at a readable font: the
         // font floors instead, and the derivation stays honest (never 0,
-        // never an overflow).
+        // never an overflow). The floor itself may exceed the caller's
+        // minimum: the S31b target range still governs when it fits.
         val surface = CardSurface.derive(
             300f, 800f, advance, lineHeight,
             minFontPx = 10f, maxFontPx = maxFont,
         )
         assertTrue("cols never zero, got ${surface.cols}", surface.cols >= 1)
         assertTrue("rows never zero, got ${surface.rows}", surface.rows >= 1)
-        assertEquals(10f, surface.fontPx, 0.01f)
+        assertTrue(
+            "the font never goes under the caller's minimum, got ${surface.fontPx}",
+            surface.fontPx >= 10f,
+        )
         assertTrue(surface.gridWidthPx <= 300f)
     }
 

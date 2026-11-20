@@ -1145,10 +1145,18 @@ impl CompanionConnection {
     }
 
     /// Ask the daemon to re-render at a new surface size (S28-3): the grid
-    /// the phone's terminal card derived from its own geometry. The core
-    /// adds no opinion of its own — the client's validation refuses a size
-    /// it would never render, so an oversized ask fails here, not on screen.
-    pub fn resize_surface(&self, cols: u16, rows: u16) -> Result<(), CompanionError> {
+    /// the phone's terminal card derived from its own geometry, plus the
+    /// cell size it renders at in pixels — the daemon needs the cell
+    /// dimensions to reflow the pane it presents. The core adds no opinion
+    /// of its own — the client's validation refuses a size it would never
+    /// render, so an oversized ask fails here, not on screen.
+    pub fn resize_surface(
+        &self,
+        cols: u16,
+        rows: u16,
+        cell_width_px: u32,
+        cell_height_px: u32,
+    ) -> Result<(), CompanionError> {
         let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
             detail: "the connection is not available".to_owned(),
         })?;
@@ -1156,7 +1164,7 @@ impl CompanionConnection {
             .as_ref()
             .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
         connection
-            .resize_surface(cols, rows)
+            .resize_surface(cols, rows, cell_width_px, cell_height_px)
             .map_err(|error| CompanionError::Transport { detail: error.to_string() })
     }
 
@@ -1164,9 +1172,11 @@ impl CompanionConnection {
     /// the daemon's own source: without an activated surface a resize only
     /// reshapes the client's projection and the pane's PTY keeps the
     /// desktop's width, so the phone paints a narrow frame over wide lines
-    /// and text disappears. Every reflow activates first; leaving the
-    /// session screen releases, handing the geometry control back to the
-    /// desktop's own view.
+    /// and text disappears. The call is confirmed, not queued (T26 rule 3):
+    /// it returns only once the daemon answered, and a refusal is typed —
+    /// a host without surface support can never look identical to one that
+    /// accepted (T26 rule 4). Leaving the session screen releases, handing
+    /// the geometry control back to the desktop's own view.
     pub fn set_surface_active(&self, active: bool) -> Result<(), CompanionError> {
         let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
             detail: "the connection is not available".to_owned(),
@@ -1174,9 +1184,15 @@ impl CompanionConnection {
         let connection = inner
             .as_ref()
             .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
-        connection
-            .set_surface_active(active)
-            .map_err(|error| CompanionError::Transport { detail: error.to_string() })
+        match connection.set_surface_active(active).map_err(CompanionError::from)? {
+            crate::connection::SurfaceAck::Confirmed => Ok(()),
+            crate::connection::SurfaceAck::Refused { code, detail } => {
+                Err(CompanionError::RequestRefused { code, detail })
+            }
+            crate::connection::SurfaceAck::Rejected { detail } => {
+                Err(CompanionError::Transport { detail })
+            }
+        }
     }
 
     /// Create a workspace on the host in `cwd` (S26-3). The path must have
@@ -1603,6 +1619,93 @@ pub(crate) fn snapshot_to_dto(snapshot: &ClientShellSnapshot) -> SnapshotDto {
 mod tests {
     use super::*;
     use crate::requests::RequestError;
+
+    /// T26 live probe (env-gated, `--ignored`): claim the surface against
+    /// the real daemon and resize with the given cell dimensions, then
+    /// report the frame sizes received. The pane's resulting PTY width is
+    /// checked from the host with `herdr pane read`. A/B:
+    /// GENTLE_CELL_W=0 vs the card's real cell size.
+    #[test]
+    #[ignore = "live probe: needs GENTLE_SSH_HOST and a real daemon; reflows a real pane"]
+    fn t26_claim_reflow_probe() {
+        use std::{env, path::PathBuf, time::{Duration, Instant}};
+        use crate::Event;
+        let profile = HostProfile {
+            host: env::var("GENTLE_SSH_HOST").unwrap_or_else(|_| "127.0.0.1".to_owned()),
+            port: 22,
+            user: env::var("GENTLE_SSH_USER").unwrap_or_else(|_| "erickfm".to_owned()),
+            identity_path: PathBuf::from(
+                env::var("GENTLE_SSH_KEY")
+                    .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-companion/t26-probe-key".to_owned()),
+            ),
+            known_hosts_path: PathBuf::from(
+                env::var("GENTLE_KNOWN_HOSTS")
+                    .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-companion/t8-known-hosts".to_owned()),
+            ),
+        };
+        let cell_w: u32 = env::var("GENTLE_CELL_W").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        let cell_h: u32 = env::var("GENTLE_CELL_H").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        let cols: u16 = env::var("GENTLE_COLS").ok().and_then(|v| v.parse().ok()).unwrap_or(38);
+        let rows: u16 = env::var("GENTLE_ROWS").ok().and_then(|v| v.parse().ok()).unwrap_or(26);
+        let tab = env::var("GENTLE_TAB").unwrap_or_else(|_| "w1K:t1".to_owned());
+        let session = env::var("GENTLE_SESSION").unwrap_or_else(|_| "default".to_owned());
+        let connection = Connection::connect(
+            &profile,
+            &session,
+            ConnectOptions {
+                surface_size: ClientSurfaceSize { cols, rows },
+                cell_width_px: cell_w,
+                cell_height_px: cell_h,
+            },
+        )
+        .expect("connect");
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while connection.snapshot().is_none() {
+            assert!(Instant::now() < deadline, "no snapshot");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        match connection.tab_focus(&tab) {
+            Ok(_) => println!("tab focus ok"),
+            Err(error) => println!("tab focus failed: {error}"),
+        }
+        let ack = connection.set_surface_active(true).expect("activate");
+        println!("activate ack: {ack:?}");
+        if env::var("GENTLE_RECLAIM").is_ok() {
+            let release = connection.set_surface_active(false).expect("release");
+            println!("release ack: {release:?}");
+            let reclaim = connection.set_surface_active(true);
+            match &reclaim {
+                Ok(ack) => println!("reclaim ack: {ack:?}"),
+                Err(error) => println!("reclaim failed: {error}"),
+            }
+        }
+        connection
+            .resize_surface(cols, rows, cell_w, cell_h)
+            .expect("resize");
+        println!("resize sent: {cols}x{rows} cell={cell_w}x{cell_h}");
+        let window = Duration::from_secs(6);
+        let start = Instant::now();
+        let mut frames = 0usize;
+        let mut last_size = None;
+        let events = connection.events().expect("events");
+        while start.elapsed() < window {
+            match events.recv_timeout(window - start.elapsed()) {
+                Ok(Event::Surface(surface)) => {
+                    frames += 1;
+                    last_size = Some((surface.frame.width, surface.frame.height));
+                }
+                Ok(Event::Disconnected { reason }) => {
+                    println!("disconnected: {reason}");
+                    break;
+                }
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        println!("frames={frames} last_size={last_size:?}");
+        let _ = connection.set_surface_active(false);
+        connection.disconnect();
+    }
 
     // --- surface size (S27: the phone mirrors the desktop's terminal) ----------
 

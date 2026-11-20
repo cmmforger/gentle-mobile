@@ -11,6 +11,7 @@
 //! [`Event::Disconnected`].
 
 use std::{
+    collections::{HashMap, VecDeque},
     io,
     net::TcpStream,
     os::unix::net::UnixStream,
@@ -55,6 +56,131 @@ pub const WATCHDOG_QUIET_AFTER: Duration = Duration::from_secs(30);
 pub const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 const POLL: Duration = Duration::from_millis(100);
+/// How long an awaited surface command waits for the daemon's own answer
+/// before the wait fails: a confirmed activation is bookkeeping, a missing
+/// one is an honest typed failure (T26 rule 3).
+pub const SURFACE_ACK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The host's answer to one awaited surface command (T26 rules 3–4). The
+/// bookkeeping is written only from [`SurfaceAck::Confirmed`]; a refusal
+/// reaches the UI in the daemon's own words, and a host without surface
+/// support can never look identical to one that accepted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SurfaceAck {
+    /// The daemon answered the request with a result.
+    Confirmed,
+    /// The daemon answered with an error object; `code` and `detail` are its
+    /// own words.
+    Refused { code: String, detail: String },
+    /// The command never made it to the daemon: the vendored client's own
+    /// policy refused it (a welcome that advertises no surface interest
+    /// rejects `surface.set` before a byte is written).
+    Rejected { detail: String },
+}
+
+/// Map a daemon response envelope: a result confirms; an error object is the
+/// refusal — the same shape the request lane parses.
+fn ack_from_response(response: &serde_json::Value) -> SurfaceAck {
+    match response.get("error").filter(|error| !error.is_null()) {
+        None => SurfaceAck::Confirmed,
+        Some(error) => SurfaceAck::Refused {
+            code: error
+                .get("code")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown")
+                .to_owned(),
+            detail: error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("the host gave no reason")
+                .to_owned(),
+        },
+    }
+}
+
+/// Routes the answer of one awaited command to the caller that queued it.
+/// The forwarder routes; [`AckRouter::register`] waits. An outcome that
+/// races ahead of its waiter — the worker's own policy rejections can be
+/// delivered before the caller reaches its registration — is buffered
+/// briefly and handed over there; the buffer is capped, never unbounded.
+#[derive(Default)]
+struct AckRouter {
+    inner: Mutex<RouterState>,
+}
+
+/// Bounded backlog of outcomes delivered before their waiter registered.
+const UNCLAIMED_ACK_CAP: usize = 8;
+
+#[derive(Default)]
+struct RouterState {
+    waiters: HashMap<String, crossbeam_channel::Sender<SurfaceAck>>,
+    unclaimed: VecDeque<(String, SurfaceAck)>,
+}
+
+impl AckRouter {
+    /// Deliver one answer. A registered waiter gets it directly; otherwise
+    /// it is buffered for the registration that follows (oldest evicted).
+    fn route(&self, request_id: &str, ack: SurfaceAck) {
+        if let Ok(mut state) = self.inner.lock() {
+            if let Some(waiter) = state.waiters.remove(request_id) {
+                let _ = waiter.send(ack);
+                return;
+            }
+            if state.unclaimed.len() >= UNCLAIMED_ACK_CAP {
+                state.unclaimed.pop_front();
+            }
+            state.unclaimed.push_back((request_id.to_owned(), ack));
+        }
+    }
+
+    /// Register the waiter for one request id, handing over any outcome
+    /// that already raced ahead of the registration.
+    fn register(&self, request_id: &str) -> crossbeam_channel::Receiver<SurfaceAck> {
+        let (sender, receiver) = crossbeam_channel::bounded(1);
+        if let Ok(mut state) = self.inner.lock() {
+            let raced = state
+                .unclaimed
+                .iter()
+                .position(|(id, _)| id == request_id)
+                .map(|index| state.unclaimed.remove(index).expect("index from position"));
+            match raced {
+                Some((_, ack)) => {
+                    let _ = sender.send(ack);
+                }
+                None => {
+                    state.waiters.insert(request_id.to_owned(), sender);
+                }
+            }
+        }
+        receiver
+    }
+
+    /// Drop a waiter whose wait ran out, so a late outcome buffers (bounded)
+    /// instead of leaking a registration.
+    fn forget(&self, request_id: &str) {
+        if let Ok(mut state) = self.inner.lock() {
+            state.waiters.remove(request_id);
+        }
+    }
+
+    /// Queue the command, then wait for the daemon's own answer.
+    fn await_ack(&self, request_id: &str, budget: Duration) -> Result<SurfaceAck> {
+        let receiver = self.register(request_id);
+        match receiver.recv_timeout(budget) {
+            Ok(ack) => Ok(ack),
+            Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                self.forget(request_id);
+                Err(Error::Timeout("the surface command was never confirmed"))
+            }
+            Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                self.forget(request_id);
+                Err(Error::Timeout(
+                    "the connection ended before the surface command was confirmed",
+                ))
+            }
+        }
+    }
+}
 
 /// The product's view of the endpoint stream.
 #[derive(Debug, Clone)]
@@ -89,6 +215,11 @@ pub struct Connection {
     /// The request-only channel for `pane.read` / `agent.prompt`; connects
     /// lazily on the first request, dies with the connection.
     requests: Option<crate::requests::RequestsHub>,
+    /// The answer router for awaited surface commands (T26 rules 3–4): the
+    /// forwarder routes the daemon's response or rejection here, and the
+    /// caller that queued the command observes it — bookkeeping is written
+    /// only from a confirmation, and a refusal reaches the UI typed.
+    acks: Arc<AckRouter>,
 }
 
 /// Block until the SSH endpoint accepts TCP connections, so a slow sshd start
@@ -289,12 +420,14 @@ impl Connection {
         let (events_tx, events_rx) = crossbeam_channel::bounded::<Event>(64);
         let latest = Arc::new(Mutex::new(None::<Arc<ClientShellSnapshot>>));
         let surfaces = Arc::new(SurfaceStore::new());
+        let acks = Arc::new(AckRouter::default());
         let last_event = Arc::new(Mutex::new(Instant::now()));
         let forwarder = spawn_forwarder(
             client.events.clone(),
             events_tx,
             latest.clone(),
             surfaces.clone(),
+            acks.clone(),
             last_event.clone(),
             stop.clone(),
         )?;
@@ -308,6 +441,7 @@ impl Connection {
             stop,
             threads: vec![ssh_thread, forwarder, watchdog],
             requests: Some(requests),
+            acks,
         })
     }
 
@@ -535,12 +669,22 @@ impl Connection {
     }
 
     /// Re-render at a new surface size (S28-3): the grid the card's own
-    /// geometry derived (cols × rows in cells). Rides the vendored client's
-    /// resize message — the same lane the connect handshake uses — and the
-    /// client's own validation refuses a size it would never render
-    /// (0, > 4096 per side, area > 1M cells), so a bad derivation can never
-    /// ask the daemon for a surface bigger than it renders back.
-    pub fn resize_surface(&self, cols: u16, rows: u16) -> Result<()> {
+    /// geometry derived (cols × rows in cells) and the cell size it renders
+    /// at, in pixels — the daemon needs the cell dimensions to reflow the
+    /// pane it presents (measured: a resize with zero cell dimensions only
+    /// reshapes the projection grid, never the pane's own width). Rides the
+    /// vendored client's resize message — the same lane the connect
+    /// handshake uses — and the client's own validation refuses a size it
+    /// would never render (0, > 4096 per side, area > 1M cells), so a bad
+    /// derivation can never ask the daemon for a surface bigger than it
+    /// renders back.
+    pub fn resize_surface(
+        &self,
+        cols: u16,
+        rows: u16,
+        cell_width_px: u32,
+        cell_height_px: u32,
+    ) -> Result<()> {
         let handle = self
             .handle()
             .ok_or_else(|| Error::Timeout("the connection is closed"))?;
@@ -553,8 +697,8 @@ impl Connection {
                 &boot_id,
                 ConnectOptions {
                     surface_size: herdr_client::protocol::ClientSurfaceSize { cols, rows },
-                    cell_width_px: 0,
-                    cell_height_px: 0,
+                    cell_width_px,
+                    cell_height_px,
                 },
             )
             .map_err(Error::Client)
@@ -571,18 +715,26 @@ impl Connection {
     ///
     /// Release (`active = false`) hands the geometry control back, so the
     /// desktop's own view reflows to its size again.
-    pub fn set_surface_active(&self, active: bool) -> Result<()> {
+    ///
+    /// The call is confirmed, not queued (T26 rule 3): it returns only once
+    /// the daemon answered the request. [`SurfaceAck::Confirmed`] is the
+    /// only acceptance; [`SurfaceAck::Refused`] carries the daemon's own
+    /// refusal and [`SurfaceAck::Rejected`] the vendored client's — a host
+    /// without surface support can never look identical to one that
+    /// accepted (T26 rule 4).
+    pub fn set_surface_active(&self, active: bool) -> Result<SurfaceAck> {
         let handle = self
             .handle()
             .ok_or_else(|| Error::Timeout("the connection is closed"))?;
         let boot_id = self
             .snapshot()
+            .filter(|snapshot| !snapshot.boot_id.is_empty())
             .map(|snapshot| snapshot.boot_id.clone())
             .ok_or_else(|| Error::Timeout("no snapshot has arrived yet"))?;
-        handle
+        let request_id = handle
             .set_surface_active(&boot_id, active)
-            .map(|_| ())
-            .map_err(Error::Client)
+            .map_err(Error::Client)?;
+        self.acks.await_ack(&request_id, SURFACE_ACK_TIMEOUT)
     }
 
     /// Disconnect cleanly: stop the vendored client, close the SSH connection,
@@ -631,6 +783,7 @@ fn spawn_forwarder(
     out: crossbeam_channel::Sender<Event>,
     latest: Arc<Mutex<Option<Arc<ClientShellSnapshot>>>>,
     surfaces: Arc<SurfaceStore>,
+    acks: Arc<AckRouter>,
     last_event: Arc<Mutex<Instant>>,
     stop: Arc<AtomicBool>,
 ) -> Result<JoinHandle<()>> {
@@ -678,9 +831,23 @@ fn spawn_forwarder(
                                 let _ = deliver(&out, Event::Disconnected { reason });
                                 ended = true;
                             }
-                            // Connected, Response, CommandRejected, SurfaceImages, and
-                            // VersionMismatch are vendored-side detail; a refused
-                            // version arrives again as a Disconnected reason.
+                            ClientEvent::Response { request_id, response } => {
+                                // Routed to the caller awaiting the command
+                                // this answers (T26 rules 3–4); the UI's
+                                // event channel stays untouched.
+                                acks.route(&request_id, ack_from_response(&response));
+                            }
+                            ClientEvent::CommandRejected { request_id, reason } => {
+                                if let Some(request_id) = request_id {
+                                    acks.route(
+                                        &request_id,
+                                        SurfaceAck::Rejected { detail: reason.to_string() },
+                                    );
+                                }
+                            }
+                            // Connected, SurfaceImages, and VersionMismatch
+                            // remain vendored-side detail; a refused version
+                            // arrives again as a Disconnected reason.
                             _ => {}
                         }
                     }
@@ -946,6 +1113,64 @@ mod tests {
 
     use herdr_client::protocol::ClientShellSnapshot;
 
+    // --- T26 rules 3–4: the surface command's answer reaches the caller ------
+
+    /// A result envelope confirms; an error object is the refusal, in the
+    /// daemon's own words — never a silent `_ => {}`.
+    #[test]
+    fn a_result_response_confirms_and_an_error_response_refuses() {
+        assert_eq!(
+            ack_from_response(&serde_json::json!({"result": {"type": "ok"}})),
+            SurfaceAck::Confirmed,
+        );
+        assert_eq!(
+            ack_from_response(&serde_json::json!({"id": "gpui-1"})),
+            SurfaceAck::Confirmed,
+        );
+        assert_eq!(
+            ack_from_response(&serde_json::json!({
+                "error": {"code": "no_such_surface", "message": "the tab has no surface"},
+            })),
+            SurfaceAck::Refused {
+                code: "no_such_surface".to_owned(),
+                detail: "the tab has no surface".to_owned(),
+            },
+        );
+    }
+
+    #[test]
+    fn a_routed_outcome_reaches_its_waiter_in_order() {
+        let acks = AckRouter::default();
+        let receiver = acks.register("gpui-7");
+        acks.route("gpui-7", SurfaceAck::Confirmed);
+        assert_eq!(receiver.recv_timeout(Duration::from_secs(1)).unwrap(), SurfaceAck::Confirmed);
+    }
+
+    /// The worker's own policy rejection can be delivered while the caller is
+    /// still walking from the queued command to its registration — the
+    /// buffered outcome must still reach it (a host without surface support
+    /// must never look identical to one that accepted).
+    #[test]
+    fn an_outcome_that_races_ahead_of_its_waiter_is_buffered_for_it() {
+        let acks = AckRouter::default();
+        acks.route("gpui-1", SurfaceAck::Rejected { detail: "surface interest capabilities not advertised".to_owned() });
+        let receiver = acks.register("gpui-1");
+        assert_eq!(
+            receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
+            SurfaceAck::Rejected { detail: "surface interest capabilities not advertised".to_owned() },
+        );
+    }
+
+    #[test]
+    fn an_outcome_for_an_unknown_command_is_buffered_bounded() {
+        let acks = AckRouter::default();
+        for n in 0..12u32 {
+            acks.route(&format!("gpui-{n}"), SurfaceAck::Confirmed);
+        }
+        let state = acks.inner.lock().unwrap();
+        assert_eq!(state.unclaimed.len(), 8, "the buffer is capped, never unbounded");
+    }
+
     /// The product stop flag must flip when the vendored client reports the
     /// connection over: `is_disconnected()` is the only liveness word the UI
     /// reads (T8c), and a dead link that keeps it false would leave the app
@@ -958,8 +1183,16 @@ mod tests {
         let surfaces = Arc::new(SurfaceStore::new());
         let last_event = Arc::new(Mutex::new(Instant::now()));
         let stop = Arc::new(AtomicBool::new(false));
-        let forwarder =
-            spawn_forwarder(client_rx, out_tx, latest, surfaces, last_event, stop.clone()).unwrap();
+        let forwarder = spawn_forwarder(
+            client_rx,
+            out_tx,
+            latest,
+            surfaces,
+            Arc::new(AckRouter::default()),
+            last_event,
+            stop.clone(),
+        )
+        .unwrap();
 
         client_tx
             .send(ClientEvent::Disconnected {

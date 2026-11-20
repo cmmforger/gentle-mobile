@@ -1,18 +1,20 @@
 package com.gentlemanprogramming.gentlemobile.ui.terminal
 
 import com.gentlemanprogramming.gentlemobile.core.CellDto
-import com.gentlemanprogramming.gentlemobile.core.CursorDto
 import com.gentlemanprogramming.gentlemobile.core.SurfaceDto
 import kotlin.math.abs
 
 /**
- * The desktop-composer crop (S29). The frame the phone paints includes pi's
- * own composer — the `✿ waiting for input ─── [ Panel ] INSERT ─` bar and the
- * `› type, or / for commands` prompt row under it. The phone writes through
- * its own composer, so that box is unusable chrome: this transform finds the
- * composer rows in the frame's row grid, removes them, shifts every row below
- * them up, and pads the freed space at the top of the grid with blank rows so
- * the grid keeps its dimensions and the metrics lines stay at the bottom.
+ * The desktop-composer crop (S29, reshaped by T26/S31b). The frame the phone
+ * paints includes pi's own composer — the `✿ waiting for input ─── [ Panel ]
+ * INSERT ─` bar and the `› type, or / for commands` prompt row under it. The
+ * phone writes through its own composer, so that box is unusable chrome:
+ * this transform finds the composer rows in the frame's row grid and blanks
+ * them **in place** — the grid keeps every row at its own position, so no
+ * card height is spent on blank padding, the frame still fills the card in
+ * both directions (S31b), and the metrics lines keep their own rows at the
+ * bottom. The pane is asked for exactly the card's derived rows; the old
+ * `+4` allowance and the pad-at-top shift are gone.
  *
  * Detection is deliberately conservative, and the **prompt row is the
  * primary evidence** (measured defect, T44: while an agent works the bar
@@ -61,10 +63,10 @@ object ComposerCrop {
     private val METRICS_DIFF = Regex("""\+\d+\s*[−-]\s*\d+""")
 
     class Result(
-        /** The transformed frame: same dimensions, composer rows replaced by
-         *  blank padding at the top, rows below shifted up into their place. */
+        /** The transformed frame: same dimensions, the composer's rows blank
+         *  in place, every other row at its own position. */
         val surface: SurfaceDto,
-        /** How many rows were removed (0 = the transform declined to act). */
+        /** How many rows were blanked (0 = the transform declined to act). */
         val removedRows: Int,
     )
 
@@ -78,17 +80,6 @@ object ComposerCrop {
         val block = detectBlock(surface) ?: return Result(surface, 0)
         return Result(transform(surface, block), block.last - block.first + 1)
     }
-
-    /**
-     * The pane row count to ask for (S28-3 derivation + S29 allowance): the
-     * derived rows **plus the full allowance** — never the measured removed
-     * rows, which are 0 on the first pass, so the freed rows would never
-     * come back and the card kept its empty area (measured defect, T44).
-     * The host keeps painting the composer, the phone crops at most
-     * [MAX_REMOVE] rows, so the cropped frame still holds at least the
-     * derived rows and still fills the card that derived them.
-     */
-    fun requestRows(derivedRows: Int): Int = derivedRows + MAX_REMOVE
 
     // --- detection ------------------------------------------------------------
 
@@ -160,24 +151,23 @@ object ComposerCrop {
     }
 
     /**
-     * Remove the block's rows, shift the rows below up, and pad the freed
-     * space at the top of the grid with blank rows: the grid keeps its
-     * dimensions, the metrics stay at the bottom, and rows above the composer
-     * shift down with the pad. A cursor inside the removed block is dropped
-     * (it lived in the composer's input); a cursor above shifts with the pad;
-     * a cursor below keeps its row.
+     * Blank the block's rows in place: the grid keeps its dimensions and
+     * every surviving row keeps its position — no shift, no padding (S31b).
+     * A cursor inside the blanked block is dropped (it lived in the
+     * composer's input); every other cursor keeps its row.
      */
     private fun transform(surface: SurfaceDto, block: IntRange): SurfaceDto {
         val width = surface.width.toInt()
         val height = surface.height.toInt()
-        val removed = block.last - block.first + 1
         val cells = ArrayList<CellDto>(surface.cells.size)
-        repeat(removed) { cells.addAll(blankRow(width)) }
         for (row in 0 until height) {
-            if (row in block) continue
-            cells.addAll(surface.cells.subList(row * width, (row + 1) * width))
+            if (row in block) {
+                cells.addAll(blankRow(width))
+            } else {
+                cells.addAll(surface.cells.subList(row * width, (row + 1) * width))
+            }
         }
-        val cursor = surface.cursor?.let { shiftCursor(it, block, removed) }
+        val cursor = surface.cursor?.takeIf { it.y.toInt() !in block }
         return SurfaceDto(
             width = surface.width,
             height = surface.height,
@@ -186,15 +176,6 @@ object ComposerCrop {
             cursor = cursor,
             popupPresent = surface.popupPresent,
         )
-    }
-
-    private fun shiftCursor(cursor: CursorDto, block: IntRange, removed: Int): CursorDto? {
-        val y = cursor.y.toInt()
-        return when {
-            y in block -> null
-            y < block.first -> cursor.copy(y = (y + removed).toUInt())
-            else -> cursor
-        }
     }
 
     private fun blankRow(width: Int): List<CellDto> = List(width) {

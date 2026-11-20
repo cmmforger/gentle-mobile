@@ -4,17 +4,20 @@ import com.gentlemanprogramming.gentlemobile.core.CellDto
 import com.gentlemanprogramming.gentlemobile.core.CursorDto
 import com.gentlemanprogramming.gentlemobile.core.SurfaceDto
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The desktop-composer crop (S29). The frame the phone paints includes pi's
- * own composer — the `✿ waiting for input ─── [ Panel ] INSERT ─` bar and the
- * `› type, or / for commands` prompt row under it. The phone writes through
- * its own composer, so that box is unusable chrome: the transform finds the
- * composer rows in the frame's row grid, removes them, shifts the rows below
- * up, and pads the freed space at the top of the grid with blank rows.
+ * The desktop-composer crop (S29, reshaped by T26/S31b). The frame the phone
+ * paints includes pi's own composer — the `✿ waiting for input ─── [ Panel ]
+ * INSERT ─` bar and the `› type, or / for commands` prompt row under it. The
+ * phone writes through its own composer, so that box is unusable chrome: the
+ * transform finds the composer rows in the frame's row grid and blanks them
+ * **in place** — no shifting, no padding: the grid keeps every row at its own
+ * position, so no card height is spent on blank padding and the frame still
+ * fills the card in both directions (S31b).
  *
  * Detection is deliberately conservative (S29): only the last few rows are
  * inspected, the prompt row must start with the prompt glyph AND carry pi's
@@ -71,27 +74,27 @@ class ComposerCropTest {
         "2 files · +12 −3",
     )
 
-    // --- composer present: rows removed and shifted ---------------------------
+    // --- composer present: rows blanked in place -------------------------------
 
     @Test
-    fun `the composer rows are removed and the rows below shift up into their place`() {
+    fun `the composer rows are blanked in their own place and nothing moves`() {
         val result = ComposerCrop.crop(surface(idleFrame))
         assertEquals(2, result.removedRows)
         val cropped = result.surface
-        // The grid keeps its dimensions: the freed space is padded at the top.
+        // The grid keeps its dimensions and every surviving row keeps its
+        // position — no shifting, no padding: the frame still fills the
+        // card it was derived from (S31b).
         assertEquals(idleFrame.size, cropped.height.toInt())
         assertEquals(rows_maxWidth(), cropped.width.toInt())
-        // Rows below the composer shifted up: the metrics now sit directly
-        // under the conversation, at the bottom of the grid.
-        assertEquals(idleFrame[0], rowText(cropped, 2))
-        assertEquals(idleFrame[1], rowText(cropped, 3))
+        assertEquals(idleFrame[0], rowText(cropped, 0))
+        assertEquals(idleFrame[1], rowText(cropped, 1))
         assertEquals(idleFrame[4], rowText(cropped, 4))
         assertEquals(idleFrame[5], rowText(cropped, 5))
         // No trace of the composer anywhere in the grid.
         for (row in 0 until cropped.height.toInt()) {
             val text = rowText(cropped, row)
-            assertTrue("bar row must be gone at row $row", !text.contains("waiting for input"))
-            assertTrue("prompt row must be gone at row $row", !text.contains("type, or / for commands"))
+            assertTrue("bar row must be blank at row $row", !text.contains("waiting for input"))
+            assertTrue("prompt row must be blank at row $row", !text.contains("type, or / for commands"))
         }
     }
 
@@ -104,19 +107,21 @@ class ComposerCropTest {
     }
 
     @Test
-    fun `the freed space is padded with blank rows at the top of the grid`() {
+    fun `the composer rows themselves are blank and no other row is`() {
+        // S31b: the only blank rows are the composer's own — the freed space
+        // of the old pad-at-top transform no longer exists.
         val cropped = ComposerCrop.crop(surface(idleFrame)).surface
-        for (row in 0 until result_removedRows(idleFrame)) {
-            for (cell in cropped.cells.subList(row * cropped.width.toInt(), (row + 1) * cropped.width.toInt())) {
-                assertEquals("top pad must be blank", "", cell.symbol)
+        for (row in 0 until cropped.height.toInt()) {
+            val blank = rowText(cropped, row).isEmpty()
+            if (row == 2 || row == 3) {
+                assertTrue("the composer's own row $row is blank", blank)
+            } else {
+                assertFalse("a conversation row never becomes padding", blank)
             }
         }
     }
 
     private fun rows_maxWidth(): Int = idleFrame.maxOf { it.length }
-
-    private fun result_removedRows(rows: List<String>): Int =
-        ComposerCrop.crop(surface(rows)).removedRows
 
     @Test
     fun `revision width height and popup flag are carried through unchanged`() {
@@ -190,8 +195,9 @@ class ComposerCropTest {
         )
         val result = ComposerCrop.crop(surface(rows))
         assertEquals(1, result.removedRows)
-        // Only the prompt row is gone; the conversation and metrics stay.
-        assertEquals("reading the daemon source", rowText(result.surface, 1))
+        // Only the prompt row is blanked; the conversation and metrics stay
+        // in their own rows.
+        assertEquals("reading the daemon source", rowText(result.surface, 0))
         assertEquals("2 files · +12 −3", rowText(result.surface, result.surface.height.toInt() - 1))
     }
 
@@ -238,6 +244,10 @@ class ComposerCropTest {
         assertEquals(1, result.removedRows)
         assertEquals(
             "✿ waiting for input ─── [ Panel ] INSERT ──────",
+            rowText(result.surface, 0),
+        )
+        assertEquals(
+            "some intermediate line the composer never paints",
             rowText(result.surface, 1),
         )
     }
@@ -259,26 +269,9 @@ class ComposerCropTest {
 
     // --- the row-count arithmetic ----------------------------------------------
 
-    @Test
-    fun `the pane is asked for the derived rows plus the FULL allowance`() {
-        // The measured removed rows must not drive the request: on the first
-        // pass nothing has been measured yet, so the freed rows would never
-        // come back and the card kept its empty area (measured defect, T44).
-        // The full allowance is requested unconditionally.
-        assertEquals(34, ComposerCrop.requestRows(30))
-        assertEquals(41, ComposerCrop.requestRows(37))
-    }
-
-    @Test
-    fun `the cropped frame holds at least the derived rows`() {
-        // Whatever the detector ends up removing (it is capped at
-        // MAX_REMOVE), the returned frame still holds the derived rows and
-        // so still fills the card that derived them.
-        for (removed in 0..ComposerCrop.MAX_REMOVE) {
-            val requested = ComposerCrop.requestRows(30)
-            assertTrue("removed=$removed: $requested rows must hold 30", requested - removed >= 30)
-        }
-    }
+    // T26/S31b: the pane is asked for exactly the card's derived rows — the
+    // `+4` allowance and the blank padding it produced are gone (see the
+    // session screen; `ComposerCrop.requestRows` no longer exists).
 
     @Test
     fun `the transform never reports more than four removed rows`() {
@@ -297,9 +290,9 @@ class ComposerCropTest {
     }
 
     @Test
-    fun `a cursor above the composer shifts down with the padded grid`() {
+    fun `a cursor above the composer keeps its row`() {
         val result = ComposerCrop.crop(surface(idleFrame, cursor = cursorAt(4, 0)))
-        assertEquals(2u, result.surface.cursor!!.y)
+        assertEquals(0u, result.surface.cursor!!.y)
         assertEquals(4u, result.surface.cursor!!.x)
     }
 

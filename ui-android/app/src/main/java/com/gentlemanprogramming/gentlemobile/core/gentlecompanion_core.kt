@@ -1097,7 +1097,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_send_keys() and 0xFFFF) != 26307) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_set_surface_active() and 0xFFFF) != 47277) {
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_set_surface_active() and 0xFFFF) != 1535) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot() and 0xFFFF) != 47863) {
@@ -1739,9 +1739,11 @@ public interface CompanionConnectionInterface {
      * the daemon's own source: without an activated surface a resize only
      * reshapes the client's projection and the pane's PTY keeps the
      * desktop's width, so the phone paints a narrow frame over wide lines
-     * and text disappears. Every reflow activates first; leaving the
-     * session screen releases, handing the geometry control back to the
-     * desktop's own view.
+     * and text disappears. The call is confirmed, not queued (T26 rule 3):
+     * it returns only once the daemon answered, and a refusal is typed —
+     * a host without surface support can never look identical to one that
+     * accepted (T26 rule 4). Leaving the session screen releases, handing
+     * the geometry control back to the desktop's own view.
      */
     fun `setSurfaceActive`(`active`: kotlin.Boolean)
     
@@ -2151,9 +2153,11 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
      * the daemon's own source: without an activated surface a resize only
      * reshapes the client's projection and the pane's PTY keeps the
      * desktop's width, so the phone paints a narrow frame over wide lines
-     * and text disappears. Every reflow activates first; leaving the
-     * session screen releases, handing the geometry control back to the
-     * desktop's own view.
+     * and text disappears. The call is confirmed, not queued (T26 rule 3):
+     * it returns only once the daemon answered, and a refusal is typed —
+     * a host without surface support can never look identical to one that
+     * accepted (T26 rule 4). Leaving the session screen releases, handing
+     * the geometry control back to the desktop's own view.
      */
     @Throws(CompanionException::class)override fun `setSurfaceActive`(`active`: kotlin.Boolean)
         = 

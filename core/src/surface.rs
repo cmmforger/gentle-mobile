@@ -244,8 +244,11 @@ impl SurfaceStore {
         Self { slot: Mutex::new(None), dropped: AtomicU64::new(0) }
     }
 
-    /// Offer one frame. Any frame whose revision is not strictly newer than
-    /// the slot's is counted as dropped, not queued.
+    /// Offer one frame. A frame whose revision is not strictly newer than
+    /// the slot's is counted as dropped, not queued — unless its grid
+    /// dimensions changed: that is the re-render after the phone's claimed
+    /// resize (T26 rule 6), and the reflow must replace the slot even when
+    /// the daemon's revision bookkeeping did not advance.
     pub fn store(&self, frame: Arc<PaneSurfaceFrame>) {
         let mut slot = match self.slot.lock() {
             Ok(slot) => slot,
@@ -255,7 +258,10 @@ impl SurfaceStore {
             }
         };
         if let Some(current) = slot.as_ref() {
-            if frame.surface_revision <= current.surface_revision {
+            let advancing = frame.surface_revision > current.surface_revision;
+            let reflowed = (frame.frame.width, frame.frame.height)
+                != (current.frame.width, current.frame.height);
+            if !advancing && !reflowed {
                 drop(slot);
                 self.dropped.fetch_add(1, Ordering::Relaxed);
                 return;
@@ -518,6 +524,37 @@ mod tests {
         let store = SurfaceStore::new();
         assert!(store.latest().is_none());
         assert_eq!(store.dropped(), 0);
+    }
+
+    // T26 rule 6/7: after the phone's claim the daemon may re-render with a
+    // revision that does not advance. A frame with NEW dimensions is the
+    // reflow itself — it replaces the slot; a stale frame of the SAME
+    // dimensions is still collapsed.
+    #[test]
+    fn a_reflowed_frame_of_new_dimensions_replaces_the_slot_even_without_revision_advance() {
+        let store = SurfaceStore::new();
+        store.store(Arc::new(frame(10)));
+        let mut reflowed = frame(10);
+        reflowed.frame.cells.push(reflowed.frame.cells[0].clone());
+        reflowed.frame.width = 2;
+        store.store(Arc::new(reflowed));
+        let latest = store.latest().expect("the reflowed frame replaces the slot");
+        assert_eq!(latest.frame.width, 2, "the reflowed geometry is the slot");
+        assert_eq!(latest.surface_revision, 10);
+        let mut stale = frame(10);
+        stale.frame.width = 2;
+        store.store(Arc::new(stale));
+        let latest = store.latest().unwrap();
+        assert_eq!(
+            latest.frame.cells.len(),
+            7,
+            "the same-dims stale frame never resurrects over the reflowed one"
+        );
+        assert_eq!(
+            store.dropped(),
+            2,
+            "both replaced frames are collapsed, not queued"
+        );
     }
 
     // A guard against accidental coupling to `GridUpdate`: the store works on

@@ -481,7 +481,11 @@ impl Session {
                 }
                 let scroll = surface_scroll::decode(&data)?;
                 let current = surface.as_mut().ok_or(Error::PatchBeforeBaseline)?;
-                Arc::make_mut(current).apply_scroll_patch(scroll)?;
+                let boot_id = scroll.patch.boot_id.clone();
+                if !tolerate_identity_race(current, &boot_id, |frame| frame.apply_scroll_patch(scroll))?
+                {
+                    return Ok(());
+                }
                 emit_patched(snapshot.as_deref(), current, images, &mut emit)?;
             }
             ServerMessage::EndpointControl { kind, data }
@@ -491,10 +495,27 @@ impl Session {
                     return Err(Error::SurfaceEncodingNotNegotiated);
                 }
                 let delta = surface_delta::decode(&data)?;
-                let base = surface
-                    .as_deref()
-                    .ok_or(Error::EncodedSurfaceBeforeBaseline)?;
-                let next = delta.reconstruct(base)?;
+                let Some(base) = surface.as_deref() else {
+                    // No baseline yet: wait for the daemon's next full
+                    // surface instead of ending the connection (T26 rule 6).
+                    tracing::debug!("delta before baseline; waiting for a full surface");
+                    return Ok(());
+                };
+                if base.boot_id != delta.surface.boot_id {
+                    // A daemon restart under the connection stays fatal.
+                    return Err(Error::Protocol(herdr_protocol::Error::SurfaceBaseline));
+                }
+                let next = match delta.reconstruct(base) {
+                    Ok(next) => next,
+                    // The baseline was replaced under in-flight traffic — a
+                    // claimed resize reflowed the pane, and this delta still
+                    // carries the superseded render's base. It cannot be
+                    // reconstructed; the daemon's next full surface re-baselines.
+                    Err(error) => {
+                        tracing::debug!("superseded delta skipped: {error}");
+                        return Ok(());
+                    }
+                };
                 accept_surface(next, snapshot.as_deref(), surface, images, &mut emit)?;
             }
             ServerMessage::EndpointControl { kind, data }
@@ -504,10 +525,20 @@ impl Session {
                     return Err(Error::SurfaceEncodingNotNegotiated);
                 }
                 let reuse = surface_reuse::decode(&data)?;
-                let base = surface
-                    .as_deref()
-                    .ok_or(Error::EncodedSurfaceBeforeBaseline)?;
-                let next = reuse.reconstruct(base)?;
+                let Some(base) = surface.as_deref() else {
+                    tracing::debug!("reuse before baseline; waiting for a full surface");
+                    return Ok(());
+                };
+                if base.boot_id != reuse.surface.boot_id {
+                    return Err(Error::Protocol(herdr_protocol::Error::SurfaceBaseline));
+                }
+                let next = match reuse.reconstruct(base) {
+                    Ok(next) => next,
+                    Err(error) => {
+                        tracing::debug!("superseded reuse skipped: {error}");
+                        return Ok(());
+                    }
+                };
                 accept_surface(next, snapshot.as_deref(), surface, images, &mut emit)?;
             }
             ServerMessage::EndpointControl { .. } => {} // Unknown optional named controls are ignored.
@@ -516,7 +547,10 @@ impl Session {
             }
             ServerMessage::PaneSurfacePatch(patch) => {
                 let current = surface.as_mut().ok_or(Error::PatchBeforeBaseline)?;
-                Arc::make_mut(current).apply_patch(patch)?;
+                let boot_id = patch.boot_id.clone();
+                if !tolerate_identity_race(current, &boot_id, |frame| frame.apply_patch(patch))? {
+                    return Ok(());
+                }
                 emit_patched(snapshot.as_deref(), current, images, &mut emit)?;
             }
             ServerMessage::ClientShellEndpointResponseChunk {
@@ -570,6 +604,29 @@ impl Session {
     }
 }
 
+/// Run one patch-shaped update under the T26 rule 6 policy. A same-boot
+/// identity mismatch — the old render's tail racing a baseline that a
+/// claimed resize just replaced — is skipped (`Ok(false)`); the daemon's
+/// next full surface re-baselines. A different boot still fails closed
+/// (that is a daemon restart), and bounds errors always propagate.
+fn tolerate_identity_race(
+    surface: &mut Arc<PaneSurfaceFrame>,
+    patch_boot: &str,
+    apply: impl FnOnce(&mut PaneSurfaceFrame) -> herdr_protocol::Result<()>,
+) -> Result<bool> {
+    let same_boot = surface.boot_id == patch_boot;
+    match apply(Arc::make_mut(surface)) {
+        Ok(()) => Ok(true),
+        Err(error)
+            if same_boot && matches!(error, herdr_protocol::Error::PatchIdentity) =>
+        {
+            tracing::debug!("stale patch skipped: {error}");
+            Ok(false)
+        }
+        Err(error) => Err(Error::Protocol(error)),
+    }
+}
+
 /// Fences a complete surface on boot and revision, validates it, and retains it
 /// as the baseline whether or not its projection is current.
 fn accept_surface(
@@ -580,11 +637,11 @@ fn accept_surface(
     emit: &mut impl FnMut(ClientEvent) -> Result<()>,
 ) -> Result<()> {
     let s = snapshot.ok_or(Error::SurfaceBeforeSnapshot)?;
-    if next.boot_id != s.boot_id
-        || surface
-            .as_ref()
-            .is_some_and(|old| next.surface_revision <= old.surface_revision)
-    {
+    // The boot fence stays: a daemon restart is a reconnect. The revision
+    // fence is gone (T26 rule 6): the re-render after a claimed resize may
+    // not advance the revision, and replacing the baseline is what the
+    // reflow needs — never a dead connection.
+    if next.boot_id != s.boot_id {
         return Err(Error::SurfaceIdentity);
     }
     next.frame.validate()?;

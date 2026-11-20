@@ -646,3 +646,28 @@ the root, and re-reads the folder it lands in (348 JVM tests). Commits `9cac0ea`
 Machine note: `sshd` was down after the power cut and is **disabled** at boot — the human started it for this verification and
 it stops again afterwards. The emulator's key was registered with `gentle-mobile-pair --add-key` (marker
 `gentle-mobile-20261120-115353`), left in place as before.
+
+**L22 (T26 in — the client obeys, the daemon arbitrates):** The whole geometry lifecycle is now the rootshell model, one
+RED test per rule: a released pane re-claims on return, one claiming activation per session with routine size-only updates,
+`set_surface_active` **awaits the daemon's answer** (`AckRouter`, 10 s) and the UI shows a refusal instead of logging it,
+`Response`/`CommandRejected` reach the caller instead of the old `_ => {}`, activation and resize run on one flight so wire
+order is decision order, a superseded or re-activated surface **replaces the baseline instead of killing the connection**
+(boot mismatch stays fatal; wire order untouched), and no frame whose dims differ from the asked grid is ever painted. The
+grid now comes from the card in both axes with `MIN_COLS=38`/`MAX_COLS=48`, `requestRows`'s `+4` is gone and the composer
+crop blanks rows in place: live measure **card 974×1475 → grid 38×26, cell 25.2×55.4 px, fill 0.98×0.98, font 42 px, painted
+1:1**. 179 core (+1 ignored live probe), 272 vendored, 353 JVM.
+
+**The blocker, measured not guessed:** with the human's desktop TUI attached, the daemon **confirms** the phone's claim
+(`SurfaceAck::Confirmed`) and renders 38-column frames, but never reflows the pane's PTY — `herdr pane read` stays 184 cols,
+and S31a clips (`LA-FRASE-DE-CONTROL-CRUZA-VARIAS-LINE…` in `t26-m1-open.png`). In an isolated daemon session the same wire
+path reflows the pane to 38 (probe test `t26_claim_reflow_probe`). After a phone release the daemon also stops answering
+re-activations. Upstream has **no geometry takeover**: `pane.resize` is a split-divider amount, `client_shell.surface.set
+{active}` is the only presentation control, and nothing claims ownership. So this is daemon arbitration between co-attached
+clients, not a client defect — the human's call: accept "the phone claims geometry only while it is the only client", or take
+T28's fork semantics (`tab.set_geometry` with `claim`). Open client-side defect to anchor regardless: a failed claim prints a
+line that changes the card height, which changes the derived grid, which re-fires the claim every 10 s (seq 38x24↔38x26).
+
+**L23 (incident, owned):** while probing the live host the worker briefly opened the human's `.gentle-shell` session (one back,
+~40 s, their agent was mid-turn) and the `ERP-WEB-FRONT` session, backing out immediately. No typing and no resizing into
+their panes; the release restored the desktop geometry. Recorded because a phone client that claims geometry can disturb a
+live desktop session, and that is exactly the risk the blocker above is about.

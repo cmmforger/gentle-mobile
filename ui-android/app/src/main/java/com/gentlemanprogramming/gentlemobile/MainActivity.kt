@@ -198,6 +198,7 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import com.gentlemanprogramming.gentlemobile.ui.theme.ThemeStore
 import com.gentlemanprogramming.gentlemobile.ui.terminal.CardSurface
+import com.gentlemanprogramming.gentlemobile.ui.terminal.ClaimFlight
 import com.gentlemanprogramming.gentlemobile.ui.terminal.ComposerCrop
 import com.gentlemanprogramming.gentlemobile.ui.terminal.PanePresentation
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFit
@@ -358,6 +359,12 @@ class MainActivity : FragmentActivity() {
 // the Sessions screen (T17a) shares the same workers for its SFTP list and
 // lease calls.
 internal val executor = Executors.newFixedThreadPool(2)
+// The claim single-flight (T26 rule 5): activation and resize are two wire
+// calls, and overlapping effect firings (keyboard open/close) must land in
+// decision order — one worker, so the wire order is the decision order.
+internal val claimExecutor = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "gentle-mobile-claims")
+}
 internal val mainHandler = Handler(Looper.getMainLooper())
 
 /** Log tag for supervision evidence: poller registration and stop lines. */
@@ -592,6 +599,38 @@ private class SessionUi {
     var askedCols by mutableStateOf<Int?>(null)
     var askedRows by mutableStateOf<Int?>(null)
 
+    /** T26 rule 2: whether this client still holds the tab's geometry
+     *  control — one claiming activation per activation, routine size
+     *  updates only after it. Cleared on release and on a new connection. */
+    var surfaceActive by mutableStateOf(false)
+
+    /** T26 rule 7: the decision-time ask — the grid the phone is waiting to
+     *  see painted. A frame of any other grid is held (the previous frame,
+     *  or a blank card), never painted, so the phone can never show a
+     *  width it did not claim. */
+    var requestedCols by mutableStateOf<Int?>(null)
+    var requestedRows by mutableStateOf<Int?>(null)
+
+    /** The host's own refusal when a claim or release did not land
+     *  (T26 rule 3): shown on the session screen, never a silent log. */
+    var reflowError by mutableStateOf<String?>(null)
+
+    /** The claim single-flight (T26 rule 5): decide on the UI thread,
+     *  execute on [claimExecutor], apply only the newest confirmation. */
+    val claims = ClaimFlight()
+
+    /** T26 rules 1–2: the surface claim is gone — the session was released
+     *  on back, or a new connection owns the tab's geometry. The next open
+     *  re-claims, whatever geometry the pane was left at, and no frame of
+     *  a stale ask paints in the meantime. */
+    fun clearClaim() {
+        surfaceActive = false
+        askedCols = null
+        askedRows = null
+        requestedCols = null
+        requestedRows = null
+    }
+
     /** Full re-baseline: a new connection owns a fresh core store, so the
      * drawn grid and the fallback read start empty again. Drafts survive.
      * Attachments do not: their upload session died with the connection. */
@@ -605,9 +644,10 @@ private class SessionUi {
         tabAgents = emptyMap()
         tabError = null
         // A fresh connection knows no pane width: the first derived frame
-        // must ask (PanePresentation).
-        askedCols = null
-        askedRows = null
+        // must ask (PanePresentation), and the claim is gone with the old
+        // connection (T26 rules 1–2).
+        clearClaim()
+        reflowError = null
         // A fresh connection knows no crop yet: the first frames re-detect it.
         composerCropRows = 0
         // A dead connection cannot keep a recognizer: any dictation in
@@ -2939,12 +2979,27 @@ fun ConnectScreen(
                         screen.ui = UiState.Connected(current.connection, snapshot = null)
                         // The phone held the tab's geometry control while the
                         // session was open (S28-3): release it, so the desktop's
-                        // own view reflows back to its size.
-                        executor.execute {
-                            try {
+                        // own view reflows back to its size. The release also
+                        // ends EVERY pane's claim (T26 rule 1): the ask is
+                        // cleared now, so reopening any agent re-claims from
+                        // its derived grid instead of staying at the desktop
+                        // geometry forever.
+                        val released = screen.sessions.values.toList()
+                        released.forEach { it.clearClaim() }
+                        claimExecutor.execute {
+                            val failure = try {
                                 current.connection.setSurfaceActive(false)
+                                null
                             } catch (error: Exception) {
-                                Log.w(TAG, "surface release failed: ${error.message}")
+                                describe(context, error)
+                            }
+                            mainHandler.post {
+                                if (failure != null) {
+                                    // A refused release reaches the UI (T26
+                                    // rule 3): reopening re-claims and shows
+                                    // the host's own answer if it fails again.
+                                    released.forEach { it.reflowError = failure }
+                                }
                             }
                         }
                         // Going back restarts snapshot polling: a session open
@@ -3298,27 +3353,49 @@ private fun pollSurface(
                 }
                 mainHandler.post {
                     val previous = sessionUi.surface
-                    if (sessionStillCurrent(screen, sessionUi, paneId, generation) &&
-                        surface != null &&
-                        (previous == null || surface.revision != previous.revision)
-                    ) {
-                        // S29: the stored frame is the cropped one — every
-                        // consumer (this screen's renderer, the fit, the
-                        // reconnect path) sees the composer gone, and a tab
-                        // rebind or reconnect re-runs the detection here.
-                        val cropped = ComposerCrop.crop(surface)
-                        sessionUi.surface = cropped.surface
-                        sessionUi.composerCropRows = cropped.removedRows
-                        // S29/T44 diagnosis: what came back, what the
-                        // detector decided, and the window's text (debug
-                        // builds only, S23).
+                    if (sessionStillCurrent(screen, sessionUi, paneId, generation) && surface != null) {
+                        // T26 rule 7: never paint a frame of a width the app
+                        // did not ask for. Until the claimed grid arrives, the
+                        // previous frame (or a blank card) is held: a frame of
+                        // any other grid is dropped here, whether it is the
+                        // cold-connect desktop hello or a rebind's stale
+                        // width. The asked bookkeeping is written only from a
+                        // frame that confirms the ask (T26 rule 3).
+                        val asked = sessionUi.requestedCols != null &&
+                            surface.width.toInt() == sessionUi.requestedCols &&
+                            surface.height.toInt() == sessionUi.requestedRows
                         Log.i(
                             TAG,
-                            "composer crop: rows returned=${surface.height} of asked=${sessionUi.askedRows} " +
-                                "cols=${surface.width} removed=${cropped.removedRows}",
+                            "surface frame: ${surface.width}x${surface.height} rev=${surface.revision} " +
+                                "requested=${sessionUi.requestedCols}x${sessionUi.requestedRows} accepted=$asked",
                         )
-                        for (row in maxOf(0, surface.height.toInt() - ComposerCrop.WINDOW) until surface.height.toInt()) {
-                            Log.i(TAG, "composer crop row $row: ${ComposerCrop.rowText(surface, row)}")
+                        if (asked) {
+                            sessionUi.askedCols = surface.width.toInt()
+                            sessionUi.askedRows = surface.height.toInt()
+                        }
+                        val changed = previous == null ||
+                            surface.width != previous.width ||
+                            surface.height != previous.height ||
+                            surface.revision != previous.revision
+                        if (asked && changed) {
+                            // S29: the stored frame is the cropped one — every
+                            // consumer (this screen's renderer, the fit, the
+                            // reconnect path) sees the composer gone, and a tab
+                            // rebind or reconnect re-runs the detection here.
+                            val cropped = ComposerCrop.crop(surface)
+                            sessionUi.surface = cropped.surface
+                            sessionUi.composerCropRows = cropped.removedRows
+                            // S29/T44 diagnosis: what came back, what the
+                            // detector decided, and the window's text (debug
+                            // builds only, S23).
+                            Log.i(
+                                TAG,
+                                "composer crop: rows returned=${surface.height} of asked=${sessionUi.askedRows} " +
+                                    "cols=${surface.width} removed=${cropped.removedRows}",
+                            )
+                            for (row in maxOf(0, surface.height.toInt() - ComposerCrop.WINDOW) until surface.height.toInt()) {
+                                Log.i(TAG, "composer crop row $row: ${ComposerCrop.rowText(surface, row)}")
+                            }
                         }
                     }
                 }
@@ -3830,231 +3907,268 @@ private fun SessionScreen(
             }
             Spacer(Modifier.height(4.dp))
         }
+        // T26 rule 3: the host's own answer when the surface claim or a
+        // reflow did not land — the human reads it, never a silent log.
+        sessionUi.reflowError?.let { error ->
+            Text(
+                text = error,
+                color = LocalPalette.current.error,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
         val surface = sessionUi.surface
         val readError = sessionUi.readError
-        if (surface != null) {
+        // The terminal area owns the leftover height (weight(1f)); the
+        // composer below it is measured first at its own intrinsic height,
+        // so the grid can never run beneath the composer and the composer
+        // can never be pushed off the screen. The card — and the claim
+        // derived from it — exists before any frame arrives (T26 rule 7):
+        // the claim never waits for the frame it is waiting for.
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val density = LocalDensity.current
             val metrics = rememberTerminalCellMetrics()
-            // The terminal area owns the leftover height (weight(1f)); the
-            // composer below it is measured first at its own intrinsic
-            // height, so the grid can never run beneath the composer and
-            // the composer can never be pushed off the screen.
-            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                val density = LocalDensity.current
-                val cols = surface.width.toInt().coerceAtLeast(1)
-                val rows = surface.height.toInt().coerceAtLeast(1)
-                // S29: the frame's content rows — the grid minus the rows the
-                // composer crop freed (blank padding at the top). The fit sizes
-                // the font for the content, not for the padding, so the freed
-                // height becomes conversation at the same readable size.
-                val contentRows = (rows - sessionUi.composerCropRows).coerceAtLeast(1)
-                // Measured advance (S27b): what the font really paints, not
-                // the nominal ratio — measure a run of M's at a reference
-                // size and derive the painted em fraction. The renderer
-                // slots cells with its own paint measurement; this is the
-                // same number, taken here so the fit can trust it.
-                val probePx = 100f
-                // The painted advance measured EXACTLY as the renderer measures:
-                // the same android.graphics.Paint, same typeface, measureText
-                // over a run of M's. One measurement, two users (fit + render),
-                // so they can never disagree again.
-                val typefaces = rememberTypefaces()
-                val painted = remember(metrics, typefaces) {
-                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                    paint.typeface = typefaces.regular ?: android.graphics.Typeface.DEFAULT
-                    paint.textSize = probePx
-                    paint.measureText("M".repeat(80)) / 80f / probePx
-                }
-                // Fit rule (S27-1): ONE font size fits the WHOLE frame —
-                // width first, and if the height then overflows the visible
-                // card, the height fits too. Nothing is cropped and no
-                // horizontal scrolling is needed to read a line; the cell
-                // aspect stays intact because one size drives both
-                // dimensions. A pinch overrides the fit only until the
-                // frame's size changes, then the fit rules again.
-                val fit = TerminalFit.fit(
-                    cols,
-                    contentRows,
-                    constraints.maxWidth.toFloat(),
-                    constraints.maxHeight.toFloat(),
-                    metrics.advanceRatio,
-                    metrics.lineHeightRatio,
-                    paintedAdvanceRatio = painted,
+            // Measured advance (S27b): what the font really paints, not
+            // the nominal ratio — measure a run of M's at a reference
+            // size and derive the painted em fraction. The renderer
+            // slots cells with its own paint measurement; this is the
+            // same number, taken here so the fit can trust it.
+            val probePx = 100f
+            // The painted advance measured EXACTLY as the renderer measures:
+            // the same android.graphics.Paint, same typeface, measureText
+            // over a run of M's. One measurement, two users (fit + render),
+            // so they can never disagree again.
+            val typefaces = rememberTypefaces()
+            val painted = remember(metrics, typefaces) {
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                paint.typeface = typefaces.regular ?: android.graphics.Typeface.DEFAULT
+                paint.textSize = probePx
+                paint.measureText("M".repeat(80)) / 80f / probePx
+            }
+            val minPx = with(density) { TerminalFontMinSp.toPx() }
+            val maxPx = with(density) { TerminalFontMaxSp.toPx() }
+            // S28-3: the grid is derived from THIS card, not a fixed
+            // desktop size — the largest cell that still yields a
+            // usable grid, columns from the card's width, rows from its
+            // height. The painted advance governs (as in the fit), so
+            // the derived grid can never overflow the card that derived
+            // it, and the daemon is never asked for a surface bigger
+            // than it renders back. The derivation re-runs on every
+            // card change (rotation, keyboard) and the daemon is
+            // re-asked only when the grid actually changes.
+            val cardSurface = CardSurface.derive(
+                constraints.maxWidth.toFloat(),
+                constraints.maxHeight.toFloat(),
+                metrics.advanceRatio,
+                metrics.lineHeightRatio,
+                minFontPx = minPx,
+                maxFontPx = maxPx,
+                advanceRatioOverride = maxOf(metrics.advanceRatio, painted),
+            )
+            // S29/S31b: the pane is asked for exactly the card's derived
+            // rows — the crop blanks the composer's own rows in place, so
+            // there is no `+4` allowance and no blank padding anywhere:
+            // the frame fills the card in both directions.
+            val targetRows = cardSurface.rows
+            LaunchedEffect(cardSurface.cols, targetRows, agent.paneId) {
+                // S31/T26: the pane and the painted frame must be the
+                // same width — a resize from a client that never
+                // activated its surface only reshapes the projection and
+                // the PTY keeps the desktop's width (the truncation the
+                // human saw). An inactive surface gets ONE claiming
+                // activation (T26 rule 2), then the exact painted frame;
+                // an active one gets routine size updates only. The
+                // claim runs on one worker (T26 rule 5): the wire order
+                // is the decision order.
+                val request = PanePresentation.reflow(
+                    sessionUi.surfaceActive,
+                    sessionUi.askedCols,
+                    sessionUi.askedRows,
+                    cardSurface.cols,
+                    targetRows,
                 )
-                val minPx = with(density) { TerminalFontMinSp.toPx() }
-                val maxPx = with(density) { TerminalFontMaxSp.toPx() }
-                // S28-3: the grid is derived from THIS card, not a fixed
-                // desktop size — the largest cell that still yields a
-                // usable grid, columns from the card's width, rows from its
-                // height. The painted advance governs (as in the fit), so
-                // the derived grid can never overflow the card that derived
-                // it, and the daemon is never asked for a surface bigger
-                // than it renders back. The derivation re-runs on every
-                // card change (rotation, keyboard) and the daemon is
-                // re-asked only when the grid actually changes.
-                val cardSurface = CardSurface.derive(
-                    constraints.maxWidth.toFloat(),
-                    constraints.maxHeight.toFloat(),
-                    metrics.advanceRatio,
-                    metrics.lineHeightRatio,
-                    minFontPx = minPx,
-                    maxFontPx = maxPx,
-                    advanceRatioOverride = maxOf(metrics.advanceRatio, painted),
-                )
-                // S29: the pane is asked for the derived rows PLUS the FULL
-                // crop allowance — never the measured removed rows, which are
-                // 0 on the first pass and kept the freed rows from ever coming
-                // back (measured defect, T44). The host keeps painting the
-                // composer, the phone crops it, and the cropped frame still
-                // holds at least the derived rows, so it fills the card.
-                val targetRows = ComposerCrop.requestRows(cardSurface.rows)
-                LaunchedEffect(cardSurface.cols, targetRows, agent.paneId) {
-                    // S28-3, third round: the pane and the painted frame must
-                    // be the same width — measured on the host and read from
-                    // the daemon's source, a resize from a client that never
-                    // activated its surface only reshapes the projection and
-                    // the PTY keeps the desktop's width (the truncation the
-                    // human saw). So every reflow activates the surface
-                    // first, then asks for exactly the painted frame. The
-                    // effect keys on the agent too: a tab rebind lands on a
-                    // tab still sitting at the desktop's size.
-                    val request = PanePresentation.reflow(
-                        sessionUi.askedCols,
-                        sessionUi.askedRows,
-                        cardSurface.cols,
-                        targetRows,
+                if (request != null) {
+                    val cols = request.cols.toUShort()
+                    val rows = request.rows.toUShort()
+                    val seq = sessionUi.claims.decide()
+                    Log.i(
+                        TAG,
+                        "claim decided: seq=$seq activate=${request.activateSurface} " +
+                            "grid=${request.cols}x${request.rows} asked=${sessionUi.askedCols}x${sessionUi.askedRows}",
                     )
-                    if (request != null) {
-                        val cols = request.cols.toUShort()
-                        val rows = request.rows.toUShort()
-                        executor.execute {
-                            try {
+                    // Decision-time ask (T26 rule 7): from now on, only a
+                    // frame of THIS grid is painted.
+                    sessionUi.requestedCols = request.cols
+                    sessionUi.requestedRows = request.rows
+                    sessionUi.reflowError = null
+                    claimExecutor.execute {
+                        val failure = try {
+                            if (request.activateSurface) {
                                 connection.setSurfaceActive(true)
-                                connection.resizeSurface(cols, rows)
-                                mainHandler.post {
-                                    sessionUi.askedCols = request.cols
-                                    sessionUi.askedRows = request.rows
-                                }
-                            } catch (error: Exception) {
-                                // A refused reflow leaves the current grid on
-                                // screen and the bookkeeping open, so a later
-                                // key change asks again.
-                                Log.w(TAG, "pane reflow refused: ${error.message}")
+                            }
+                            if (sessionUi.claims.apply(seq)) {
+                                mainHandler.post { sessionUi.surfaceActive = true }
+                            }
+                            connection.resizeSurface(cols, rows)
+                            null
+                        } catch (error: Exception) {
+                            describe(context, error)
+                        }
+                        mainHandler.post {
+                            Log.i(
+                                TAG,
+                                "claim outcome: seq=$seq ok=${failure == null}" +
+                                    (failure?.let { " error=$it" } ?: ""),
+                            )
+                            // The claims gate doubles as the staleness gate:
+                            // a refusal of a superseded claim is noise the
+                            // newer decision already replaced.
+                            if (failure != null && sessionUi.claims.apply(seq)) {
+                                // A refused claim reaches the UI, never a
+                                // Log.w (T26 rule 3): the current grid
+                                // stays and the bookkeeping stays open, so
+                                // a later key change asks again.
+                                sessionUi.reflowError = failure
                             }
                         }
                     }
                 }
-                LaunchedEffect(cols, rows) {
-                    if (terminalFontPx > 0f) onFontPxChange(0f)
-                }
-                val effectivePx = if (terminalFontPx > 0f) {
-                    terminalFontPx.coerceIn(minPx, maxPx)
-                } else {
-                    fit.fontPx
-                }
-                // Geometry to logcat only (S24-9 precedent): the fit's own
-                // numbers, never on the screen.
-                Log.i(
-                    TAG,
-                    "terminal fit: frame=${cols}x${rows} card=${constraints.maxWidth}x${constraints.maxHeight} " +
-                        "metrics a=${metrics.advanceRatio} l=${metrics.lineHeightRatio} painted=$painted fontPx=$effectivePx " +
-                        "grid=${cols * metrics.advanceRatio * effectivePx}x${rows * metrics.lineHeightRatio * effectivePx}",
-                )
-                Log.i(
-                    TAG,
-                    "card surface: card=${constraints.maxWidth}x${constraints.maxHeight} " +
-                        "cell=${cardSurface.cellWidthPx}x${cardSurface.cellHeightPx}px " +
-                        "grid=${cardSurface.cols}x${cardSurface.rows} targetRows=$targetRows " +
-                        "fill=${cardSurface.gridWidthPx / constraints.maxWidth.toFloat()}x" +
-                        "${cardSurface.gridHeightPx / constraints.maxHeight.toFloat()} " +
-                        "fontPx=${cardSurface.fontPx}",
-                )
-                val gridWidthPx = cols * metrics.advanceRatio * effectivePx
-                val gridHeightPx = rows * metrics.lineHeightRatio * effectivePx
+            }
+            if (surface != null) {
+                val cols = surface.width.toInt().coerceAtLeast(1)
+                val rows = surface.height.toInt().coerceAtLeast(1)
+                // S31b: the grid keeps its full height — the composer's own
+                // rows are blanked in place, nothing is padded, so the frame
+                // fills the card in both directions and the fit fits the
+                // whole grid.
+                val contentRows = rows
+            // Fit rule (S27-1): ONE font size fits the WHOLE frame —
+            // width first, and if the height then overflows the visible
+            // card, the height fits too. Nothing is cropped and no
+            // horizontal scrolling is needed to read a line; the cell
+            // aspect stays intact because one size drives both
+            // dimensions. A pinch overrides the fit only until the
+            // frame's size changes, then the fit rules again.
+            val fit = TerminalFit.fit(
+                cols,
+                contentRows,
+                constraints.maxWidth.toFloat(),
+                constraints.maxHeight.toFloat(),
+                metrics.advanceRatio,
+                metrics.lineHeightRatio,
+                paintedAdvanceRatio = painted,
+            )
+            LaunchedEffect(cols, rows) {
+                if (terminalFontPx > 0f) onFontPxChange(0f)
+            }
+            val effectivePx = if (terminalFontPx > 0f) {
+                terminalFontPx.coerceIn(minPx, maxPx)
+            } else {
+                fit.fontPx
+            }
+            // Geometry to logcat only (S24-9 precedent): the fit's own
+            // numbers, never on the screen.
+            Log.i(
+                TAG,
+                "terminal fit: frame=${cols}x${rows} card=${constraints.maxWidth}x${constraints.maxHeight} " +
+                    "metrics a=${metrics.advanceRatio} l=${metrics.lineHeightRatio} painted=$painted fontPx=$effectivePx " +
+                    "grid=${cols * metrics.advanceRatio * effectivePx}x${rows * metrics.lineHeightRatio * effectivePx}",
+            )
+            Log.i(
+                TAG,
+                "card surface: card=${constraints.maxWidth}x${constraints.maxHeight} " +
+                    "cell=${cardSurface.cellWidthPx}x${cardSurface.cellHeightPx}px " +
+                    "grid=${cardSurface.cols}x${cardSurface.rows} targetRows=$targetRows " +
+                    "fill=${cardSurface.gridWidthPx / constraints.maxWidth.toFloat()}x" +
+                    "${cardSurface.gridHeightPx / constraints.maxHeight.toFloat()} " +
+                    "fontPx=${cardSurface.fontPx}",
+            )
+            val gridWidthPx = cols * metrics.advanceRatio * effectivePx
+            val gridHeightPx = rows * metrics.lineHeightRatio * effectivePx
 
-                var viewSize by remember { mutableStateOf(IntSize.Zero) }
-                val hScroll = rememberScrollState()
-                val vScroll = rememberScrollState()
-                val cellHalfPx = (metrics.lineHeightRatio * effectivePx / 2f).toInt().coerceAtLeast(1)
-                // Pinned to the bottom while the user is there: new frames
-                // follow only when pinned, so reading history is not yanked.
-                val pinnedToBottom = remember { mutableStateOf(true) }
-                LaunchedEffect(vScroll, cellHalfPx) {
-                    snapshotFlow { vScroll.value }.collect {
-                        pinnedToBottom.value = vScroll.maxValue == 0 ||
-                            vScroll.value >= vScroll.maxValue - cellHalfPx
-                    }
-                }
-                LaunchedEffect(surface.revision, effectivePx, gridHeightPx, viewSize) {
-                    if (pinnedToBottom.value) vScroll.scrollTo(vScroll.maxValue)
-                }
-
-                // Pinch only changes the font size; one-finger drags belong
-                // to the scroll (canPan = false keeps the transform detector
-                // out of the drag gesture's way).
-                val transformState = rememberTransformableState { zoomChange, _, _ ->
-                    val current = if (terminalFontPx > 0f) terminalFontPx else effectivePx
-                    onFontPxChange((current * zoomChange).coerceIn(minPx, maxPx))
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        // S27b: the card hugs the frame's real rows — a
-                        // smaller frame leaves no dead black area below, a
-                        // taller one scrolls inside the leftover height.
-                        .height(with(density) { minOf(gridHeightPx, constraints.maxHeight.toFloat()).toDp() })
-                        .clip(RoundedCornerShape(8.dp))
-                        .onSizeChanged { viewSize = it }
-                        .verticalScroll(vScroll)
-                        .horizontalScroll(hScroll)
-                        .transformable(transformState, canPan = { false }),
-                ) {
-                    // The renderer guarantees the whole frame fits the
-                    // canvas it actually sees (it re-measures its own
-                    // paint and rescales when hinting widens the real
-                    // advance) — nothing is cropped, no horizontal
-                    // scrolling is needed to read a line.
-                    TerminalSurface(
-                        surface = surface,
-                        fontSizePx = effectivePx,
-                        modifier = Modifier.size(
-                            with(density) { maxOf(gridWidthPx, viewSize.width.toFloat()).toDp() },
-                            with(density) { maxOf(gridHeightPx, viewSize.height.toFloat()).toDp() },
-                        ),
-                    )
+            var viewSize by remember { mutableStateOf(IntSize.Zero) }
+            val hScroll = rememberScrollState()
+            val vScroll = rememberScrollState()
+            val cellHalfPx = (metrics.lineHeightRatio * effectivePx / 2f).toInt().coerceAtLeast(1)
+            // Pinned to the bottom while the user is there: new frames
+            // follow only when pinned, so reading history is not yanked.
+            val pinnedToBottom = remember { mutableStateOf(true) }
+            LaunchedEffect(vScroll, cellHalfPx) {
+                snapshotFlow { vScroll.value }.collect {
+                    pinnedToBottom.value = vScroll.maxValue == 0 ||
+                        vScroll.value >= vScroll.maxValue - cellHalfPx
                 }
             }
-        } else when {
-            readError != null -> Text(
-                text = readError,
-                color = LocalPalette.current.error,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-            )
-            else -> {
-                val pane = sessionUi.pane
-                Text(
-                    text = when {
-                        pane == null -> stringResource(R.string.session_reading_pane)
-                        pane.text.isEmpty() -> stringResource(R.string.session_pane_empty)
-                        else -> pane.text
-                    },
-                    color = MaterialTheme.colorScheme.onBackground,
+            LaunchedEffect(surface.revision, effectivePx, gridHeightPx, viewSize) {
+                if (pinnedToBottom.value) vScroll.scrollTo(vScroll.maxValue)
+            }
+
+            // Pinch only changes the font size; one-finger drags belong
+            // to the scroll (canPan = false keeps the transform detector
+            // out of the drag gesture's way).
+            val transformState = rememberTransformableState { zoomChange, _, _ ->
+                val current = if (terminalFontPx > 0f) terminalFontPx else effectivePx
+                onFontPxChange((current * zoomChange).coerceIn(minPx, maxPx))
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // S27b: the card hugs the frame's real rows — a
+                    // smaller frame leaves no dead black area below, a
+                    // taller one scrolls inside the leftover height.
+                    .height(with(density) { minOf(gridHeightPx, constraints.maxHeight.toFloat()).toDp() })
+                    .clip(RoundedCornerShape(8.dp))
+                    .onSizeChanged { viewSize = it }
+                    .verticalScroll(vScroll)
+                    .horizontalScroll(hScroll)
+                    .transformable(transformState, canPan = { false }),
+            ) {
+                // The renderer guarantees the whole frame fits the
+                // canvas it actually sees (it re-measures its own
+                // paint and rescales when hinting widens the real
+                // advance) — nothing is cropped, no horizontal
+                // scrolling is needed to read a line.
+                TerminalSurface(
+                    surface = surface,
+                    fontSizePx = effectivePx,
+                    modifier = Modifier.size(
+                        with(density) { maxOf(gridWidthPx, viewSize.width.toFloat()).toDp() },
+                        with(density) { maxOf(gridHeightPx, viewSize.height.toFloat()).toDp() },
+                    ),
+                )
+            }
+            } else when {
+                readError != null -> Text(
+                    text = readError,
+                    color = LocalPalette.current.error,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .background(LocalPalette.current.surface, RoundedCornerShape(8.dp))
-                        .padding(12.dp),
                 )
-                if (pane?.truncated == true) {
-                    Spacer(Modifier.height(4.dp))
+                else -> {
+                    val pane = sessionUi.pane
                     Text(
-                        text = stringResource(R.string.session_pane_truncated),
-                        color = LocalPalette.current.muted,
-                        fontSize = 11.sp,
+                        text = when {
+                            pane == null -> stringResource(R.string.session_reading_pane)
+                            pane.text.isEmpty() -> stringResource(R.string.session_pane_empty)
+                            else -> pane.text
+                        },
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .background(LocalPalette.current.surface, RoundedCornerShape(8.dp))
+                            .padding(12.dp),
                     )
+                    if (pane?.truncated == true) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.session_pane_truncated),
+                            color = LocalPalette.current.muted,
+                            fontSize = 11.sp,
+                        )
+                    }
                 }
             }
         }

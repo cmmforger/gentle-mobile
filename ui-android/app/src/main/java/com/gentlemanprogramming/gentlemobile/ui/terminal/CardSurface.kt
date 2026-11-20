@@ -5,12 +5,12 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * The calibrated surface derivation (S28-3, second round). The first
- * round maximised the cell and the columns fell to 22 — the daemon
- * re-rendered its TUI at 22 columns and every line was cut mid-word:
- * "fill the screen" is not "maximise the cell".
+ * The calibrated surface derivation (S28-3, recalibrated by T26/S31b).
  *
- * A phone terminal lives in **[MIN_COLS] to [MAX_COLS] columns**:
+ * A phone terminal lives in **[MIN_COLS] to [MAX_COLS] columns** — the
+ * fifth-round target is ~42 columns like Moshi, at the largest cell that
+ * still fits. The earlier 56–96 range landed at ~57 columns on a phone
+ * card: too dense, small text. The rules:
  *
  * 1. the cell is the **largest** that keeps the column count inside that
  *    range — floored, capped by [TerminalFontMaxSp] at the call site,
@@ -19,7 +19,8 @@ import kotlin.math.min
  *    `floor((width - 2·air) / cellW)`;
  * 3. the row count follows from the card's usable height at that cell
  *    height: `floor((height - 2·air) / cellH)` — the frame fills the
- *    height, so no empty band is left below.
+ *    height, so no empty band is left below (S31b: both axes derive from
+ *    the card, and the frame fills it in both directions).
  *
  * The usable area subtracts [SAFETY_PX] of air per side — the same
  * margin [TerminalFit] enforces when it renders — so no column ever
@@ -39,16 +40,16 @@ object CardSurface {
 
     /**
      * The calibrated column floor: below this a herdr TUI re-renders with
-     * every line cut mid-word — 22 columns measured on the real host. 56
-     * is the narrow end of what a phone terminal reads as a terminal.
+     * every line cut mid-word — 22 columns measured on the real host. 38
+     * is the narrow end of the S31b phone target (~42 like Moshi).
      */
-    const val MIN_COLS = 56
+    const val MIN_COLS = 38
 
     /**
      * The calibrated column ceiling: past this a phone cell gets too
      * small to read, so the cell grows instead.
      */
-    const val MAX_COLS = 96
+    const val MAX_COLS = 48
 
     /**
      * The air kept between the drawn frame and the card's edge, per side

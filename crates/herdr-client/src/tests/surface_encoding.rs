@@ -163,6 +163,130 @@ fn reuse_message(base: &PaneSurfaceFrame, projection_revision: u64) -> ServerMes
     control(surface_reuse::MESSAGE_KIND, reuse.encode().unwrap())
 }
 
+/// Encodings emitted against a baseline one revision behind the session's:
+/// the in-flight tail of the pre-reflow render racing the reflowed baseline
+/// (T26 rule 6). Same boot — only the revision bookkeeping disagrees.
+fn stale_encodings(current: &PaneSurfaceFrame) -> Vec<ServerMessage> {
+    let mut behind = current.clone();
+    behind.surface_revision -= 1;
+    vec![
+        scroll_message(&behind),
+        delta_message(&behind, current.projection_revision),
+        reuse_message(&behind, current.projection_revision),
+    ]
+}
+
+// T26 rule 6: a claimed resize re-renders the pane. The baseline is replaced
+// instead of ending the connection — waiting for the next full frame.
+#[test]
+fn a_full_frame_whose_revision_does_not_advance_replaces_the_baseline() {
+    let (mut session, _) = session_with(&ALL);
+    let base = grid();
+    handle(&mut session, ServerMessage::PaneSurface(base.clone()))
+        .0
+        .unwrap();
+    // The re-render after the phone's claim: same boot, no advancement.
+    let mut reflowed = base.clone();
+    reflowed.frame.width = 1;
+    reflowed.frame.height = 1;
+    reflowed.frame.cells = base.frame.cells[..1].to_vec();
+    reflowed.panes = Vec::new();
+    let (result, surfaces) = handle(&mut session, ServerMessage::PaneSurface(reflowed.clone()));
+    result.expect("the reflowed frame must be accepted");
+    assert_eq!(surfaces.len(), 1, "the reflowed frame is shown at its snapshot");
+    assert_eq!(session.surface.as_deref(), Some(&reflowed));
+}
+
+#[test]
+fn a_late_frame_older_than_the_baseline_replaces_it_without_ending_the_connection() {
+    let (mut session, _) = session_with(&ALL);
+    let base = grid();
+    handle(&mut session, ServerMessage::PaneSurface(base.clone()))
+        .0
+        .unwrap();
+    let mut newer = base.clone();
+    newer.surface_revision += 5;
+    handle(&mut session, ServerMessage::PaneSurface(newer))
+        .0
+        .unwrap();
+    let (result, surfaces) = handle(&mut session, ServerMessage::PaneSurface(base.clone()));
+    result.expect("an older full frame must be accepted");
+    assert_eq!(surfaces.len(), 1);
+    assert_eq!(session.surface.as_deref(), Some(&base));
+}
+
+/// T26 rule 6: a delta whose grid geometry no longer matches the retained
+/// baseline cannot be reconstructed — it waits for the daemon's next full
+/// surface instead of ending the connection.
+#[test]
+fn a_delta_whose_geometry_changed_waits_for_a_full_frame() {
+    let (mut session, _) = session_with(&ALL);
+    let base = grid();
+    handle(&mut session, ServerMessage::PaneSurface(base.clone()))
+        .0
+        .unwrap();
+    let mut reflowed = baseline();
+    reflowed.frame.width = 1;
+    reflowed.frame.height = 1;
+    reflowed.frame.cells = Vec::new();
+    reflowed.surface_revision = base.surface_revision + 1;
+    reflowed.panes = Vec::new();
+    let delta = SurfaceDelta {
+        base_projection_revision: base.projection_revision,
+        base_surface_revision: base.surface_revision,
+        surface: reflowed.clone(),
+        rows: vec![PaneSurfacePatchRow {
+            x: 0,
+            y: 0,
+            cells: vec![CellData {
+                symbol: "z".into(),
+                ..base.frame.cells[0].clone()
+            }],
+        }],
+        popup_cells: None,
+    };
+    let (result, surfaces) = handle(
+        &mut session,
+        control(surface_delta::MESSAGE_KIND, delta.encode().unwrap()),
+    );
+    result.expect("a superseded delta must be skipped, not fatal");
+    assert!(surfaces.is_empty());
+    assert_eq!(session.surface.as_deref(), Some(&base));
+    // Recovery: the daemon's next full surface re-baselines and is shown.
+    reflowed.frame.cells = vec![CellData {
+        symbol: "z".into(),
+        ..base.frame.cells[0].clone()
+    }];
+    let (result, surfaces) = handle(&mut session, ServerMessage::PaneSurface(reflowed.clone()));
+    result.unwrap();
+    assert_eq!(surfaces.len(), 1);
+    assert_eq!(session.surface.as_deref(), Some(&reflowed));
+}
+
+/// T26 rule 6: the in-flight patch of the pre-reflow render races the
+/// reflowed baseline — same boot, revision bookkeeping behind. Skipped.
+#[test]
+fn a_stale_patch_after_a_replaced_baseline_is_skipped_not_fatal() {
+    let (mut session, _) = session_with(&ALL);
+    let base = grid();
+    handle(&mut session, ServerMessage::PaneSurface(base.clone()))
+        .0
+        .unwrap();
+    let stale = PaneSurfacePatch {
+        boot_id: base.boot_id.clone(),
+        projection_revision: base.projection_revision,
+        base_surface_revision: base.surface_revision - 1,
+        surface_revision: base.surface_revision,
+        rows: vec![],
+        panes: vec![],
+        cursor: None,
+    };
+    let (result, surfaces) = handle(&mut session, ServerMessage::PaneSurfacePatch(stale));
+    result.expect("a stale patch must be skipped, not fatal");
+    assert!(surfaces.is_empty());
+    assert_eq!(session.surface.as_deref(), Some(&base));
+}
+
 #[test]
 fn hello_requests_every_encoding_and_welcome_selects_them() {
     let (session, _) = session_with(&ALL);
@@ -205,22 +329,24 @@ fn unadvertised_encodings_fail_closed() {
     }
 }
 
+// T26 rule 6: a baseline that no longer holds (a claimed resize reflowed
+// the pane) is a wait for the next full frame, not a connection killer.
+// Only a different boot still fails closed: a daemon restart must reconnect.
+// (Replaces `encodings_need_a_retained_baseline`, which pinned the old
+// connection-fatal refusal.)
 #[test]
-fn encodings_need_a_retained_baseline() {
+fn encodings_without_a_baseline_wait_for_the_full_frame() {
     let (mut session, _) = session_with(&ALL);
     let base = grid();
     assert!(matches!(
         handle(&mut session, scroll_message(&base)).0,
         Err(Error::PatchBeforeBaseline)
     ));
-    assert!(matches!(
-        handle(&mut session, delta_message(&base, 7)).0,
-        Err(Error::EncodedSurfaceBeforeBaseline)
-    ));
-    assert!(matches!(
-        handle(&mut session, reuse_message(&base, 7)).0,
-        Err(Error::EncodedSurfaceBeforeBaseline)
-    ));
+    for message in [delta_message(&base, 7), reuse_message(&base, 7)] {
+        let (result, surfaces) = handle(&mut session, message);
+        result.expect("an encoded frame before any baseline must be skipped");
+        assert!(surfaces.is_empty());
+    }
 }
 
 #[test]
@@ -250,6 +376,10 @@ fn encoded_updates_follow_the_surface_and_patch_paths() {
 
 #[test]
 fn encoded_updates_keep_boot_and_revision_fences() {
+    // T26 rule 6: a stale or superseded encoding waits for the daemon's next
+    // full surface (the reflow's re-render) — it no longer ends the
+    // connection. A different boot still refuses: that is a daemon restart,
+    // and reconnecting is the honest answer.
     let base = grid();
     let mut other_boot = base.clone();
     other_boot.boot_id = "other".into();
@@ -257,11 +387,8 @@ fn encoded_updates_keep_boot_and_revision_fences() {
     stale.surface_revision -= 1;
     for message in [
         scroll_message(&other_boot),
-        scroll_message(&stale),
         delta_message(&other_boot, 7),
-        delta_message(&stale, 7),
         reuse_message(&other_boot, 7),
-        reuse_message(&stale, 7),
     ] {
         let (mut session, _) = session_with(&ALL);
         handle(&mut session, ServerMessage::PaneSurface(base.clone()))
@@ -269,6 +396,16 @@ fn encoded_updates_keep_boot_and_revision_fences() {
             .unwrap();
         let (result, surfaces) = handle(&mut session, message);
         assert!(matches!(result, Err(Error::Protocol(_))), "{result:?}");
+        assert!(surfaces.is_empty());
+        assert_eq!(session.surface.as_deref(), Some(&base));
+    }
+    for message in stale_encodings(&base) {
+        let (mut session, _) = session_with(&ALL);
+        handle(&mut session, ServerMessage::PaneSurface(base.clone()))
+            .0
+            .unwrap();
+        let (result, surfaces) = handle(&mut session, message);
+        result.expect("a stale encoding must wait, not end the connection");
         assert!(surfaces.is_empty());
         assert_eq!(session.surface.as_deref(), Some(&base));
     }
