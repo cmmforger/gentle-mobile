@@ -773,3 +773,12 @@ reserved slot the crop notice uses, replaces it rather than stacking, and is pin
 ellipsize. With this, T32 is accepted as designed: Paper as the fourth theme, the air rules with their numbers, the approval
 block as content, and the three terminal states in `11-terminal-in-the-phone.html`. Next in order: T33 (Paper tokens and the
 air pass, after T30 releases the same files), then T31 (the approval board).
+
+**L30 (test agents: the host has no `pi` login, and that is environment):** The human stated it plainly: `pi` here has no
+login, so a pi agent fails with a connection, OAuth or quota message. That is the machine, never this app — the same failure
+was already seen in L12 and again inside a verification pane in `t26-m1-open.png`, and both times it cost time. From now on
+every verification drives text through a **plain shell pane** (`echo`/`printf`) of the worker's own, never through an agent
+that needs a provider. Note the distinction this repo already recorded: `gentle-shell` authenticates against
+`~/.gentle-shell/agent/`, while bare `pi` reads `~/.pi/agent/`, which is stale here. Consequence for T31: the approval board's
+real check needs an agent that actually asks for permission; until one is logged in, the board is verified against a shell
+pane that prints a prompt and its command, and that limitation is reported instead of claimed as a real-agent proof.
