@@ -315,6 +315,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T24 | Hide the desktop composer rows from the phone's frame: detect the composer, drop those rows, shift the rest up, keep the metrics, and take the freed rows as extra conversation (request that many more rows) | S29 | worker | — |
 | T25 | Fifth phone test: reduce the top padding, fix the pane/painted width mismatch on a warm rebind, route prompts to the visible pane, drop the Sent note, re-fit the card when the keyboard opens, and make attachment failures honest and short | S30 | worker | — |
 | T26 | Robust reflow (survives bind, rebind, tab switch and keyboard change, never painting a stale width), write to the split the human is looking at, and a `+` that picks a disk (all the machine's disks) and browses to a folder to create the workspace | S31 | worker | — |
+| T27 | Disk and directory browsing for `+`: over SFTP, list the machine's real disks (mount points with their labels) and a directory's folders, so a workspace can be created by tapping through disks and folders instead of typing an absolute path | S30 S31 | worker | — |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
