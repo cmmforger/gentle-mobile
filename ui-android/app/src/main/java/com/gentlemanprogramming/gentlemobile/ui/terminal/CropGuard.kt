@@ -104,8 +104,10 @@ object CropGuard {
      * The East-Asian-wide and fullwidth ranges, condensed to the ranges a
      * pane's real content draws (the daemon's grid gives two cells to
      * these). Zero-width joins and variation selectors draw no cell.
+     * Public so the wrap mode (T30) counts cells with the exact same
+     * measure the crop detection uses — one grid, one counting rule.
      */
-    private fun cellWidth(codePoint: Int): Int = when (codePoint) {
+    fun cellWidth(codePoint: Int): Int = when (codePoint) {
         in 0x0300..0x036F, in 0x200B..0x200F, in 0xFE00..0xFE0F, in 0xE0100..0xE01EF -> 0
         in 0x1100..0x115F,
         in 0x2329..0x232A,
@@ -130,12 +132,18 @@ object CropGuard {
 }
 
 /**
- * The crop sentence and the fallback's action labels (S31c rules 2–3): one
- * short line each, no paragraph, no jargon, in the app's two languages,
- * rioplatense voseo in Spanish. Living beside the decision as app copy
- * chosen by [AppLanguage] — the session screen reads it at render time.
+ * The crop sentences and the fallback's action labels (S31c rules 2–3, S32a
+ * T30): one short line each, no paragraph, no jargon, in the app's two
+ * languages, rioplatense voseo in Spanish. Living beside the decision as
+ * app copy chosen by [AppLanguage] — the session screen reads it at render
+ * time.
  */
 object CropVoice {
+
+    /** The terminal's four states the reserved slot can name: the flat 1:1
+     *  view whose lines arrive cut, the whole-pane scaled view, the wrap
+     *  mode (S32a), and a pane read that cannot be wrapped honestly. */
+    enum class State { FLAT, WHOLE, WRAP, LIMITED }
 
     /**
      * The longest sentence the slot's notice line fits without an ellipsis
@@ -146,28 +154,39 @@ object CropVoice {
      */
     const val SLOT_MAX_CHARS = 60
 
-    /** The one-line sentence for the session's state: flat mode says the
-     *  lines arrive cut; the whole-pane fallback says the pane is shown
-     *  whole — the sentence must be true for the state it labels. */
-    fun notice(language: AppLanguage, wholePane: Boolean): String = when (language) {
-        AppLanguage.ENGLISH ->
-            if (wholePane) {
-                "The desktop is using this pane — showing it whole."
-            } else {
-                "The desktop is using this pane, so long lines arrive cut."
-            }
-        AppLanguage.SPANISH ->
-            if (wholePane) {
-                "El escritorio usa este panel: se muestra entero."
-            } else {
-                "El escritorio usa este panel: las líneas llegan cortadas."
-            }
+    /** The one-line sentence for the session's state: the flat mode says
+     *  the lines arrive cut; the whole-pane fallback says the pane is
+     *  shown whole; wrap mode says it is re-wrapped; a limited read owns
+     *  the honesty line. The sentence must be true for the state it
+     *  labels. */
+    fun notice(language: AppLanguage, state: State): String = when (language) {
+        AppLanguage.ENGLISH -> when (state) {
+            State.FLAT -> "The desktop is using this pane, so long lines arrive cut."
+            State.WHOLE -> "The desktop is using this pane — showing it whole."
+            State.WRAP -> "Wrapped to this phone's width — nothing is cut."
+            State.LIMITED -> "The pane cannot be read whole right now."
+        }
+        AppLanguage.SPANISH -> when (state) {
+            State.FLAT -> "El escritorio usa este panel: las líneas llegan cortadas."
+            State.WHOLE -> "El escritorio usa este panel: se muestra entero."
+            State.WRAP -> "Ajustado al ancho de este teléfono — no se corta nada."
+            State.LIMITED -> "El panel no se puede leer entero ahora."
+        }
     }
 
     /** The explicit action: switch to showing the whole pane scaled down. */
     fun showWholePane(language: AppLanguage): String = when (language) {
         AppLanguage.ENGLISH -> "Show the whole pane"
         AppLanguage.SPANISH -> "Mostrar el panel entero"
+    }
+
+    /** The primary action of the cropped notice (S32a): re-wrap the pane's
+     *  text to the phone's columns, readable. Short, so the two actions of
+     *  the cropped state still leave the sentence its two lines without an
+     *  ellipsis (measured on the card: the long label ellipsized it). */
+    fun wrapText(language: AppLanguage): String = when (language) {
+        AppLanguage.ENGLISH -> "Wrap"
+        AppLanguage.SPANISH -> "Reenvolvé"
     }
 
     /** The action's other face: return the session to the phone's own

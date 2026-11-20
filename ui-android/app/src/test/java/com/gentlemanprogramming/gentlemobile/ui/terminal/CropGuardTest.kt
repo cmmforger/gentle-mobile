@@ -71,7 +71,7 @@ class CropGuardTest {
 
     @Test
     fun `the flat sentence exists in English and names the cut`() {
-        val sentence = CropVoice.notice(AppLanguage.ENGLISH, wholePane = false)
+        val sentence = CropVoice.notice(AppLanguage.ENGLISH, CropVoice.State.FLAT)
         assertTrue(sentence.contains("desktop"))
         assertTrue(sentence.contains("cut"))
         assertFalse(sentence.contains("\n"))
@@ -79,7 +79,7 @@ class CropGuardTest {
 
     @Test
     fun `the flat sentence exists in rioplatense Spanish and names the cut`() {
-        val sentence = CropVoice.notice(AppLanguage.SPANISH, wholePane = false)
+        val sentence = CropVoice.notice(AppLanguage.SPANISH, CropVoice.State.FLAT)
         assertTrue(sentence.contains("escritorio"))
         assertTrue(sentence.contains("cortadas"))
         assertFalse(sentence.contains("\n"))
@@ -87,10 +87,10 @@ class CropGuardTest {
 
     @Test
     fun `the whole-pane sentence says the pane is shown whole, in both languages`() {
-        val english = CropVoice.notice(AppLanguage.ENGLISH, wholePane = true)
+        val english = CropVoice.notice(AppLanguage.ENGLISH, CropVoice.State.WHOLE)
         assertTrue(english.contains("whole"))
         assertFalse(english.contains("cut"))
-        val spanish = CropVoice.notice(AppLanguage.SPANISH, wholePane = true)
+        val spanish = CropVoice.notice(AppLanguage.SPANISH, CropVoice.State.WHOLE)
         assertTrue(spanish.contains("entero"))
         assertFalse(spanish.contains("cortadas"))
     }
@@ -100,12 +100,12 @@ class CropGuardTest {
         // The whole-pane state shows every line: saying the lines are cut
         // there would be false (the human's first T29b correction).
         assertFalse(
-            CropVoice.notice(AppLanguage.ENGLISH, wholePane = true)
-                .contains(CropVoice.notice(AppLanguage.ENGLISH, wholePane = false)),
+            CropVoice.notice(AppLanguage.ENGLISH, CropVoice.State.WHOLE)
+                .contains(CropVoice.notice(AppLanguage.ENGLISH, CropVoice.State.FLAT)),
         )
         assertFalse(
-            CropVoice.notice(AppLanguage.SPANISH, wholePane = true)
-                .contains(CropVoice.notice(AppLanguage.SPANISH, wholePane = false)),
+            CropVoice.notice(AppLanguage.SPANISH, CropVoice.State.WHOLE)
+                .contains(CropVoice.notice(AppLanguage.SPANISH, CropVoice.State.FLAT)),
         )
     }
 
@@ -115,8 +115,8 @@ class CropGuardTest {
         // action, T29b): the Spanish sentence ellipsized at 80 characters,
         // the English fit at 57. Every sentence must sit under the cap.
         for (language in AppLanguage.entries) {
-            for (wholePane in listOf(true, false)) {
-                val sentence = CropVoice.notice(language, wholePane)
+            for (state in listOf(CropVoice.State.FLAT, CropVoice.State.WHOLE)) {
+                val sentence = CropVoice.notice(language, state)
                 assertTrue(
                     "sentence too long for the slot: $sentence",
                     sentence.length <= CropVoice.SLOT_MAX_CHARS,

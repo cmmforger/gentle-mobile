@@ -203,6 +203,7 @@ import com.gentlemanprogramming.gentlemobile.ui.terminal.ClaimFlight
 import com.gentlemanprogramming.gentlemobile.ui.terminal.ComposerCrop
 import com.gentlemanprogramming.gentlemobile.ui.terminal.CropGuard
 import com.gentlemanprogramming.gentlemobile.ui.terminal.CropVoice
+import com.gentlemanprogramming.gentlemobile.ui.terminal.WrapGuard
 import com.gentlemanprogramming.gentlemobile.ui.terminal.PanePresentation
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFit
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMaxSp
@@ -284,6 +285,16 @@ class MainActivity : FragmentActivity() {
             } else {
                 null
             }
+        // Debug-only, per-launch preview of the wrap view (S32a presentation
+        // capture): renders the re-flowed pane on a pane that is not cropped.
+        // Same gate as sessions_dir — absent in release — and only at the
+        // view layer: the WrapGuard decisions are untouched.
+        val wrapPreview =
+            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                intent?.getBooleanExtra("wrap_preview", false) == true
+            } else {
+                false
+            }
         setContent {
             val themeStore = remember {
                 ThemeStore(SharedPreferencesStore(this@MainActivity))
@@ -325,6 +336,7 @@ class MainActivity : FragmentActivity() {
                     val keyPath = File(filesDir, DeviceIdentity.KEY_FILE).absolutePath
                     ConnectScreen(
                         sessionsDirOverride = devSessionsDirOverride,
+                        wrapPreview = wrapPreview,
                         keyPath = keyPath,
                         appTheme = appTheme,
                         language = language,
@@ -629,6 +641,12 @@ private class SessionUi {
     var wholePane by mutableStateOf(false)
     var mirrorCols by mutableStateOf(0)
 
+    /** Wrap mode (S32a, T30): the cropped pane's text re-flowed to the
+     *  card's own columns, readable. Never the default: the sharp 1:1
+     *  grid stays until the human taps wrap, and wrap leaves on its own
+     *  when the host stops cropping (no typing). */
+    var wrapMode by mutableStateOf(false)
+
     /** The phone's own 1:1 grid the fallback returns to, captured at claim
      *  decision time (the card's derived columns). */
     var oneToOneCols by mutableStateOf(0)
@@ -651,6 +669,7 @@ private class SessionUi {
         // starts flat again — reopening re-measures and re-decides.
         wholePane = false
         mirrorCols = 0
+        wrapMode = false
         cropNotice = false
         widestCells = 0
     }
@@ -714,6 +733,10 @@ private fun describeResumeFailure(error: Exception): String =
 @Composable
 fun ConnectScreen(
     sessionsDirOverride: String? = null,
+    // Debug-only per-launch preview (S32a capture), already gated by
+    // FLAG_DEBUGGABLE at the activity: the wrap view renders on a pane that
+    // is not cropped. View layer only; absent in release.
+    wrapPreview: Boolean = false,
     keyPath: String,
     appTheme: AppTheme,
     language: AppLanguage,
@@ -3031,6 +3054,11 @@ fun ConnectScreen(
                             sessionUi.wholePane = true
                         }
                     },
+                    // S32a (T30): wrap mode's one toggle — the primary action
+                    // of the cropped notice. One tap in, one tap back; the
+                    // fresh read for the wrapped view comes from the
+                    // session's own refresher, never typed by hand.
+                    onWrap = { sessionUi.wrapMode = !sessionUi.wrapMode },
                     onBack = {
                         screen.generation += 1
                         screen.ui = UiState.Connected(current.connection, snapshot = null)
@@ -3165,6 +3193,7 @@ fun ConnectScreen(
                             }
                         }
                     },
+                    wrapPreview = wrapPreview,
                 )
             }
         }
@@ -3599,6 +3628,10 @@ private fun requestPaneRead(
  */
 private const val CROP_CHECK_DELAY_MS = 1500L
 
+/** How often wrap mode re-reads the pane's text (S32a): the wrapped view
+ *  is fed by the same read the crop check uses, so it must keep moving. */
+private const val WRAP_REFRESH_MS = 1000L
+
 private fun scheduleCropCheck(
     screen: ScreenState,
     generation: Int,
@@ -3624,8 +3657,18 @@ private fun scheduleCropCheck(
                     val widest = CropGuard.widestLineCells(read.text)
                     sessionUi.widestCells = widest
                     sessionUi.cropNotice = CropGuard.cropped(widest, grantedCols)
+                    Log.i(
+                        TAG,
+                        "crop check: widest=$widest granted=$grantedCols " +
+                            "cropped=${sessionUi.cropNotice} wrap=${sessionUi.wrapMode}",
+                    )
                     if (sessionUi.wholePane && CropGuard.returnsToFlatPanel(widest, phoneCols)) {
                         sessionUi.wholePane = false
+                    }
+                    // S32a rule 6: the host stopped cropping — wrap leaves
+                    // on its own, and 1:1 shows the pane whole with no typing.
+                    if (sessionUi.wrapMode && WrapGuard.wrapDone(widest, grantedCols)) {
+                        sessionUi.wrapMode = false
                     }
                 }
             }
@@ -3863,6 +3906,11 @@ private fun SessionScreen(
     screenGeneration: Int,
     language: AppLanguage,
     onWholePane: () -> Unit,
+    onWrap: () -> Unit,
+    // Debug-only preview (S32a capture): renders the wrap view on a pane
+    // that is not cropped. View layer only — the WrapGuard decisions and
+    // their tests are untouched, and the extra is absent in release.
+    wrapPreview: Boolean = false,
 ) {
     val interrupted = supervision as? SupervisionState.Interrupted
     // T13: the two pickers behind the composer's camera and clip icons.
@@ -4187,11 +4235,22 @@ private fun SessionScreen(
             // slot — the same height whether it shows the claim's refusal,
             // the crop sentence with the whole-pane action, or nothing.
             Column(Modifier.fillMaxSize()) {
+            // S32a rule 2: the slot's sentence and actions come from the
+            // pure decision — wrap as the primary action, the whole-pane
+            // view as the exact-layout fallback, the one-tap return to 1:1
+            // from wrap or whole. A limited read owns the honesty line.
+            val fallbackMode = when {
+                sessionUi.wrapMode || wrapPreview -> WrapGuard.Fallback.WRAP
+                sessionUi.wholePane -> WrapGuard.Fallback.WHOLE
+                else -> WrapGuard.Fallback.FLAT
+            }
+            val readLimited = sessionUi.wrapMode &&
+                (sessionUi.pane == null || sessionUi.pane?.truncated == true)
             SessionNoticeSlot(
                 reflowError = sessionUi.reflowError,
-                cropNotice = sessionUi.cropNotice,
-                wholePane = sessionUi.wholePane,
+                plan = WrapGuard.noticePlan(sessionUi.cropNotice, fallbackMode, readLimited),
                 language = language,
+                onWrap = onWrap,
                 onWholePane = onWholePane,
             )
             if (surface != null) {
@@ -4270,6 +4329,22 @@ private fun SessionScreen(
                 val current = if (terminalFontPx > 0f) terminalFontPx else effectivePx
                 onFontPxChange((current * zoomChange).coerceIn(minPx, maxPx))
             }
+            // S32a rule 3: wrap mode's view is fed by the pane read — the
+            // same read the crop check uses — refreshed while the mode is
+            // on. The honest states (no read yet, failed read, truncated
+            // read) are handled below, never an empty card pretending
+            // success.
+            val wrapViewActive = (sessionUi.wrapMode || wrapPreview) &&
+                sessionUi.pane != null &&
+                WrapGuard.canWrap(sessionUi.pane?.truncated == true)
+            if (sessionUi.wrapMode || wrapPreview) {
+                LaunchedEffect(agent.paneId, screenGeneration) {
+                    while (sessionUi.wrapMode || wrapPreview) {
+                        requestPaneRead(screenState, sessionUi, connection, agent.paneId, screenGeneration)
+                        kotlinx.coroutines.delay(WRAP_REFRESH_MS)
+                    }
+                }
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -4281,10 +4356,12 @@ private fun SessionScreen(
                     // derives from, and the scaled grid is letterboxed
                     // inside it (equal bands above and below), so the
                     // small text reads as a chosen view, not a broken
-                    // one. The derived grid is untouched.
+                    // one. The derived grid is untouched. Wrap mode is
+                    // the other deliberate view: the card fills its
+                    // height and the re-flowed text scrolls vertically.
                     .height(
                         with(density) {
-                            if (sessionUi.wholePane) {
+                            if (sessionUi.wholePane || sessionUi.wrapMode || wrapPreview) {
                                 cardHeightPx.toDp()
                             } else {
                                 minOf(gridHeightPx, cardHeightPx).toDp()
@@ -4318,6 +4395,19 @@ private fun SessionScreen(
                         )
                         Spacer(Modifier.height(letterbox))
                     }
+                } else if (wrapViewActive) {
+                    // S32a rule 3: the pane's text re-flowed to the card's
+                    // own columns, readable — no horizontal clipping, no
+                    // pinch, vertical scroll when the text is taller than
+                    // the card. The read carries no styling (PaneReadDto is
+                    // plain text), so the wrapped view renders in the
+                    // terminal's foreground colour.
+                    WrappedPaneText(
+                        text = sessionUi.pane?.text ?: "",
+                        cardWidthPx = cardConstraints.maxWidth.toFloat(),
+                        advanceRatio = painted,
+                        maxPx = maxPx,
+                    )
                 } else {
                 // The renderer guarantees the whole frame fits the
                 // canvas it actually sees (it re-measures its own
@@ -4606,9 +4696,9 @@ private fun GhostButton(
 @Composable
 private fun SessionNoticeSlot(
     reflowError: String?,
-    cropNotice: Boolean,
-    wholePane: Boolean,
+    plan: WrapGuard.NoticePlan?,
     language: AppLanguage,
+    onWrap: () -> Unit,
     onWholePane: () -> Unit,
 ) {
     Column(
@@ -4629,33 +4719,97 @@ private fun SessionNoticeSlot(
                 )
             }
         }
-        if (cropNotice || wholePane) {
+        if (plan != null) {
             Row(
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 modifier = Modifier.weight(1f),
             ) {
                 Text(
-                    text = CropVoice.notice(language, wholePane),
+                    text = CropVoice.notice(language, plan.sentence),
                     color = LocalPalette.current.error,
                     fontSize = 12.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                for (action in plan.actions) {
+                    val label = when (action) {
+                        WrapGuard.NoticeAction.WRAP -> CropVoice.wrapText(language)
+                        WrapGuard.NoticeAction.WHOLE -> CropVoice.showWholePane(language)
+                        WrapGuard.NoticeAction.BACK -> CropVoice.backToPhone(language)
+                    }
+                    val onClick = when (action) {
+                        WrapGuard.NoticeAction.WRAP -> onWrap
+                        WrapGuard.NoticeAction.WHOLE -> onWholePane
+                        WrapGuard.NoticeAction.BACK ->
+                            if (plan.sentence == CropVoice.State.WRAP) onWrap else onWholePane
+                    }
+                    Text(
+                        text = label,
+                        color = LocalPalette.current.accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .clickable(onClick = onClick)
+                            .padding(start = 10.dp)
+                            .heightIn(min = 44.dp)
+                            .wrapContentHeight(androidx.compose.ui.Alignment.CenterVertically),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Wrap mode's view (S32a rule 3): the pane's read text re-flowed to the
+ * card's own columns at the largest font that fits, rendered in the
+ * terminal's foreground colour (the read carries no styling), one line per
+ * wrapped line, vertical scroll when it is taller than the card. An empty
+ * pane says so instead of showing a blank card as success.
+ */
+@Composable
+private fun WrappedPaneText(
+    text: String,
+    cardWidthPx: Float,
+    advanceRatio: Float,
+    maxPx: Float,
+) {
+    val density = LocalDensity.current
+    val typefaces = rememberTypefaces()
+    val monoFamily = remember(typefaces) {
+        FontFamily(typefaces.regular ?: android.graphics.Typeface.MONOSPACE)
+    }
+    val padPx = with(density) { WrapGuard.WRAP_PADDING_DP.dp.toPx() }
+    val usablePx = (cardWidthPx - 2f * padPx).coerceAtLeast(0f)
+    // Reading floor of the wrap view: 16 sp — text for reading, never a
+    // headline. The cap stays the terminal's own (28 sp).
+    val floorPx = with(density) { 16.sp.toPx() }
+    val fontPx = WrapGuard.wrapFont(usablePx, advanceRatio, floorPx, maxPx)
+    val cols = WrapGuard.wrapCols(usablePx, fontPx, advanceRatio)
+    val lines = remember(text, cols) { WrapGuard.lines(text, cols) }
+    // No verticalScroll here: the terminal card above already scrolls
+    // vertically, and nesting a second scrollable measures with infinite
+    // height constraints (the crash the first wrap tap hit).
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        if (lines.all { it.isBlank() }) {
+            Text(
+                text = stringResource(R.string.session_pane_empty),
+                color = LocalPalette.current.text,
+                fontSize = with(density) { fontPx.toSp() },
+                fontFamily = monoFamily,
+            )
+        } else {
+            for (line in lines) {
                 Text(
-                    text = if (wholePane) {
-                        CropVoice.backToPhone(language)
-                    } else {
-                        CropVoice.showWholePane(language)
-                    },
-                    color = LocalPalette.current.accent,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .clickable(onClick = onWholePane)
-                        .padding(start = 10.dp)
-                        .heightIn(min = 44.dp)
-                        .wrapContentHeight(androidx.compose.ui.Alignment.CenterVertically),
+                    text = line,
+                    color = LocalPalette.current.text,
+                    fontSize = with(density) { fontPx.toSp() },
+                    fontFamily = monoFamily,
                 )
             }
         }
