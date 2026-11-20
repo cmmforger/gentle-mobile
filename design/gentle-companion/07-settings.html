@@ -120,27 +120,54 @@ h1{font-size:var(--t22);line-height:1.2;margin:0 0 var(--s2);font-weight:700}
       <button class="switch locked" type="button" role="switch" aria-checked="true" aria-disabled="true" aria-label="Host-key pinning, locked on"><i></i></button>
     </div>
 
-    <h2 class="sect">Connection</h2>
-    <div class="seg" role="radiogroup" aria-label="Connection target">
-      <button type="button" role="radio" aria-checked="false">Herdr TUI<small>Attach to Herdr</small></button>
-      <button type="button" role="radio" aria-checked="true">Gentle Shell<small>Start a shell session</small></button>
-    </div>
-
     <h2 class="sect">Appearance</h2>
     <div class="row">
-      <button class="row-link" type="button" style="display:contents">
-        <span class="row-main" style="cursor:pointer">
-          <span class="row-name">Theme · Gentleman-Cute</span>
-          <span class="row-sub">default · tap to pick Sexy or Gentle</span>
-        </span>
-      </button>
+      <span class="row-main">
+        <span class="row-name">Follow the phone</span>
+        <span class="row-sub">Cute when the phone is dark, Paper when it is light.</span>
+      </span>
+      <button class="switch" type="button" role="switch" aria-checked="false" aria-label="Follow the phone's light and dark setting"><i></i></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px;padding-top:var(--s3)">
+      <span class="row-name">Pinned theme</span>
+      <span class="row-sub">Used while Follow the phone is off.</span>
+    </div>
+    <div class="seg" role="radiogroup" aria-label="Pinned theme">
+      <button type="button" role="radio" aria-checked="true">Cute<small>default</small></button>
+      <button type="button" role="radio" aria-checked="false">Paper<small>new</small></button>
+      <button type="button" role="radio" aria-checked="false">Sexy<small>contrast</small></button>
+      <button type="button" role="radio" aria-checked="false">Gentle<small>warm</small></button>
+    </div>
+
+    <h2 class="sect">Language</h2>
+    <div class="row">
+      <span class="row-main">
+        <span class="row-name">English</span>
+        <span class="row-sub">The terminal is never translated.</span>
+      </span>
       <span class="chev" style="width:44px;height:44px;display:grid;place-items:center;color:var(--textSecondary)" aria-hidden="true">›</span>
+    </div>
+
+    <h2 class="sect">Typeface</h2>
+    <div class="row">
+      <span class="row-main">
+        <span class="row-name">System</span>
+        <span class="row-sub">The app draws with your phone's own face.</span>
+      </span>
+    </div>
+
+    <h2 class="sect">Terminal font</h2>
+    <div class="row">
+      <span class="row-main">
+        <span class="row-name mono">JetBrainsMono Nerd Font Mono</span>
+        <span class="row-sub">Bundled with the app: icons and cell widths stay exact.</span>
+      </span>
     </div>
 
     <h2 class="sect">About</h2>
     <div class="row">
       <span class="row-main">
-        <span class="row-name">Gentle Companion 0.1.0</span>
+        <span class="row-name">Gentle Mobile 0.7.0</span>
         <span class="row-sub mono">herdr 0.9.5 · protocol 22 · Apache-2.0</span>
       </span>
       <button class="mini" type="button">What's new</button>

@@ -782,3 +782,12 @@ that needs a provider. Note the distinction this repo already recorded: `gentle-
 `~/.gentle-shell/agent/`, while bare `pi` reads `~/.pi/agent/`, which is stale here. Consequence for T31: the approval board's
 real check needs an agent that actually asks for permission; until one is logged in, the board is verified against a shell
 pane that prints a prompt and its command, and that limitation is reported instead of claimed as a real-agent proof.
+
+**L31 (two design corrections from the canvas):** `07-settings.html` lost its **Connection** section (the `Herdr TUI /
+Gentle Shell — Start a shell session` choice): there is nothing to choose, the app talks to herdr. In its place the human
+asked for the settings shape of a reference app — Appearance, Language, Typeface, Terminal font. Applied with the values this
+app really has (Follow the phone + a pinned theme out of Cute/Paper/Sexy/Gentle; English/Español with "the terminal is never
+translated"; the platform UI face; the bundled JetBrainsMono Nerd Font Mono), deliberately **without** drawing font pickers the
+app cannot back. `04-session.html` had its send triangle replaced by the **Iconoir** solid `send` paper-plane (MIT, credited in
+the file) inside the same 44 dp accent circle. Both are board changes: T33 must carry them into the app (the drawable
+`ic_send` is still a plain triangle) and the settings screen must lose the Connection choice.
