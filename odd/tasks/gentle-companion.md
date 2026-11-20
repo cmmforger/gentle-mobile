@@ -249,6 +249,11 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   5. **Attachments**: some images render inline and some come out as an empty block with only the `[Image#N] png · …` label. A
      format or size the phone cannot decode must say so instead of drawing nothing. And the upload error must read `Upload failed`
      — short, no sentence cut with an ellipsis.
+- **S31a — The control phrase.** The human's own acceptance test, verbatim:
+  `LA-FRASE-DE-CONTROL-CRUZA-VARIAS-LINEAS-EN-UN-PANE-DE-38-COLUMNAS-Y-CADA-PALABRA-DEBE-VERSE-COMPLETA-SIN-UN-SOLO-CARACTER-CORTADO-EN-EL-BORDE-DERECHO-DE-LA-GRILLA`
+  It is one long token with hyphens and no spaces, so the pane must break **inside** the word: if the width is
+  wrong it clips there and nowhere else is credible. Every width fix is verified with this exact string.
+
 - **S31 — The phone reshapes the terminal to itself, the way Moshi does.** Corrected on the fifth test by the human, who pointed out that
   Moshi does NOT leave the desktop screen whole and scaled: it **resizes the terminal** so it fits the phone and renders 1:1 — that is why
   it looks sharp. Evidence checked in the daemon: herdr has no scaling of its own; a client that claims its surface makes the tab reflow
