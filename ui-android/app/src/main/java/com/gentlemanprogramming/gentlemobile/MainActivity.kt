@@ -108,6 +108,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
@@ -200,10 +201,13 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.ThemeStore
 import com.gentlemanprogramming.gentlemobile.ui.terminal.CardSurface
 import com.gentlemanprogramming.gentlemobile.ui.terminal.ClaimFlight
 import com.gentlemanprogramming.gentlemobile.ui.terminal.ComposerCrop
+import com.gentlemanprogramming.gentlemobile.ui.terminal.CropGuard
+import com.gentlemanprogramming.gentlemobile.ui.terminal.CropVoice
 import com.gentlemanprogramming.gentlemobile.ui.terminal.PanePresentation
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFit
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMaxSp
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMinSp
+import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalDefaultBackground
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalSurface
 import com.gentlemanprogramming.gentlemobile.ui.terminal.rememberTypefaces
 import com.gentlemanprogramming.gentlemobile.ui.terminal.rememberTerminalCellMetrics
@@ -615,6 +619,20 @@ private class SessionUi {
      *  (T26 rule 3): shown on the session screen, never a silent log. */
     var reflowError by mutableStateOf<String?>(null)
 
+    /** The honest crop (S31c, T29): the pane's widest visible line in grid
+     *  cells (the honest source for the pane's own width), whether the
+     *  granted grid crops wider content, and the explicit fallback's state
+     *  — whole-pane mode and the width it asks for. Measured once per
+     *  confirmed claim, never per frame. */
+    var widestCells by mutableStateOf(0)
+    var cropNotice by mutableStateOf(false)
+    var wholePane by mutableStateOf(false)
+    var mirrorCols by mutableStateOf(0)
+
+    /** The phone's own 1:1 grid the fallback returns to, captured at claim
+     *  decision time (the card's derived columns). */
+    var oneToOneCols by mutableStateOf(0)
+
     /** The claim single-flight (T26 rule 5): decide on the UI thread,
      *  execute on [claimExecutor], apply only the newest confirmation. */
     val claims = ClaimFlight()
@@ -629,6 +647,12 @@ private class SessionUi {
         askedRows = null
         requestedCols = null
         requestedRows = null
+        // S31c rule 3: the fallback rides the claim, so a released session
+        // starts flat again — reopening re-measures and re-decides.
+        wholePane = false
+        mirrorCols = 0
+        cropNotice = false
+        widestCells = 0
     }
 
     /** Full re-baseline: a new connection owns a fresh core store, so the
@@ -1975,6 +1999,25 @@ fun ConnectScreen(
                             }
                         }
                     }
+                } else if (current is UiState.Session) {
+                    // S31c rule 1: return-to-app re-measures once. The
+                    // desktop may have let go while the app slept — the
+                    // pane could be at the phone's width again, or the
+                    // crop could have appeared (or returned). Same
+                    // trigger set as rebind and tab switch.
+                    val sessionUi = screen.sessions[current.agent.paneId]
+                    val granted = sessionUi?.requestedCols
+                    if (sessionUi != null && granted != null) {
+                        scheduleCropCheck(
+                            screen,
+                            screen.generation,
+                            sessionUi,
+                            current.connection,
+                            current.agent.paneId,
+                            granted,
+                            sessionUi.oneToOneCols,
+                        )
+                    }
                 }
             }
             else -> {}
@@ -2974,6 +3017,20 @@ fun ConnectScreen(
                     panes = sessionUi.panes,
                     terminalFontPx = terminalFontPx,
                     onFontPxChange = { terminalFontPx = it },
+                    // S31c (T29): the whole-pane fallback's one toggle, the
+                    // language the crop sentence renders in, and the screen
+                    // a scheduled crop check reports to.
+                    screenState = screen,
+                    screenGeneration = screen.generation,
+                    language = language,
+                    onWholePane = {
+                        if (sessionUi.wholePane) {
+                            sessionUi.wholePane = false
+                        } else {
+                            sessionUi.mirrorCols = sessionUi.widestCells
+                            sessionUi.wholePane = true
+                        }
+                    },
                     onBack = {
                         screen.generation += 1
                         screen.ui = UiState.Connected(current.connection, snapshot = null)
@@ -3531,6 +3588,52 @@ private fun requestPaneRead(
 }
 
 /**
+ * The honest-crop check (S31c, T29): after a claim is confirmed, read the
+ * pane's visible text once and measure its widest line. Wider than the
+ * granted grid proves the daemon did not reflow the pane's PTY — the phone
+ * is looking at a cropped view — and the session screen says so. Runs once
+ * per confirmed claim (never per frame), a beat later so a real reflow has
+ * time to land, and in whole-pane mode it decides whether the fallback is
+ * still needed: when the pane sits at the phone's width again, the session
+ * returns to 1:1 with no typing.
+ */
+private const val CROP_CHECK_DELAY_MS = 1500L
+
+private fun scheduleCropCheck(
+    screen: ScreenState,
+    generation: Int,
+    sessionUi: SessionUi,
+    connection: CompanionConnection,
+    paneId: String,
+    grantedCols: Int,
+    phoneCols: Int,
+) {
+    if (grantedCols <= 0) return
+    mainHandler.postDelayed({
+        if (!sessionStillCurrent(screen, sessionUi, paneId, generation)) {
+            return@postDelayed
+        }
+        executor.execute {
+            val read = try {
+                connection.readPane(paneId)
+            } catch (_: Exception) {
+                null
+            }
+            mainHandler.post {
+                if (sessionStillCurrent(screen, sessionUi, paneId, generation) && read != null) {
+                    val widest = CropGuard.widestLineCells(read.text)
+                    sessionUi.widestCells = widest
+                    sessionUi.cropNotice = CropGuard.cropped(widest, grantedCols)
+                    if (sessionUi.wholePane && CropGuard.returnsToFlatPanel(widest, phoneCols)) {
+                        sessionUi.wholePane = false
+                    }
+                }
+            }
+        }
+    }, CROP_CHECK_DELAY_MS)
+}
+
+/**
  * Pane polling: about twice per second, read the pane's visible text over
  * the request channel — the fallback while the surface stream has not
  * produced its first frame. Once a grid is flowing this stops: the surface
@@ -3754,6 +3857,12 @@ private fun SessionScreen(
     onRetry: () -> Unit,
     onSend: (String) -> Unit,
     onSendKeys: (List<String>) -> Unit,
+    // S31c (T29): the screen identity a crop check reports to, the
+    // language the crop sentence renders in, and the fallback's toggle.
+    screenState: ScreenState,
+    screenGeneration: Int,
+    language: AppLanguage,
+    onWholePane: () -> Unit,
 ) {
     val interrupted = supervision as? SupervisionState.Interrupted
     // T13: the two pickers behind the composer's camera and clip icons.
@@ -3907,16 +4016,11 @@ private fun SessionScreen(
             }
             Spacer(Modifier.height(4.dp))
         }
-        // T26 rule 3: the host's own answer when the surface claim or a
-        // reflow did not land — the human reads it, never a silent log.
-        sessionUi.reflowError?.let { error ->
-            Text(
-                text = error,
-                color = LocalPalette.current.error,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-            )
-        }
+        // T26 rule 3 + S31c rule 4: the host's own answer when the claim did
+        // not land lives in the always-reserved notice slot below — inside
+        // the terminal area, at a height the grid derives around. A
+        // conditional line here used to change the card's height and
+        // re-fire the claim every 10 s (measured: seq 38x24↔38x26).
         val surface = sessionUi.surface
         val readError = sessionUi.readError
         // The terminal area owns the leftover height (weight(1f)); the
@@ -3947,6 +4051,17 @@ private fun SessionScreen(
             }
             val minPx = with(density) { TerminalFontMinSp.toPx() }
             val maxPx = with(density) { TerminalFontMaxSp.toPx() }
+            // S31c rule 4: the grid derives from the card MINUS the
+            // always-reserved notice slot (rendered in the column below) —
+            // a notice can never move the derived grid, so a failed claim
+            // can never re-fire itself (measured: seq 38x24↔38x26).
+            val cardHeightPx = CropGuard.cardHeightForGrid(
+                constraints.maxHeight.toFloat(),
+                density.density,
+            )
+            // The constraints, captured before the column below scopes them
+            // out of reach for its content.
+            val cardConstraints = constraints
             // S28-3: the grid is derived from THIS card, not a fixed
             // desktop size — the largest cell that still yields a
             // usable grid, columns from the card's width, rows from its
@@ -3958,7 +4073,7 @@ private fun SessionScreen(
             // re-asked only when the grid actually changes.
             val cardSurface = CardSurface.derive(
                 constraints.maxWidth.toFloat(),
-                constraints.maxHeight.toFloat(),
+                cardHeightPx,
                 metrics.advanceRatio,
                 metrics.lineHeightRatio,
                 minFontPx = minPx,
@@ -3970,7 +4085,7 @@ private fun SessionScreen(
             // there is no `+4` allowance and no blank padding anywhere:
             // the frame fills the card in both directions.
             val targetRows = cardSurface.rows
-            LaunchedEffect(cardSurface.cols, targetRows, agent.paneId) {
+            LaunchedEffect(cardSurface.cols, targetRows, agent.paneId, sessionUi.wholePane, sessionUi.mirrorCols) {
                 // S31/T26: the pane and the painted frame must be the
                 // same width — a resize from a client that never
                 // activated its surface only reshapes the projection and
@@ -3980,12 +4095,24 @@ private fun SessionScreen(
                 // an active one gets routine size updates only. The
                 // claim runs on one worker (T26 rule 5): the wire order
                 // is the decision order.
+                // S31c rule 3: the explicit fallback asks for the pane's
+                // own width — the widest measured line; the flat session
+                // asks for the card's derived frame. One flight, the same
+                // claiming machinery: one claiming activation per session,
+                // routine size updates only (T26 rules intact).
+                sessionUi.oneToOneCols = cardSurface.cols
+                val ask = CropGuard.targetGrid(
+                    sessionUi.wholePane,
+                    sessionUi.mirrorCols,
+                    cardSurface.cols,
+                    targetRows,
+                )
                 val request = PanePresentation.reflow(
                     sessionUi.surfaceActive,
                     sessionUi.askedCols,
                     sessionUi.askedRows,
-                    cardSurface.cols,
-                    targetRows,
+                    ask.cols,
+                    ask.rows,
                 )
                 if (request != null) {
                     val cols = request.cols.toUShort()
@@ -4009,7 +4136,15 @@ private fun SessionScreen(
                             if (sessionUi.claims.apply(seq)) {
                                 mainHandler.post { sessionUi.surfaceActive = true }
                             }
-                            connection.resizeSurface(cols, rows)
+                            // The cell size rides the resize (the vendored
+                            // client's contract): the daemon needs the cell
+                            // dimensions to reflow the pane it presents.
+                            connection.resizeSurface(
+                                cols,
+                                rows,
+                                cardSurface.cellWidthPx.toInt().toUInt().coerceAtLeast(1u),
+                                cardSurface.cellHeightPx.toInt().toUInt().coerceAtLeast(1u),
+                            )
                             null
                         } catch (error: Exception) {
                             describe(context, error)
@@ -4030,10 +4165,35 @@ private fun SessionScreen(
                                 // a later key change asks again.
                                 sessionUi.reflowError = failure
                             }
+                            if (failure == null && sessionUi.claims.apply(seq)) {
+                                // S31c rule 1: the claim is confirmed —
+                                // measure the pane once, never per frame.
+                                scheduleCropCheck(
+                                    screenState,
+                                    screenGeneration,
+                                    sessionUi,
+                                    connection,
+                                    agent.paneId,
+                                    request.cols,
+                                    sessionUi.oneToOneCols,
+                                )
+                            }
                         }
                     }
                 }
             }
+            // S31c rules 2–4: the terminal card and its notices render in
+            // one column whose first row is the ALWAYS-RESERVED notice
+            // slot — the same height whether it shows the claim's refusal,
+            // the crop sentence with the whole-pane action, or nothing.
+            Column(Modifier.fillMaxSize()) {
+            SessionNoticeSlot(
+                reflowError = sessionUi.reflowError,
+                cropNotice = sessionUi.cropNotice,
+                wholePane = sessionUi.wholePane,
+                language = language,
+                onWholePane = onWholePane,
+            )
             if (surface != null) {
                 val cols = surface.width.toInt().coerceAtLeast(1)
                 val rows = surface.height.toInt().coerceAtLeast(1)
@@ -4052,8 +4212,8 @@ private fun SessionScreen(
             val fit = TerminalFit.fit(
                 cols,
                 contentRows,
-                constraints.maxWidth.toFloat(),
-                constraints.maxHeight.toFloat(),
+                cardConstraints.maxWidth.toFloat(),
+                cardHeightPx,
                 metrics.advanceRatio,
                 metrics.lineHeightRatio,
                 paintedAdvanceRatio = painted,
@@ -4070,17 +4230,17 @@ private fun SessionScreen(
             // numbers, never on the screen.
             Log.i(
                 TAG,
-                "terminal fit: frame=${cols}x${rows} card=${constraints.maxWidth}x${constraints.maxHeight} " +
+                "terminal fit: frame=${cols}x${rows} card=${cardConstraints.maxWidth}x${cardConstraints.maxHeight} " +
                     "metrics a=${metrics.advanceRatio} l=${metrics.lineHeightRatio} painted=$painted fontPx=$effectivePx " +
                     "grid=${cols * metrics.advanceRatio * effectivePx}x${rows * metrics.lineHeightRatio * effectivePx}",
             )
             Log.i(
                 TAG,
-                "card surface: card=${constraints.maxWidth}x${constraints.maxHeight} " +
+                "card surface: card=${cardConstraints.maxWidth}x${cardConstraints.maxHeight} " +
                     "cell=${cardSurface.cellWidthPx}x${cardSurface.cellHeightPx}px " +
                     "grid=${cardSurface.cols}x${cardSurface.rows} targetRows=$targetRows " +
-                    "fill=${cardSurface.gridWidthPx / constraints.maxWidth.toFloat()}x" +
-                    "${cardSurface.gridHeightPx / constraints.maxHeight.toFloat()} " +
+                    "fill=${cardSurface.gridWidthPx / cardConstraints.maxWidth.toFloat()}x" +
+                    "${cardSurface.gridHeightPx / cardConstraints.maxHeight.toFloat()} " +
                     "fontPx=${cardSurface.fontPx}",
             )
             val gridWidthPx = cols * metrics.advanceRatio * effectivePx
@@ -4116,13 +4276,49 @@ private fun SessionScreen(
                     // S27b: the card hugs the frame's real rows — a
                     // smaller frame leaves no dead black area below, a
                     // taller one scrolls inside the leftover height.
-                    .height(with(density) { minOf(gridHeightPx, constraints.maxHeight.toFloat()).toDp() })
+                    // T29b: the whole-pane fallback is the deliberate
+                    // exception — the card fills the height the grid
+                    // derives from, and the scaled grid is letterboxed
+                    // inside it (equal bands above and below), so the
+                    // small text reads as a chosen view, not a broken
+                    // one. The derived grid is untouched.
+                    .height(
+                        with(density) {
+                            if (sessionUi.wholePane) {
+                                cardHeightPx.toDp()
+                            } else {
+                                minOf(gridHeightPx, cardHeightPx).toDp()
+                            }
+                        },
+                    )
+                    .background(TerminalDefaultBackground)
                     .clip(RoundedCornerShape(8.dp))
                     .onSizeChanged { viewSize = it }
                     .verticalScroll(vScroll)
                     .horizontalScroll(hScroll)
                     .transformable(transformState, canPan = { false }),
             ) {
+                if (sessionUi.wholePane) {
+                    // Letterbox: the scaled grid exactly the fit's size,
+                    // centered with equal bands above and below (the fit
+                    // already bounds the grid by the card's height, so
+                    // the bands never go negative).
+                    val letterbox = with(density) {
+                        ((cardHeightPx - gridHeightPx) / 2f).coerceAtLeast(0f).toDp()
+                    }
+                    Column {
+                        Spacer(Modifier.height(letterbox))
+                        TerminalSurface(
+                            surface = surface,
+                            fontSizePx = effectivePx,
+                            modifier = Modifier.size(
+                                with(density) { gridWidthPx.toDp() },
+                                with(density) { gridHeightPx.toDp() },
+                            ),
+                        )
+                        Spacer(Modifier.height(letterbox))
+                    }
+                } else {
                 // The renderer guarantees the whole frame fits the
                 // canvas it actually sees (it re-measures its own
                 // paint and rescales when hinting widens the real
@@ -4136,6 +4332,7 @@ private fun SessionScreen(
                         with(density) { maxOf(gridHeightPx, viewSize.height.toFloat()).toDp() },
                     ),
                 )
+                }
             }
             } else when {
                 readError != null -> Text(
@@ -4143,9 +4340,11 @@ private fun SessionScreen(
                     color = LocalPalette.current.error,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                 )
                 else -> {
                     val pane = sessionUi.pane
+                    Column(Modifier.fillMaxWidth().weight(1f)) {
                     Text(
                         text = when {
                             pane == null -> stringResource(R.string.session_reading_pane)
@@ -4169,7 +4368,9 @@ private fun SessionScreen(
                             fontSize = 11.sp,
                         )
                     }
+                    }
                 }
+            }
             }
         }
 
@@ -4391,6 +4592,73 @@ private fun GhostButton(
         ),
     ) {
         Text(label, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * The session screen's notice slot (S31c rules 2–4): one fixed-height area
+ * between the tab strip and the terminal card that carries the claim's
+ * typed refusal and the crop sentence with the whole-pane action. The
+ * height is the same whether or not anything is written in it — a notice
+ * can never change the card's height, so it can never change the derived
+ * grid and re-fire the claim that measured it.
+ */
+@Composable
+private fun SessionNoticeSlot(
+    reflowError: String?,
+    cropNotice: Boolean,
+    wholePane: Boolean,
+    language: AppLanguage,
+    onWholePane: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(CropGuard.NOTICE_SLOT_DP.dp)
+            .padding(horizontal = 12.dp),
+    ) {
+        Box(Modifier.height(16.dp)) {
+            reflowError?.let { error ->
+                Text(
+                    text = error,
+                    color = LocalPalette.current.error,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (cropNotice || wholePane) {
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    text = CropVoice.notice(language, wholePane),
+                    color = LocalPalette.current.error,
+                    fontSize = 12.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = if (wholePane) {
+                        CropVoice.backToPhone(language)
+                    } else {
+                        CropVoice.showWholePane(language)
+                    },
+                    color = LocalPalette.current.accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .clickable(onClick = onWholePane)
+                        .padding(start = 10.dp)
+                        .heightIn(min = 44.dp)
+                        .wrapContentHeight(androidx.compose.ui.Alignment.CenterVertically),
+                )
+            }
+        }
     }
 }
 

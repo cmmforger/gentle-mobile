@@ -830,7 +830,7 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_read_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_resize_surface(`ptr`: Long,`cols`: Short,`rows`: Short,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_resize_surface(`ptr`: Long,`cols`: Short,`rows`: Short,`cellWidthPx`: Int,`cellHeightPx`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_send_keys(`ptr`: Long,`paneId`: RustBuffer.ByValue,`keys`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1091,7 +1091,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane() and 0xFFFF) != 52004) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_resize_surface() and 0xFFFF) != 45568) {
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_resize_surface() and 0xFFFF) != 15473) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_send_keys() and 0xFFFF) != 26307) {
@@ -1718,11 +1718,13 @@ public interface CompanionConnectionInterface {
     
     /**
      * Ask the daemon to re-render at a new surface size (S28-3): the grid
-     * the phone's terminal card derived from its own geometry. The core
-     * adds no opinion of its own — the client's validation refuses a size
-     * it would never render, so an oversized ask fails here, not on screen.
+     * the phone's terminal card derived from its own geometry, plus the
+     * cell size it renders at in pixels — the daemon needs the cell
+     * dimensions to reflow the pane it presents. The core adds no opinion
+     * of its own — the client's validation refuses a size it would never
+     * render, so an oversized ask fails here, not on screen.
      */
-    fun `resizeSurface`(`cols`: kotlin.UShort, `rows`: kotlin.UShort)
+    fun `resizeSurface`(`cols`: kotlin.UShort, `rows`: kotlin.UShort, `cellWidthPx`: kotlin.UInt, `cellHeightPx`: kotlin.UInt)
     
     /**
      * Send one batch of key presses to the agent's pane — the extra-key
@@ -2106,11 +2108,13 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
     
     /**
      * Ask the daemon to re-render at a new surface size (S28-3): the grid
-     * the phone's terminal card derived from its own geometry. The core
-     * adds no opinion of its own — the client's validation refuses a size
-     * it would never render, so an oversized ask fails here, not on screen.
+     * the phone's terminal card derived from its own geometry, plus the
+     * cell size it renders at in pixels — the daemon needs the cell
+     * dimensions to reflow the pane it presents. The core adds no opinion
+     * of its own — the client's validation refuses a size it would never
+     * render, so an oversized ask fails here, not on screen.
      */
-    @Throws(CompanionException::class)override fun `resizeSurface`(`cols`: kotlin.UShort, `rows`: kotlin.UShort)
+    @Throws(CompanionException::class)override fun `resizeSurface`(`cols`: kotlin.UShort, `rows`: kotlin.UShort, `cellWidthPx`: kotlin.UInt, `cellHeightPx`: kotlin.UInt)
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
@@ -2118,7 +2122,9 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         it,
         
         FfiConverterUShort.lower(`cols`),
-        FfiConverterUShort.lower(`rows`),_status)
+        FfiConverterUShort.lower(`rows`),
+        FfiConverterUInt.lower(`cellWidthPx`),
+        FfiConverterUInt.lower(`cellHeightPx`),_status)
 }
     }
     
