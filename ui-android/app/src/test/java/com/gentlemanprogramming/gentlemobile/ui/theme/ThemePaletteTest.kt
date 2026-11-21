@@ -102,4 +102,50 @@ class ThemePaletteTest {
     fun `cute is the documented default theme`() {
         assertEquals(AppTheme.CUTE, AppTheme.default)
     }
+
+    @Test
+    fun `paper resolves the designed light palette exactly as the board pins it`() {
+        val paper = Tokens.paper
+        assertToken("bg", "#FAF5F6", paper.bg)
+        assertToken("surface", "#FFFFFF", paper.surface)
+        assertToken("surfaceRaised", "#FBEFF4", paper.surfaceRaised)
+        assertToken("selection", "#FBE4EF", paper.selection)
+        assertToken("line", "#E3CBD6", paper.line)
+        assertToken("accent", "#C2417F", paper.accent)
+        assertToken("accentPressed", "#A63269", paper.accentPressed)
+        assertToken("accentEdge", "#E0479F", paper.accentEdge)
+        assertToken("text", "#36242C", paper.text)
+        assertToken("muted", "#8A6675", paper.muted)
+        assertToken("textDisabled", "#B39CA7", paper.textDisabled)
+        assertToken("success", "#2F6B45", paper.success)
+        assertToken("warning", "#B26B1F", paper.warning)
+        assertToken("error", "#D6365B", paper.error)
+        // The terminal is never painted by the chrome: Paper keeps the dark
+        // Herdr surface, the same in every theme.
+        assertToken("terminal", "#100A0F", paper.terminal)
+    }
+
+    @Test
+    fun `follow the phone maps dark to cute and light to paper, keeping the pinned theme when off`() {
+        assertEquals("dark with follow on", AppTheme.CUTE, resolvedTheme(AppTheme.SEXY, followThePhone = true, systemDark = true))
+        assertEquals("light with follow on", AppTheme.PAPER, resolvedTheme(AppTheme.SEXY, followThePhone = true, systemDark = false))
+        assertEquals("follow off keeps the pinned theme", AppTheme.SEXY, resolvedTheme(AppTheme.SEXY, followThePhone = false, systemDark = false))
+    }
+
+    @Test
+    fun `follow the phone is off by default and persists`() {
+        val store = object : KeyValueStore {
+            val map = LinkedHashMap<String, String>()
+            override fun getString(key: String): String? = map[key]
+            override fun putString(key: String, value: String) {
+                map[key] = value
+            }
+        }
+        val themeStore = ThemeStore(store)
+        assertEquals(false, themeStore.followThePhone())
+        themeStore.setFollowThePhone(true)
+        assertEquals(true, ThemeStore(store).followThePhone())
+        themeStore.setFollowThePhone(false)
+        assertEquals(false, ThemeStore(store).followThePhone())
+    }
 }

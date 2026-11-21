@@ -277,13 +277,25 @@
     <!-- Settings -->
     <string name="set_title">Settings</string>
     <string name="set_section_security">Security</string>
-    <string name="set_section_connection">Connection</string>
-    <string name="set_section_appearance">Appearance</string>
-    <string name="set_section_about">About</string>
-    <string name="set_summary_security">device key \u00B7 saved hosts \u00B7 biometrics \u00B7 pinning</string>
-    <string name="set_summary_connection">lane \u00B7 sessions directory \u00B7 notifications</string>
-    <string name="set_summary_appearance">theme \u00B7 language</string>
-    <string name="set_summary_about">version \u00B7 what\u2019s new</string>
+    <string name="set_area_security_sub">The phone\u2019s key, the hosts it trusts.</string>
+    <string name="set_area_appearance">Appearance</string>
+    <string name="set_area_appearance_sub">Follow your phone, or pin one.</string>
+    <string name="set_follow_phone">Follow the phone</string>
+    <string name="set_follow_phone_sub">Cute when the phone is dark, Paper when it is light.</string>
+    <string name="set_pinned_theme">Pinned theme</string>
+    <string name="set_area_language">Language</string>
+    <string name="set_area_language_sub">The terminal is never translated.</string>
+    <string name="set_area_typeface">Typeface</string>
+    <string name="set_area_typeface_sub">The app\u2019s own face, on this device.</string>
+    <string name="set_typeface_family">Family</string>
+    <string name="set_typeface_value">System</string>
+    <string name="set_typeface_foot">Your phone\u2019s UI font, with every weight it ships, so bold text stays bold.</string>
+    <string name="set_area_terminal_font">Terminal font</string>
+    <string name="set_area_terminal_font_sub">The terminal and the draft field, on this device.</string>
+    <string name="set_terminal_font_value">JetBrains Mono (bundled)</string>
+    <string name="set_terminal_font_foot">Bundled with the app, so icons and cell widths stay exact.</string>
+    <string name="set_area_about">About</string>
+    <string name="set_area_about_sub">Version and what\u2019s new.</string>
 
     <string name="set_device_key">Device key</string>
     <string name="set_device_key_error">The identity could not be read.</string>
@@ -314,11 +326,6 @@
     <string name="set_edit">Edit</string>
     <string name="set_sessions_dir_hint">blank = the host default</string>
     <string name="set_save">Save</string>
-    <string name="set_lane_herdr">Herdr TUI</string>
-    <string name="set_lane_herdr_sub">Attach to Herdr</string>
-    <string name="set_lane_shell">Gentle Shell</string>
-    <string name="set_lane_shell_sub">Start a shell session</string>
-    <string name="set_lane_note">Gentle Shell direct sessions are not in the core yet — Herdr TUI is the only lane.</string>
     <string name="set_notifications">Agent notifications</string>
     <string name="set_enable_notifications">Enable notifications</string>
     <string name="set_enable_notifications_sub">Opens Android\u2019s notification settings for Gentle Mobile.</string>
@@ -328,10 +335,6 @@
     <string name="set_notifications_off_detail">Off — notifications were denied, so the phone stays quiet while an agent needs you. Enable them in Android settings.</string>
     <string name="set_notifications_na_detail">This Android version does not ask — notifications are the system\u2019s to allow.</string>
 
-    <string name="set_theme">Theme</string>
-    <string name="set_theme_cute_sub">default \u00B7 tap to pick Sexy or Gentle</string>
-    <string name="set_theme_sub">tap to pick Cute, Sexy or Gentle</string>
-    <string name="set_language">Language · %1$s</string>
     <string name="set_cancel">Cancel</string>
     <string name="set_language_switch_sub">Tap to switch to %1$s</string>
 

@@ -49,6 +49,8 @@ enum class AppTheme(val label: String) {
     CUTE("Gentleman-Cute"),
     SEXY("Gentleman-Sexy"),
     GENTLE("Gentle"),
+    // S33: the light skin joins as the fourth choice, never a replacement.
+    PAPER("Gentleman-Paper"),
     ;
 
     companion object {
@@ -120,6 +122,29 @@ object Tokens {
         error = Color(0xFFCB7C94), // red
         terminal = Color(0xFF06080F),
     )
+
+    // Gentleman-Paper (S33, `design/system.md`): the light skin, designed in
+    // T32 — the brand rose family on airy surfaces, the page tinted and the
+    // cards white. `line` carries the theme's `border` value (the app paints
+    // its hairlines with it in every theme); the terminal surface stays dark —
+    // the chrome never repaints what the pane renders.
+    val paper = Palette(
+        bg = Color(0xFFFAF5F6),
+        surface = Color(0xFFFFFFFF),
+        surfaceRaised = Color(0xFFFBEFF4),
+        selection = Color(0xFFFBE4EF),
+        line = Color(0xFFE3CBD6), // border; borderSubtle is #F0E2E8
+        accent = Color(0xFFC2417F),
+        accentPressed = Color(0xFFA63269),
+        accentEdge = Color(0xFFE0479F),
+        text = Color(0xFF36242C),
+        muted = Color(0xFF8A6675),
+        textDisabled = Color(0xFFB39CA7), // dim — decorative/disabled only
+        success = Color(0xFF2F6B45),
+        warning = Color(0xFFB26B1F),
+        error = Color(0xFFD6365B),
+        terminal = Color(0xFF100A0F),
+    )
 }
 
 /** The palette backing the theme that is currently applied. */
@@ -127,7 +152,13 @@ fun paletteOf(theme: AppTheme): Palette = when (theme) {
     AppTheme.CUTE -> Tokens.cute
     AppTheme.SEXY -> Tokens.sexy
     AppTheme.GENTLE -> Tokens.gentle
+    AppTheme.PAPER -> Tokens.paper
 }
+
+/** Follow the phone (S33): dark renders Cute, light renders Paper; off,
+ *  the pinned theme stands. */
+fun resolvedTheme(pinned: AppTheme, followThePhone: Boolean, systemDark: Boolean): AppTheme =
+    if (!followThePhone) pinned else if (systemDark) AppTheme.CUTE else AppTheme.PAPER
 
 /** Provided by [GentleMobileTheme]; screens read it, never a hardcoded token. */
 val LocalPalette = staticCompositionLocalOf { Tokens.cute }

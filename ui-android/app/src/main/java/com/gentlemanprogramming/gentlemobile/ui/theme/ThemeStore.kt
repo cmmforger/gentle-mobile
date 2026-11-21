@@ -24,8 +24,17 @@ class ThemeStore(private val store: KeyValueStore) {
         store.putString(KEY, theme.name)
     }
 
+    /** Follow the phone (S33): dark → Cute, light → Paper. Off by default —
+     *  the pinned theme stands unless the human turns this on. */
+    fun followThePhone(): Boolean = store.getString(KEY_FOLLOW) == "true"
+
+    fun setFollowThePhone(follow: Boolean) {
+        store.putString(KEY_FOLLOW, follow.toString())
+    }
+
     companion object {
         const val KEY = "app_theme"
+        const val KEY_FOLLOW = "follow_the_phone"
     }
 }
 

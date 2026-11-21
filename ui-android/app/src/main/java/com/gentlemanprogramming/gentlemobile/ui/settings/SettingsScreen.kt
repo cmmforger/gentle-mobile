@@ -1,11 +1,11 @@
 package com.gentlemanprogramming.gentlemobile.ui.settings
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,8 +35,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -55,20 +58,24 @@ import com.gentlemanprogramming.gentlemobile.identity.OpenSshKey
 import com.gentlemanprogramming.gentlemobile.security.BiometricDecision
 import com.gentlemanprogramming.gentlemobile.ui.locale.AppLanguage
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
+import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import java.security.MessageDigest
 
 /**
- * The Settings screen (S21, board `07-settings.html`): one surface with
- * hairline-separated rows — never a card per row — one accent and one error
- * colour (Revoke). Everything here is real (T18): the key regenerates with a
- * confirmation, known hosts list and forget per host, the biometric switch
- * opens a real prompt and only explains itself when the device cannot
- * enforce it, and revoke wipes this device after its own confirmation. An
- * element the device cannot support is disabled with its exact reason —
- * never a dead control that pretends to work.
+ * The Settings screen (S21/S33, board `07-settings.html`): one card per
+ * area — icon, title and purpose line, hairline rows inside, the control on
+ * the right, footnotes where honesty needs explaining. The Connection
+ * choice is gone (L31): the app talks to herdr, there is nothing to choose.
+ * The air numbers (S33) carry the whole screen. Everything here is real
+ * (T18): the key regenerates with a confirmation, known hosts list and
+ * forget per host, the biometric switch opens a real prompt and only
+ * explains itself when the device cannot enforce it, and revoke wipes this
+ * device after its own confirmation. An element the device cannot support
+ * is disabled with its exact reason — never a dead control that pretends to
+ * work.
  */
 @Composable
 fun SettingsScreen(
@@ -78,7 +85,9 @@ fun SettingsScreen(
     biometricDecision: BiometricDecision?,
     biometricEnabled: Boolean,
     theme: AppTheme,
+    followThePhone: Boolean,
     language: AppLanguage,
+    onSetFollowThePhone: (Boolean) -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
     connected: Boolean,
     regenerated: Boolean,
@@ -99,25 +108,28 @@ fun SettingsScreen(
     var confirmRegenerate by remember { mutableStateOf(false) }
     var confirmRevoke by remember { mutableStateOf(false) }
     var hostsOpen by remember { mutableStateOf(false) }
-    // S24-2: the four sections are collapsible, one open at a time — the
-    // screen opens as a compact index of four rows, not one long wall, and
-    // no section can push the others past a screen.
-    var openSection by remember { mutableStateOf<Section?>(null) }
+    // Sessions directory (T17a): the override lives across screens, so the
+    // edit state belongs to the function, not to a card slot.
+    val context = LocalContext.current
+    val sessionsStore = remember { SharedPreferencesStore(context) }
+    var editingSessionsDir by remember { mutableStateOf(false) }
+    var sessionsDirDraft by remember { mutableStateOf("") }
+    var sessionsDirOverride by remember {
+        mutableStateOf(sessionsStore.getString(SessionsConfig.OVERRIDE_KEY))
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .safeDrawingPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = Air.SIDE_DP.dp, vertical = Air.TOP_DP.dp),
     ) {
-        // Compact top area (S24-2): one title next to the back chevron — the
-        // duplicated small topbar word is gone.
         Row(verticalAlignment = Alignment.CenterVertically) {
             val backCd = stringResource(R.string.cd_back)
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(Air.TOUCH_DP.dp)
                     .clickable(onClick = onBack)
                     .semantics { contentDescription = backCd },
                 contentAlignment = Alignment.Center,
@@ -128,317 +140,291 @@ fun SettingsScreen(
             Text(
                 text = stringResource(R.string.set_title),
                 color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 22.sp,
-                lineHeight = 26.sp,
+                fontSize = Air.TITLE_SP.sp,
+                lineHeight = (Air.TITLE_SP * Air.TITLE_LINE_HEIGHT).sp,
                 fontWeight = FontWeight.Bold,
             )
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
 
-        SectionBody(
-            section = Section.Security,
-            open = openSection == Section.Security,
-            onToggle = { openSection = if (openSection == Section.Security) null else Section.Security },
+        SettingsCard(
+            title = stringResource(R.string.set_section_security),
+            sub = stringResource(R.string.set_area_security_sub),
+            icon = painterResource(R.drawable.ic_area_lock),
         ) {
-
-        // Device key: the real identity, its type, a short fingerprint and
-        // where it lives. Regenerate is real (T18): a confirmation first —
-        // it destroys the old key — then a fresh identity and cleared pins.
-        SettingRow(
-            name = stringResource(R.string.set_device_key),
-            sub = when {
-                identityError != null -> stringResource(R.string.set_device_key_error)
-                identity != null -> stringResource(
-                    R.string.set_device_key_sub,
-                    keyFingerprint(identity.publicKeyLine)
-                        ?: stringResource(R.string.set_device_key_fp_unavailable),
-                )
-                else -> stringResource(R.string.set_device_key_reading)
-            },
-            isMono = true,
-            trailing = {
-                MiniButton(
-                    label = stringResource(R.string.set_regenerate),
-                    enabled = identity != null,
-                    onClick = { confirmRegenerate = true },
-                )
-            },
-        )
-        if (regenerated) {
-            // The plain promise after a regeneration: new key, new trust.
-            // The copy action hands over the exact line the host needs.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.set_regenerated),
-                    color = p.text,
-                    fontSize = 12.sp,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(8.dp))
-                MiniButton(
-                    label = stringResource(R.string.set_copy_key),
-                    enabled = identity != null,
-                    onClick = onCopyKey,
-                )
-            }
-        }
-
-        // Known hosts: what the core actually pinned, read from its
-        // known_hosts store, with the fingerprint each connect challenge
-        // shows. A forgotten host challenges its fingerprint again.
-        SettingRow(
-            name = stringResource(R.string.set_known_hosts),
-            sub = if (knownHosts.isEmpty()) {
-                stringResource(R.string.set_known_hosts_empty)
-            } else {
-                if (hostsOpen) {
-                    pluralStringResource(R.plurals.pinned_count, knownHosts.size, knownHosts.size)
-                } else {
-                    stringResource(
-                        R.string.set_known_hosts_closed,
-                        knownHosts.joinToString(" · ") { it.spec },
-                        knownHosts.size,
-                    )
-                }
-            },
-            isMono = true,
-            onClick = if (knownHosts.isEmpty()) null else ({ hostsOpen = !hostsOpen }),
-            trailing = if (knownHosts.isEmpty()) null else {
-                {
-                    MiniButton(
-                        label = if (hostsOpen) {
-                            stringResource(R.string.set_hide)
-                        } else {
-                            stringResource(R.string.set_manage)
-                        },
-                        enabled = true,
-                    ) {
-                        hostsOpen = !hostsOpen
-                    }
-                }
-            },
-        )
-        if (hostsOpen) {
-            knownHosts.forEach { host ->
-                SettingRow(
-                    name = host.spec,
-                    sub = host.fingerprint,
-                    isMono = true,
-                    trailing = {
-                        MiniButton(label = stringResource(R.string.set_forget), enabled = true) { onForgetHost(host) }
-                    },
-                )
-            }
-            UnavailableNote(
-                stringResource(R.string.set_forget_note),
-            )
-        }
-
-        // Biometric unlock: a real switch (T18). On, it stands between the
-        // user and every session open and every connect — a BiometricPrompt
-        // with the device credential as fallback. A device that cannot
-        // enforce it keeps the switch off with the exact reason.
-        SettingRow(
-            name = stringResource(R.string.set_biometric),
-            sub = stringResource(R.string.set_biometric_sub),
-            trailing = {
-                GateSwitch(
-                    checked = biometricEnabled,
-                    enabled = biometricDecision == BiometricDecision.AVAILABLE,
-                    onToggle = onToggleBiometric,
-                )
-            },
-        )
-        when (biometricDecision) {
-            BiometricDecision.NOT_AVAILABLE -> UnavailableNote(
-                stringResource(R.string.set_biometric_no_hw),
-            )
-            BiometricDecision.NOT_ENROLLED -> UnavailableNote(
-                stringResource(R.string.set_biometric_not_enrolled),
-            )
-            null -> UnavailableNote(stringResource(R.string.set_biometric_checking))
-            else -> {}
-        }
-
-        // Host-key pinning is real and locked on: the core refuses a host
-        // whose key changed, with no way to turn it off.
-        SettingRow(
-            name = stringResource(R.string.set_pinning),
-            sub = stringResource(R.string.set_pinning_sub),
-            trailing = { DisabledSwitch(checked = true, locked = true) },
-        )
-        }
-
-        SectionBody(
-            section = Section.Connection,
-            open = openSection == Section.Connection,
-            onToggle = { openSection = if (openSection == Section.Connection) null else Section.Connection },
-        ) {
-
-        // Where the Sessions screen lists from (T17a): the host's own
-        // default unless a debug/test override was entered. A connection
-        // setting: it points at the host, not at a security decision.
-        val context = LocalContext.current
-        val sessionsStore = remember { SharedPreferencesStore(context) }
-        var editingSessionsDir by remember { mutableStateOf(false) }
-        var sessionsDirDraft by remember { mutableStateOf("") }
-        var sessionsDirOverride by remember {
-            mutableStateOf(sessionsStore.getString(SessionsConfig.OVERRIDE_KEY))
-        }
-        SettingRow(
-            name = stringResource(R.string.set_sessions_dir),
-            sub = sessionsDirOverride?.trim()?.takeIf { it.isNotEmpty() }
-                ?: stringResource(R.string.set_sessions_dir_default),
-            isMono = true,
-            trailing = {
-                MiniButton(label = stringResource(R.string.set_edit), enabled = true) {
-                    sessionsDirDraft = sessionsDirOverride?.trim().orEmpty()
-                    editingSessionsDir = true
-                }
-            },
-        )
-        if (editingSessionsDir) {
-            AlertDialog(
-                onDismissRequest = { editingSessionsDir = false },
-                title = { Text(stringResource(R.string.set_sessions_dir)) },
-                text = {
-                    OutlinedTextField(
-                        value = sessionsDirDraft,
-                        onValueChange = { sessionsDirDraft = it },
-                        placeholder = { Text(stringResource(R.string.set_sessions_dir_hint)) },
-                        singleLine = true,
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        sessionsStore.putString(SessionsConfig.OVERRIDE_KEY, sessionsDirDraft)
-                        sessionsDirOverride = sessionsDirDraft
-                        editingSessionsDir = false
-                    }) { Text(stringResource(R.string.set_save), color = p.accent) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { editingSessionsDir = false }) {
-                        Text(stringResource(R.string.set_cancel), color = p.muted)
-                    }
-                },
-                containerColor = p.surfaceRaised,
-                titleContentColor = MaterialTheme.colorScheme.onBackground,
-                textContentColor = p.muted,
-            )
-        }
-
-        // The lane selector. Herdr TUI is the only implemented lane; Gentle
-        // Shell direct sessions are not in the core yet (S3), and the radio
-        // says so instead of selecting into a dead end.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-                .heightIn(min = 44.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            LaneOption(
-                title = stringResource(R.string.set_lane_herdr),
-                subtitle = stringResource(R.string.set_lane_herdr_sub),
-                selected = true,
-                enabled = true,
-                modifier = Modifier.weight(1f),
-            )
-            LaneOption(
-                title = stringResource(R.string.set_lane_shell),
-                subtitle = stringResource(R.string.set_lane_shell_sub),
-                selected = false,
-                enabled = false,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        UnavailableNote(stringResource(R.string.set_lane_note))
-
-        // T15 (S11): the permission, stated honestly. A denial is never a
-        // silent failure — the row says notifications are off and why, and
-        // the way back is one tap into the system's own settings.
-        SettingRow(
-            name = stringResource(R.string.set_notifications),
-            sub = when (notificationsGranted) {
-                true -> stringResource(R.string.set_notifications_on_detail)
-                false -> stringResource(R.string.set_notifications_off_detail)
-                null -> stringResource(R.string.set_notifications_na_detail)
-            },
-            trailing = {
-                Text(
-                    text = if (notificationsGranted == false) {
-                        stringResource(R.string.set_notifications_off)
-                    } else {
-                        stringResource(R.string.set_notifications_on)
-                    },
-                    color = p.muted,
-                    fontSize = 13.sp,
-                )
-            },
-        )
-        if (notificationsGranted == false) {
+            // Device key: the real identity, its type, a short fingerprint and
+            // where it lives. Regenerate is real (T18): a confirmation first —
+            // it destroys the old key — then a fresh identity and cleared pins.
             SettingRow(
-                name = stringResource(R.string.set_enable_notifications),
-                sub = stringResource(R.string.set_enable_notifications_sub),
-                onClick = onOpenNotificationSettings,
+                name = stringResource(R.string.set_device_key),
+                sub = when {
+                    identityError != null -> stringResource(R.string.set_device_key_error)
+                    identity != null -> stringResource(
+                        R.string.set_device_key_sub,
+                        keyFingerprint(identity.publicKeyLine)
+                            ?: stringResource(R.string.set_device_key_fp_unavailable),
+                    )
+                    else -> stringResource(R.string.set_device_key_reading)
+                },
+                isMono = true,
+                trailing = {
+                    MiniButton(
+                        label = stringResource(R.string.set_regenerate),
+                        enabled = identity != null,
+                        onClick = { confirmRegenerate = true },
+                    )
+                },
+            )
+            if (regenerated) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.set_regenerated),
+                        color = p.text,
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    MiniButton(
+                        label = stringResource(R.string.set_copy_key),
+                        enabled = identity != null,
+                        onClick = onCopyKey,
+                    )
+                }
+            }
+
+            // Known hosts: what the core actually pinned, read from its
+            // known_hosts store, with the fingerprint each connect challenge
+            // shows. A forgotten host challenges its fingerprint again.
+            SettingRow(
+                name = stringResource(R.string.set_known_hosts),
+                sub = if (knownHosts.isEmpty()) {
+                    stringResource(R.string.set_known_hosts_empty)
+                } else {
+                    if (hostsOpen) {
+                        pluralStringResource(R.plurals.pinned_count, knownHosts.size, knownHosts.size)
+                    } else {
+                        stringResource(
+                            R.string.set_known_hosts_closed,
+                            knownHosts.joinToString(" · ") { it.spec },
+                            knownHosts.size,
+                        )
+                    }
+                },
+                isMono = true,
+                onClick = if (knownHosts.isEmpty()) null else ({ hostsOpen = !hostsOpen }),
+                trailing = if (knownHosts.isEmpty()) null else {
+                    {
+                        MiniButton(
+                            label = if (hostsOpen) {
+                                stringResource(R.string.set_hide)
+                            } else {
+                                stringResource(R.string.set_manage)
+                            },
+                            enabled = true,
+                        ) {
+                            hostsOpen = !hostsOpen
+                        }
+                    }
+                },
+            )
+            if (hostsOpen) {
+                knownHosts.forEach { host ->
+                    SettingRow(
+                        name = host.spec,
+                        sub = host.fingerprint,
+                        isMono = true,
+                        trailing = {
+                            MiniButton(label = stringResource(R.string.set_forget), enabled = true) { onForgetHost(host) }
+                        },
+                    )
+                }
+                UnavailableNote(stringResource(R.string.set_forget_note))
+            }
+
+            // Biometric unlock: a real switch (T18). On, it stands between the
+            // user and every session open and every connect. A device that
+            // cannot enforce it keeps the switch off with the exact reason.
+            SettingRow(
+                name = stringResource(R.string.set_biometric),
+                sub = stringResource(R.string.set_biometric_sub),
+                trailing = {
+                    GateSwitch(
+                        checked = biometricEnabled,
+                        enabled = biometricDecision == BiometricDecision.AVAILABLE,
+                        onToggle = onToggleBiometric,
+                    )
+                },
+            )
+            when (biometricDecision) {
+                BiometricDecision.NOT_AVAILABLE -> UnavailableNote(
+                    stringResource(R.string.set_biometric_no_hw),
+                )
+                BiometricDecision.NOT_ENROLLED -> UnavailableNote(
+                    stringResource(R.string.set_biometric_not_enrolled),
+                )
+                null -> UnavailableNote(stringResource(R.string.set_biometric_checking))
+                else -> {}
+            }
+
+            // Host-key pinning is real and locked on: the core refuses a host
+            // whose key changed, with no way to turn it off.
+            SettingRow(
+                name = stringResource(R.string.set_pinning),
+                sub = stringResource(R.string.set_pinning_sub),
+                trailing = { DisabledSwitch(checked = true, locked = true) },
+            )
+
+            // Where the Sessions screen lists from (T17a): the host's own
+            // default unless a debug/test override was entered. It points at
+            // the host, not at a security decision — it lives in this card
+            // now that the Connection section is gone.
+            SettingRow(
+                name = stringResource(R.string.set_sessions_dir),
+                sub = sessionsDirOverride?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: stringResource(R.string.set_sessions_dir_default),
+                isMono = true,
+                trailing = {
+                    MiniButton(label = stringResource(R.string.set_edit), enabled = true) {
+                        sessionsDirDraft = sessionsDirOverride?.trim().orEmpty()
+                        editingSessionsDir = true
+                    }
+                },
+            )
+
+            // T15 (S11): the permission, stated honestly. A denial is never a
+            // silent failure — the row says notifications are off and why,
+            // and the way back is one tap into the system's own settings.
+            SettingRow(
+                name = stringResource(R.string.set_notifications),
+                sub = when (notificationsGranted) {
+                    true -> stringResource(R.string.set_notifications_on_detail)
+                    false -> stringResource(R.string.set_notifications_off_detail)
+                    null -> stringResource(R.string.set_notifications_na_detail)
+                },
+                trailing = {
+                    Text(
+                        text = if (notificationsGranted == false) {
+                            stringResource(R.string.set_notifications_off)
+                        } else {
+                            stringResource(R.string.set_notifications_on)
+                        },
+                        color = p.muted,
+                        fontSize = 13.sp,
+                    )
+                },
+            )
+            if (notificationsGranted == false) {
+                SettingRow(
+                    name = stringResource(R.string.set_enable_notifications),
+                    sub = stringResource(R.string.set_enable_notifications_sub),
+                    onClick = onOpenNotificationSettings,
+                    trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        SettingsCard(
+            title = stringResource(R.string.set_area_appearance),
+            sub = stringResource(R.string.set_area_appearance_sub),
+            icon = painterResource(R.drawable.ic_area_contrast),
+        ) {
+            // L31: Follow the phone — dark renders Cute, light renders Paper.
+            // Off (the default) the pinned theme stands.
+            SettingRow(
+                name = stringResource(R.string.set_follow_phone),
+                sub = stringResource(R.string.set_follow_phone_sub),
+                trailing = {
+                    GateSwitch(checked = followThePhone, enabled = true, onToggle = onSetFollowThePhone)
+                },
+            )
+            // The pinned theme opens the four-choice picker (Cute, Sexy,
+            // Gentle, Paper): the same surface the theme work lives in, one
+            // chooser instead of two.
+            SettingRow(
+                name = stringResource(R.string.set_pinned_theme),
+                sub = theme.label,
+                onClick = onOpenThemes,
                 trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
             )
         }
 
+        Spacer(Modifier.height(12.dp))
+        SettingsCard(
+            title = stringResource(R.string.set_area_language),
+            sub = stringResource(R.string.set_area_language_sub),
+            icon = painterResource(R.drawable.ic_area_globe),
+        ) {
+            // The terminal is never translated (L31): the switch changes the
+            // chrome's words only, and applies immediately and persists.
+            SettingRow(
+                name = language.displayName,
+                sub = stringResource(
+                    R.string.set_language_switch_sub,
+                    (if (language == AppLanguage.SPANISH) AppLanguage.ENGLISH else AppLanguage.SPANISH).displayName,
+                ),
+                onClick = {
+                    onSetLanguage(
+                        if (language == AppLanguage.SPANISH) AppLanguage.ENGLISH else AppLanguage.SPANISH,
+                    )
+                },
+                trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
+            )
         }
 
-        SectionBody(
-            section = Section.Appearance,
-            open = openSection == Section.Appearance,
-            onToggle = { openSection = if (openSection == Section.Appearance) null else Section.Appearance },
+        Spacer(Modifier.height(12.dp))
+        SettingsCard(
+            title = stringResource(R.string.set_area_typeface),
+            sub = stringResource(R.string.set_area_typeface_sub),
+            iconGlyph = "Aa",
         ) {
-        SettingRow(
-            name = stringResource(R.string.set_theme, theme.label),
-            sub = if (theme == AppTheme.CUTE) {
-                stringResource(R.string.set_theme_cute_sub)
-            } else {
-                stringResource(R.string.set_theme_sub)
-            },
-            onClick = onOpenThemes,
-            trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
-        )
-        // S24-1: the language lives here, next to the theme — one row, same
-        // style. Tapping switches between English and Español; the change
-        // applies immediately and persists.
-        SettingRow(
-            name = stringResource(R.string.set_language, language.displayName),
-            sub = stringResource(
-                R.string.set_language_switch_sub,
-                (if (language == AppLanguage.SPANISH) AppLanguage.ENGLISH else AppLanguage.SPANISH).displayName,
-            ),
-            onClick = {
-                onSetLanguage(
-                    if (language == AppLanguage.SPANISH) AppLanguage.ENGLISH else AppLanguage.SPANISH,
-                )
-            },
-            trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
-        )
+            // Read-only by design (L31): the app uses the platform UI face,
+            // with every weight it ships. A picker the app cannot back is a
+            // fake control — not drawn.
+            SettingRow(
+                name = stringResource(R.string.set_typeface_family),
+                sub = stringResource(R.string.set_typeface_value),
+            )
+            Footnote(stringResource(R.string.set_typeface_foot))
         }
 
-        SectionBody(
-            section = Section.About,
-            open = openSection == Section.About,
-            onToggle = { openSection = if (openSection == Section.About) null else Section.About },
+        Spacer(Modifier.height(12.dp))
+        SettingsCard(
+            title = stringResource(R.string.set_area_terminal_font),
+            sub = stringResource(R.string.set_area_terminal_font_sub),
+            iconGlyph = "T",
         ) {
-        val version = appVersion()
-        SettingRow(
-            name = stringResource(R.string.set_about_version, version),
-            sub = stringResource(R.string.set_about_sub),
-            isMono = true,
-            trailing = { MiniButton(label = stringResource(R.string.set_whats_new), enabled = false) },
-        )
-        UnavailableNote(stringResource(R.string.set_no_release_notes, version))
+            // Read-only by design (L31): the bundled JetBrainsMono Nerd Font
+            // Mono keeps the icons and cell widths exact.
+            SettingRow(
+                name = stringResource(R.string.set_typeface_family),
+                sub = stringResource(R.string.set_terminal_font_value),
+                isMono = true,
+            )
+            Footnote(stringResource(R.string.set_terminal_font_foot))
         }
+
+        Spacer(Modifier.height(12.dp))
+        SettingsCard(
+            title = stringResource(R.string.set_area_about),
+            sub = stringResource(R.string.set_area_about_sub),
+            iconGlyph = "i",
+        ) {
+            val version = appVersion()
+            SettingRow(
+                name = stringResource(R.string.set_about_version, version),
+                sub = stringResource(R.string.set_about_sub),
+                isMono = true,
+                trailing = { MiniButton(label = stringResource(R.string.set_whats_new), enabled = false) },
+            )
+            UnavailableNote(stringResource(R.string.set_no_release_notes, version))
+        }
+
         Spacer(Modifier.height(24.dp))
 
         // Actions. Disconnect works only against a live connection; revoke
@@ -451,8 +437,8 @@ fun SettingsScreen(
             enabled = connected,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp),
-            shape = RoundedCornerShape(12.dp),
+                .height(Air.TOUCH_DP.dp),
+            shape = RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp),
             colors = ButtonDefaults.outlinedButtonColors(
                 contentColor = p.text,
                 disabledContentColor = p.textDisabled,
@@ -469,8 +455,8 @@ fun SettingsScreen(
             enabled = true,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp),
-            shape = RoundedCornerShape(12.dp),
+                .height(Air.TOUCH_DP.dp),
+            shape = RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color.Transparent,
                 contentColor = p.error,
@@ -486,6 +472,35 @@ fun SettingsScreen(
         Spacer(Modifier.height(24.dp))
     }
 
+    if (editingSessionsDir) {
+        AlertDialog(
+            onDismissRequest = { editingSessionsDir = false },
+            title = { Text(stringResource(R.string.set_sessions_dir)) },
+            text = {
+                OutlinedTextField(
+                    value = sessionsDirDraft,
+                    onValueChange = { sessionsDirDraft = it },
+                    placeholder = { Text(stringResource(R.string.set_sessions_dir_hint)) },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    sessionsStore.putString(SessionsConfig.OVERRIDE_KEY, sessionsDirDraft)
+                    sessionsDirOverride = sessionsDirDraft
+                    editingSessionsDir = false
+                }) { Text(stringResource(R.string.set_save), color = p.accent) }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingSessionsDir = false }) {
+                    Text(stringResource(R.string.set_cancel), color = p.muted)
+                }
+            },
+            containerColor = p.surfaceRaised,
+            titleContentColor = MaterialTheme.colorScheme.onBackground,
+            textContentColor = p.muted,
+        )
+    }
     if (confirmRegenerate) {
         ConfirmDialog(
             title = stringResource(R.string.set_confirm_regenerate_title),
@@ -547,72 +562,89 @@ private fun ConfirmDialog(
     )
 }
 
-/// The four Settings sections (S24-2): the screen opens as a compact index
-/// of these four rows, each collapsible, one open at a time, so no section
-/// can push the rest past one screen. `summary` is the collapsed one-liner.
-private enum class Section { Security, Connection, Appearance, About }
-
-/** The section's word and its collapsed one-liner (S24-1). */
+/** One settings card (board 07): header — icon, title, purpose line — then
+ *  the hairline rows and the card's own footnote. White surface, 16 radius,
+ *  hairline border; on Paper the board's soft shadow lands via elevation. */
 @Composable
-private fun sectionLabel(section: Section): String = when (section) {
-    Section.Security -> stringResource(R.string.set_section_security)
-    Section.Connection -> stringResource(R.string.set_section_connection)
-    Section.Appearance -> stringResource(R.string.set_section_appearance)
-    Section.About -> stringResource(R.string.set_section_about)
-}
-
-@Composable
-private fun sectionSummary(section: Section): String = when (section) {
-    Section.Security -> stringResource(R.string.set_summary_security)
-    Section.Connection -> stringResource(R.string.set_summary_connection)
-    Section.Appearance -> stringResource(R.string.set_summary_appearance)
-    Section.About -> stringResource(R.string.set_summary_about)
-}
-
-/** One collapsible section (S24-2): a full-width 44dp header row — label,
- *  one-line summary and a chevron that turns when open — then the rows only
- *  while it is open. Exactly one section is open at a time (the caller owns
- *  `openSection`). */
-@Composable
-private fun SectionBody(
-    section: Section,
-    open: Boolean,
-    onToggle: () -> Unit,
+private fun SettingsCard(
+    title: String,
+    sub: String,
+    icon: Painter? = null,
+    iconGlyph: String? = null,
     content: @Composable () -> Unit,
 ) {
     val p = LocalPalette.current
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 44.dp)
-            .clickable(onClick = onToggle)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = sectionLabel(section).uppercase(),
-                color = p.muted,
-                fontSize = 11.sp,
-                letterSpacing = 0.8.sp,
-                fontWeight = FontWeight.Medium,
+            .shadow(
+                elevation = 2.dp,
+                shape = RoundedCornerShape(Air.RADIUS_CARD_DP.dp),
+                ambientColor = Color(0x14181215),
+                spotColor = Color(0x14181215),
             )
-            Text(
-                text = sectionSummary(section),
-                color = p.textDisabled,
-                fontSize = 11.sp,
+            .clip(RoundedCornerShape(Air.RADIUS_CARD_DP.dp))
+            .background(p.surface)
+            .border(
+                width = Air.HAIRLINE_DP.dp,
+                color = p.line,
+                shape = RoundedCornerShape(Air.RADIUS_CARD_DP.dp),
+            )
+            .padding(horizontal = Air.CARD_PADDING_DP.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CardIcon(icon = icon, glyph = iconGlyph)
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    text = title,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = Air.ROW_NAME_SP.sp,
+                    lineHeight = (Air.ROW_NAME_SP * Air.ROW_NAME_LINE_HEIGHT).sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = sub,
+                    color = p.muted,
+                    fontSize = 13.sp,
+                    lineHeight = (13 * Air.ROW_NAME_LINE_HEIGHT).sp,
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        content()
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** The card's leading mark: a drawn icon when the board drew one, or its
+ *  glyph (`Aa`, `T`, `i`) inside the same 30dp tinted square. */
+@Composable
+private fun CardIcon(icon: Painter?, glyph: String?) {
+    val p = LocalPalette.current
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .background(p.surfaceRaised, RoundedCornerShape(Air.RADIUS_FIELD_DP.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            icon != null -> Image(
+                painter = icon,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
+                colorFilter = ColorFilter.tint(p.text),
+            )
+            else -> Text(
+                text = glyph ?: "",
+                color = p.text,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
             )
         }
-        Text(
-            text = "›",
-            color = p.muted,
-            fontSize = 15.sp,
-            modifier = Modifier.graphicsLayer { rotationZ = if (open) 90f else 0f },
-        )
-    }
-    HairlineRow()
-    if (open) {
-        content()
     }
 }
 
@@ -629,7 +661,7 @@ private fun SettingRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 44.dp)
+            .heightIn(min = Air.TOUCH_DP.dp)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -638,8 +670,9 @@ private fun SettingRow(
             Text(
                 text = name,
                 color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
+                fontSize = Air.ROW_NAME_SP.sp,
+                lineHeight = (Air.ROW_NAME_SP * Air.ROW_NAME_LINE_HEIGHT).sp,
+                fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(2.dp))
             Text(
@@ -654,6 +687,28 @@ private fun SettingRow(
         trailing?.invoke()
     }
     HairlineRow()
+}
+
+/** The card's closing footnote (board 07 `.card-foot`): quiet, its own
+ *  hairline above. */
+@Composable
+private fun Footnote(text: String) {
+    val p = LocalPalette.current
+    Column {
+        Spacer(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(p.line),
+        )
+        Text(
+            text = text,
+            color = p.muted,
+            fontSize = Air.META_SP.sp,
+            lineHeight = (Air.META_SP * Air.TITLE_LINE_HEIGHT + 2).sp,
+            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+        )
+    }
 }
 
 /** The 1px separator the refinement rules require between rows. */
@@ -684,7 +739,7 @@ private fun MiniButton(label: String, enabled: Boolean, onClick: (() -> Unit)? =
     val p = LocalPalette.current
     Box(
         modifier = Modifier
-            .heightIn(min = 44.dp)
+            .heightIn(min = Air.TOUCH_DP.dp)
             .padding(horizontal = 8.dp)
             .then(if (enabled && onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
@@ -707,7 +762,7 @@ private fun MiniButton(label: String, enabled: Boolean, onClick: (() -> Unit)? =
 private fun DisabledSwitch(checked: Boolean, locked: Boolean = false) {
     val p = LocalPalette.current
     Box(
-        modifier = Modifier.size(44.dp),
+        modifier = Modifier.size(Air.TOUCH_DP.dp),
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -715,7 +770,7 @@ private fun DisabledSwitch(checked: Boolean, locked: Boolean = false) {
                 .width(44.dp)
                 .height(26.dp)
                 .border(
-                    1.dp,
+                    Air.HAIRLINE_DP.dp,
                     if (checked && locked) p.line else Color.Transparent,
                     RoundedCornerShape(999.dp),
                 )
@@ -745,7 +800,7 @@ private fun DisabledSwitch(checked: Boolean, locked: Boolean = false) {
 private fun GateSwitch(checked: Boolean, enabled: Boolean, onToggle: (Boolean) -> Unit) {
     val p = LocalPalette.current
     Box(
-        modifier = Modifier.size(44.dp),
+        modifier = Modifier.size(Air.TOUCH_DP.dp),
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -754,7 +809,7 @@ private fun GateSwitch(checked: Boolean, enabled: Boolean, onToggle: (Boolean) -
                 .height(26.dp)
                 .then(if (enabled) Modifier.clickable { onToggle(!checked) } else Modifier)
                 .border(
-                    1.dp,
+                    Air.HAIRLINE_DP.dp,
                     when {
                         checked && enabled -> p.accent
                         !enabled -> Color.Transparent
@@ -784,41 +839,6 @@ private fun GateSwitch(checked: Boolean, enabled: Boolean, onToggle: (Boolean) -
                     ),
             )
         }
-    }
-}
-
-/** One lane of the connection selector; disabled lanes are honest, not dead. */
-@Composable
-private fun LaneOption(
-    title: String,
-    subtitle: String,
-    selected: Boolean,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val p = LocalPalette.current
-    Column(
-        modifier = modifier
-            .heightIn(min = 44.dp)
-            .padding(vertical = 4.dp, horizontal = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = title,
-            color = when {
-                selected -> p.accentEdge
-                !enabled -> p.textDisabled
-                else -> p.text
-            },
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            text = subtitle,
-            color = if (enabled) p.muted else p.textDisabled,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-        )
     }
 }
 

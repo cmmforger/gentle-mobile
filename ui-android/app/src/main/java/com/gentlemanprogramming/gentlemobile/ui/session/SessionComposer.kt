@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import com.gentlemanprogramming.gentlemobile.R
+import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import kotlinx.coroutines.delay
 
@@ -98,7 +99,6 @@ fun SessionComposer(
     thumbnails: Map<Long, androidx.compose.ui.graphics.ImageBitmap>,
     sending: Boolean,
     sendError: String?,
-    sent: Boolean,
     dictation: DictationState,
     onSend: () -> Unit,
     onCamera: () -> Unit,
@@ -123,14 +123,9 @@ fun SessionComposer(
             )
             Spacer(Modifier.height(4.dp))
         }
-        if (sent) {
-            Text(
-                text = stringResource(R.string.comp_sent),
-                color = palette.accent,
-                fontSize = 12.sp,
-            )
-            Spacer(Modifier.height(4.dp))
-        }
+        // S30-3: the "Sent — the host confirmed the submission." note stays
+        // gone — the cleared field and the terminal's own reply are the
+        // confirmation the design asks for.
         attachments.forEachIndexed { index, attachment ->
             if (index > 0) {
                 Spacer(
@@ -357,7 +352,7 @@ private fun AttachmentRow(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .size(56.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(Air.RADIUS_FIELD_DP.dp))
                 .background(palette.terminal),
         ) {
             if (thumbnail != null) {
@@ -485,9 +480,9 @@ private fun ComposerField(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .heightIn(min = 44.dp, max = 96.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
             .background(LocalPalette.current.surface)
-            .border(1.dp, LocalPalette.current.line, RoundedCornerShape(8.dp))
+            .border(1.dp, LocalPalette.current.line, RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
             .padding(horizontal = 2.dp),
     ) {
         ComposerIcon(

@@ -280,6 +280,18 @@ private class TerminalPreviewColors(
                 cursor = Color(0xFF7FB4CA), // blue
                 border = Color(0xFF313342), // border
             )
+            // Board 08: Paper's mini terminal keeps the dark Herdr palette in
+            // every theme — the chrome never repaints the pane (Cute's set on
+            // the shared #100A0F surface, bordered by Paper's borderSubtle).
+            AppTheme.PAPER -> TerminalPreviewColors(
+                accent = Color(0xFFF095C8),
+                text = Color(0xFFF6EFF3),
+                passed = Color(0xFFB4E7C7), // mint
+                skipped = Color(0xFFE0C27A), // champagne
+                agent = Color(0xFFD7A0B8), // softRose
+                cursor = Color(0xFFD7A0B8),
+                border = Color(0xFFF0E2E8), // borderSubtle
+            )
         }
     }
 }

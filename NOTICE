@@ -17,3 +17,17 @@ tricks, added to, or removed from, or the client will silently desync from the
 Herdr endpoint protocol (generation 1, protocol: 22).
 
 Do not modify the vendored protocol logic to make things compile or connect.
+
+UI asset attribution:
+
+The send action glyph in ui-android/app/src/main/res/drawable/ic_send.xml is
+the Iconoir "send" icon (solid variant), used under the MIT license:
+
+  Iconoir — https://iconoir.com
+  Copyright (c) 2022 Luca Burgio
+  Licensed under the MIT License
+  (https://github.com/iconoir-icons/iconoir/blob/main/LICENSE)
+
+The bundled terminal typeface, ui-android/app/src/main/res/font/*, is
+JetBrains Mono 2.304 by JetBrains, used under the SIL Open Font License 1.1;
+its license file ships as ui-android/JETBRAINS-MONO-OFL.txt.

@@ -47,4 +47,19 @@ class ThemeStoreTest {
         store.select(AppTheme.GENTLE)
         assertEquals(AppTheme.GENTLE, store.selected())
     }
+
+    @Test
+    fun `paper persists like the other themes`() {
+        val store = MemoryStore()
+        val themeStore = ThemeStore(store)
+        themeStore.select(AppTheme.PAPER)
+        assertEquals(AppTheme.PAPER, themeStore.selected())
+    }
+
+    @Test
+    fun `storing an unknown follow value reads as off`() {
+        val store = MemoryStore()
+        store.putString(ThemeStore.KEY_FOLLOW, "maybe")
+        assertEquals(false, ThemeStore(store).followThePhone())
+    }
 }

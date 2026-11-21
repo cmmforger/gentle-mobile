@@ -1,5 +1,6 @@
 package com.gentlemanprogramming.gentlemobile.ui.workspaces
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,7 @@ import com.gentlemanprogramming.gentlemobile.core.DirVerdictDto
 import com.gentlemanprogramming.gentlemobile.core.DiskDto
 import com.gentlemanprogramming.gentlemobile.core.FolderEntryDto
 import com.gentlemanprogramming.gentlemobile.core.WorkspaceRowDto
+import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 
 /**
@@ -99,8 +101,8 @@ fun WorkspacesScreen(
             // S28-5: the title must not collide with the status bar clock —
             // the same safe-drawing header every other screen has.
             .safeDrawingPadding()
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp),
+            .padding(horizontal = Air.SIDE_DP.dp)
+            .padding(top = Air.TOP_DP.dp),
     ) {
         // The header never scrolls away (T27): the back chevron is the way
         // up — out of the browser, or off the screen — and S6 forbids a
@@ -173,8 +175,8 @@ fun WorkspacesScreen(
             Text(
                 text = stringResource(R.string.ws_title),
                 color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 22.sp,
-                lineHeight = 26.sp,
+                fontSize = Air.TITLE_SP.sp,
+                lineHeight = (Air.TITLE_SP * Air.TITLE_LINE_HEIGHT).sp,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(8.dp))
@@ -196,8 +198,9 @@ fun WorkspacesScreen(
                     color = p.muted,
                     fontSize = 13.sp,
                 )
-                rows != null -> rows.forEach { row ->
+                rows != null -> rows.forEachIndexed { index, row ->
                     WorkspaceRow(row = row, onOpen = { onOpen(row) })
+                    if (index != rows.size - 1) HairlineSpacer()
                 }
             }
 
@@ -251,8 +254,8 @@ private fun BrowseBody(
         Text(
             text = stringResource(R.string.ws_browse_title),
             color = MaterialTheme.colorScheme.onBackground,
-            fontSize = 22.sp,
-            lineHeight = 26.sp,
+            fontSize = Air.TITLE_SP.sp,
+            lineHeight = (Air.TITLE_SP * Air.TITLE_LINE_HEIGHT).sp,
             fontWeight = FontWeight.Bold,
         )
         GroupLabel(stringResource(R.string.ws_browse_disks))
@@ -273,23 +276,27 @@ private fun BrowseBody(
                 color = p.muted,
                 fontSize = 13.sp,
             )
-            disks != null -> WorkspacesModel.diskRows(disks).forEach { disk ->
-                BrowseRow(
-                    title = disk.label,
-                    meta = WorkspacesModel.diskMeta(disk),
-                    badgeWord = null,
-                    badgeAccent = false,
-                    enabled = !checking && !creating,
-                    onClick = { onSelectDisk(disk) },
-                )
+            disks != null -> {
+                val diskRows = WorkspacesModel.diskRows(disks)
+                diskRows.forEachIndexed { index, disk ->
+                    BrowseRow(
+                        title = disk.label,
+                        meta = WorkspacesModel.diskMeta(disk),
+                        badgeWord = null,
+                        badgeAccent = false,
+                        enabled = !checking && !creating,
+                        onClick = { onSelectDisk(disk) },
+                    )
+                    if (index != diskRows.size - 1) HairlineSpacer()
+                }
             }
         }
     } else {
         Text(
             text = WorkspacesModel.workspaceLabel(inFolder.path),
             color = MaterialTheme.colorScheme.onBackground,
-            fontSize = 22.sp,
-            lineHeight = 26.sp,
+            fontSize = Air.TITLE_SP.sp,
+            lineHeight = (Air.TITLE_SP * Air.TITLE_LINE_HEIGHT).sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -322,7 +329,7 @@ private fun BrowseBody(
                 color = p.muted,
                 fontSize = 13.sp,
             )
-            folders != null -> folders.forEach { folder ->
+            folders != null -> folders.forEachIndexed { index, folder ->
                 val badge = WorkspacesModel.folderBadge(folder)
                 BrowseRow(
                     title = folder.name,
@@ -338,6 +345,7 @@ private fun BrowseBody(
                     enabled = !checking && !creating,
                     onClick = { onSelectFolder(folder) },
                 )
+                if (index != folders.size - 1) HairlineSpacer()
             }
         }
     }
@@ -431,7 +439,8 @@ private fun BrowseRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -439,7 +448,7 @@ private fun BrowseRow(
                 Text(
                     text = title,
                     color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 15.sp,
+                    fontSize = Air.ROW_NAME_SP.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -468,22 +477,34 @@ private fun BrowseRow(
     }
 }
 
-/** The group header: quiet, uppercase, the same rule as the other screens. */
+/** The row hairline (board 10): 1dp, painted `line`, only between rows —
+ *  the caller skips the last one. */
 @Composable
-private fun GroupLabel(text: String) {
-    Text(
-        text = text.uppercase(),
-        color = LocalPalette.current.muted,
-        fontSize = 11.sp,
-        letterSpacing = 1.sp,
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
+fun HairlineSpacer() {
+    Spacer(
+        Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(LocalPalette.current.line),
     )
 }
 
 /** One workspace row (S26-2): the human's own label, branch · state · agent
  *  count as the mono meta. `on screen` marks the workspace the host has
  *  focused — the same word the herdr TUI would show. */
+@Composable
+private fun GroupLabel(text: String) {
+    Text(
+        text = text.uppercase(),
+        color = LocalPalette.current.muted,
+        fontSize = Air.SECTION_LABEL_SP.sp,
+        letterSpacing = Air.SECTION_TRACKING_SP.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(top = 24.dp, bottom = 4.dp),
+    )
+}
+
+/** The group header: quiet, uppercase, the same rule as the other screens. */
 @Composable
 private fun WorkspaceRow(row: WorkspaceRowDto, onOpen: () -> Unit) {
     val p = LocalPalette.current
@@ -496,7 +517,8 @@ private fun WorkspaceRow(row: WorkspaceRowDto, onOpen: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clickable(onClick = onOpen),
+            .clickable(onClick = onOpen)
+            .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -504,7 +526,7 @@ private fun WorkspaceRow(row: WorkspaceRowDto, onOpen: () -> Unit) {
                 Text(
                     text = row.label,
                     color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 15.sp,
+                    fontSize = Air.ROW_NAME_SP.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

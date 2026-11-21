@@ -178,7 +178,6 @@ fun FixtureTerminal(debugInfo: Boolean = false) {
                 thumbnails = emptyMap(),
                 sending = false,
                 sendError = null,
-                sent = false,
                 dictation = dictation,
                 onSend = { fixtureDraft = "" },
                 onCamera = {},

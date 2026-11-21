@@ -193,10 +193,12 @@ import com.gentlemanprogramming.gentlemobile.ui.session.WorkspaceTabsModel
 import com.gentlemanprogramming.gentlemobile.ui.session.rememberDictationSession
 import com.gentlemanprogramming.gentlemobile.ui.settings.ThemePickerScreen
 import com.gentlemanprogramming.gentlemobile.ui.splash.SplashScreen
+import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.GentleMobileTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
+import com.gentlemanprogramming.gentlemobile.ui.theme.resolvedTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.ThemeStore
 import com.gentlemanprogramming.gentlemobile.ui.terminal.CardSurface
 import com.gentlemanprogramming.gentlemobile.ui.terminal.ClaimFlight
@@ -300,6 +302,11 @@ class MainActivity : FragmentActivity() {
                 ThemeStore(SharedPreferencesStore(this@MainActivity))
             }
             var appTheme by remember { mutableStateOf(themeStore.selected()) }
+            // S33: Follow the phone — dark renders Cute, light renders Paper;
+            // off (the default) the pinned theme stands.
+            var followThePhone by remember { mutableStateOf(themeStore.followThePhone()) }
+            val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            val effectiveTheme = resolvedTheme(appTheme, followThePhone, systemDark)
             // S24-1: the language lives in the app, persists, and applies
             // immediately — the composition re-provides the context in the
             // chosen locale, so every stringResource call follows without a
@@ -321,7 +328,32 @@ class MainActivity : FragmentActivity() {
                 LocalLifecycleOwner provides this@MainActivity,
                 LocalOnBackPressedDispatcherOwner provides this@MainActivity,
             ) {
-                GentleMobileTheme(appTheme) {
+                GentleMobileTheme(effectiveTheme) {
+                // The chrome follows the theme it renders: Paper's light page
+                // needs dark icons on the system bars, the dark themes keep
+                // light ones.
+                androidx.compose.runtime.LaunchedEffect(effectiveTheme) {
+                    enableEdgeToEdge(
+                        statusBarStyle =
+                            if (effectiveTheme == AppTheme.PAPER) {
+                                SystemBarStyle.light(
+                                    android.graphics.Color.TRANSPARENT,
+                                    android.graphics.Color.TRANSPARENT,
+                                )
+                            } else {
+                                SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                            },
+                        navigationBarStyle =
+                            if (effectiveTheme == AppTheme.PAPER) {
+                                SystemBarStyle.light(
+                                    android.graphics.Color.TRANSPARENT,
+                                    android.graphics.Color.TRANSPARENT,
+                                )
+                            } else {
+                                SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                            },
+                    )
+                }
                 if (showFixture) {
                     com.gentlemanprogramming.gentlemobile.ui.terminal.FixtureTerminal(
                         debugInfo = showFixtureDebug,
@@ -338,7 +370,8 @@ class MainActivity : FragmentActivity() {
                         sessionsDirOverride = devSessionsDirOverride,
                         wrapPreview = wrapPreview,
                         keyPath = keyPath,
-                        appTheme = appTheme,
+                        appTheme = effectiveTheme,
+                        followThePhone = followThePhone,
                         language = language,
                         onSetLanguage = { chosen ->
                             // Applied immediately (the composition provides
@@ -349,9 +382,17 @@ class MainActivity : FragmentActivity() {
                         },
                         openAgentPane = openAgentPane,
                         onSelectTheme = { theme ->
-                            // Applied immediately, persisted for the next launch.
+                            // Applied immediately, persisted for the next launch,
+                            // and Follow the phone turns off: a pin wins over the
+                            // follow switch (board 07, L31).
+                            followThePhone = false
+                            themeStore.setFollowThePhone(false)
                             appTheme = theme
                             themeStore.select(theme)
+                        },
+                        onSetFollowThePhone = { follow ->
+                            followThePhone = follow
+                            themeStore.setFollowThePhone(follow)
                         },
                     )
                 }
@@ -555,7 +596,6 @@ private class SessionUi {
     var draft by mutableStateOf("")
     var sending by mutableStateOf(false)
     var sendError by mutableStateOf<String?>(null)
-    var sent by mutableStateOf(false)
     var refreshNonce by mutableStateOf(0)
 
     /** Attachments (T13): the queue owns the honest state machine; the
@@ -739,9 +779,11 @@ fun ConnectScreen(
     wrapPreview: Boolean = false,
     keyPath: String,
     appTheme: AppTheme,
+    followThePhone: Boolean,
     language: AppLanguage,
     onSetLanguage: (AppLanguage) -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
+    onSetFollowThePhone: (Boolean) -> Unit,
     openAgentPane: androidx.compose.runtime.MutableState<String?>,
 ) {
     val screen = remember { ScreenState() }
@@ -1253,7 +1295,9 @@ fun ConnectScreen(
             biometricDecision = biometricDecision,
             biometricEnabled = biometricEnabled,
             theme = appTheme,
+            followThePhone = followThePhone,
             language = language,
+            onSetFollowThePhone = onSetFollowThePhone,
             onSetLanguage = onSetLanguage,
             connected = screen.ui is UiState.Connected,
             regenerated = regenerated,
@@ -3141,7 +3185,7 @@ fun ConnectScreen(
                         val generation = screen.generation
                         sessionUi.sending = true
                         sessionUi.sendError = null
-                        sessionUi.sent = false
+                        sessionUi.draft = ""
                         executor.execute {
                             try {
                                 connection.promptAgent(paneId, prompt)
@@ -3149,8 +3193,6 @@ fun ConnectScreen(
                                 mainHandler.post {
                                     if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
                                         sessionUi.sending = false
-                                        sessionUi.sent = true
-                                        sessionUi.draft = ""
                                         // The uploads the prompt referenced have been
                                         // handed over: the rows leave with the draft.
                                         sessionUi.clearSentAttachments()
@@ -3161,7 +3203,6 @@ fun ConnectScreen(
                                 mainHandler.post {
                                     if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
                                         sessionUi.sending = false
-                                        sessionUi.sent = false
                                         sessionUi.sendError = describe(context, error)
                                     }
                                 }
@@ -3982,7 +4023,7 @@ private fun SessionScreen(
         // 44 dp touch target stays.
         Row(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 12.dp),
+            modifier = Modifier.padding(horizontal = 16.dp),
         ) {
             Box(
                 modifier = Modifier
@@ -4001,8 +4042,9 @@ private fun SessionScreen(
                 Text(
                     text = AgentRowModel.sessionTitle(agent.cwd, agent.name),
                     color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = Air.TITLE_SP.sp,
+                    lineHeight = (Air.TITLE_SP * Air.TITLE_LINE_HEIGHT).sp,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -4031,7 +4073,7 @@ private fun SessionScreen(
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         // S27-6: no liveness line — the space belongs to the terminal. When
         // the connection dropped, the interrupted notice alone says so and
         // offers Retry; a live link says nothing.
@@ -4042,7 +4084,7 @@ private fun SessionScreen(
         // Terminal area: the cell grid from the surface stream. Before the
         // first surface arrives (or if the host never sends one) the pane's
         // visible text shows here instead — never a silently empty view.
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         // S27-7: the card's top strip — the current workspace's own tabs,
         // in the daemon's order, the visible one marked. A tap makes that
         // tab the visible one; no more numbered bar that does nothing.
@@ -4062,7 +4104,7 @@ private fun SessionScreen(
                     fontFamily = FontFamily.Monospace,
                 )
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(12.dp))
         }
         // T26 rule 3 + S31c rule 4: the host's own answer when the claim did
         // not land lives in the always-reserved notice slot below — inside
@@ -4369,7 +4411,7 @@ private fun SessionScreen(
                         },
                     )
                     .background(TerminalDefaultBackground)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .onSizeChanged { viewSize = it }
                     .verticalScroll(vScroll)
                     .horizontalScroll(hScroll)
@@ -4447,7 +4489,7 @@ private fun SessionScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .verticalScroll(rememberScrollState())
-                            .background(LocalPalette.current.surface, RoundedCornerShape(8.dp))
+                            .background(LocalPalette.current.surface, RoundedCornerShape(12.dp))
                             .padding(12.dp),
                     )
                     if (pane?.truncated == true) {
@@ -4468,27 +4510,26 @@ private fun SessionScreen(
         // and the composer. Every chip maps to a key name the daemon
         // accepts (measured: esc, tab, enter, up, down, and ctrl+/alt+
         // compositions), so all are enabled; Ctrl and Alt are sticky.
-        Spacer(Modifier.height(8.dp))
-        ExtraKeyRow(sessionUi, onSendKeys, modifier = Modifier.padding(horizontal = 12.dp))
+        Spacer(Modifier.height(12.dp))
+        ExtraKeyRow(sessionUi, onSendKeys, modifier = Modifier.padding(horizontal = 16.dp))
 
         // Composer: a prompt, sent through the daemon's own agent.prompt.
         // One row — the field with the send action beside it — so the
         // composer stays inside the one-thumb zone on a phone: a full-width
         // button row pushes it off the bottom.
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         // Composer: a prompt, sent through the daemon's own agent.prompt.
         // One designed row per 04-session.html — see ui/session/SessionComposer.
         // The send prompt is the draft plus the confirmed uploads' suffix
         // lines, composed by the core so the contract lives in one place.
         SessionComposer(
-            modifier = Modifier.padding(horizontal = 12.dp),
+            modifier = Modifier.padding(horizontal = 16.dp),
             draft = sessionUi.draft,
             onDraftChange = { sessionUi.draft = it },
             attachments = sessionUi.attachments,
             thumbnails = sessionUi.thumbnails,
             sending = sessionUi.sending,
             sendError = sessionUi.sendError,
-            sent = sessionUi.sent,
             dictation = sessionUi.dictation,
             onSend = {
                 val prompt = coreComposePrompt(
@@ -5115,7 +5156,7 @@ private fun WorkspaceTabStrip(
 ) {
     val p = LocalPalette.current
     Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
@@ -5132,7 +5173,7 @@ private fun WorkspaceTabStrip(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .heightIn(min = 44.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .clickable(enabled = !isCurrent) { onTabSelected(tab) }
                     .padding(horizontal = 10.dp, vertical = 12.dp),
             )
@@ -5293,10 +5334,12 @@ private fun ConnectScreenPreview() {
         ConnectScreen(
             keyPath = "/data/local/tmp/client_ed25519",
             appTheme = AppTheme.CUTE,
+            followThePhone = false,
             language = AppLanguage.ENGLISH,
             onSetLanguage = {},
             openAgentPane = androidx.compose.runtime.mutableStateOf<String?>(null),
             onSelectTheme = {},
+            onSetFollowThePhone = {},
         )
     }
 }

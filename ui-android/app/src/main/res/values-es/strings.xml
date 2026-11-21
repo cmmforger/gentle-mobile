@@ -160,7 +160,6 @@
     <string name="session_reason_link_down">la conexión estaba cortada mientras la app estaba en segundo plano</string>
     <string name="session_reason_host_closed">el host cerró la conexión</string>
     <!-- Compositor -->
-    <string name="comp_sent">Enviado — el host confirmó el envío.</string>
     <string name="comp_listening">Escuchando\u2026</string>
     <string name="comp_listening_partial">Escuchando\u2026 \u0022%1$s\u0022</string>
     <string name="comp_stop">Parar</string>
@@ -278,13 +277,25 @@
     <!-- Ajustes -->
     <string name="set_title">Ajustes</string>
     <string name="set_section_security">Seguridad</string>
-    <string name="set_section_connection">Conexión</string>
-    <string name="set_section_appearance">Apariencia</string>
-    <string name="set_section_about">Acerca de</string>
-    <string name="set_summary_security">clave del dispositivo \u00B7 hosts guardados \u00B7 biometría \u00B7 fijado</string>
-    <string name="set_summary_connection">canal \u00B7 directorio de sesiones \u00B7 notificaciones</string>
-    <string name="set_summary_appearance">tema \u00B7 idioma</string>
-    <string name="set_summary_about">versión \u00B7 novedades</string>
+    <string name="set_area_security_sub">La clave del teléfono, los hosts en los que confía.</string>
+    <string name="set_area_appearance">Apariencia</string>
+    <string name="set_area_appearance_sub">Seguí tu teléfono, o fijá uno.</string>
+    <string name="set_follow_phone">Seguir al teléfono</string>
+    <string name="set_follow_phone_sub">Cute cuando el teléfono está oscuro, Paper cuando está claro.</string>
+    <string name="set_pinned_theme">Tema fijado</string>
+    <string name="set_area_language">Idioma</string>
+    <string name="set_area_language_sub">La terminal nunca se traduce.</string>
+    <string name="set_area_typeface">Tipografía</string>
+    <string name="set_area_typeface_sub">La cara de la app, en este dispositivo.</string>
+    <string name="set_typeface_family">Familia</string>
+    <string name="set_typeface_value">Del sistema</string>
+    <string name="set_typeface_foot">La fuente de interfaz de tu teléfono, con todos los pesos que trae, así el texto en negrita sigue en negrita.</string>
+    <string name="set_area_terminal_font">Fuente de terminal</string>
+    <string name="set_area_terminal_font_sub">La terminal y el campo de escritura, en este dispositivo.</string>
+    <string name="set_terminal_font_value">JetBrains Mono (incluida)</string>
+    <string name="set_terminal_font_foot">Viene con la app, así los íconos y los anchos de celda se mantienen exactos.</string>
+    <string name="set_area_about">Acerca de</string>
+    <string name="set_area_about_sub">Versión y novedades.</string>
 
     <string name="set_device_key">Clave del dispositivo</string>
     <string name="set_device_key_error">No se pudo leer la identidad.</string>
@@ -315,11 +326,6 @@
     <string name="set_edit">Editar</string>
     <string name="set_sessions_dir_hint">vacío = el valor por defecto del host</string>
     <string name="set_save">Guardar</string>
-    <string name="set_lane_herdr">Herdr TUI</string>
-    <string name="set_lane_herdr_sub">Conectarse a Herdr</string>
-    <string name="set_lane_shell">Gentle Shell</string>
-    <string name="set_lane_shell_sub">Abrir una sesión de shell</string>
-    <string name="set_lane_note">Las sesiones directas de Gentle Shell todavía no están en el core — Herdr TUI es el único canal.</string>
     <string name="set_notifications">Notificaciones de agentes</string>
     <string name="set_enable_notifications">Activar notificaciones</string>
     <string name="set_enable_notifications_sub">Abre los ajustes de notificación de Android para Gentle Mobile.</string>
@@ -329,10 +335,6 @@
     <string name="set_notifications_off_detail">Apagadas — las notificaciones fueron rechazadas, así que el teléfono queda callado mientras un agente te necesite. Activalas en los ajustes de Android.</string>
     <string name="set_notifications_na_detail">Esta versión de Android no pregunta — permitir las notificaciones es cosa del sistema.</string>
 
-    <string name="set_theme">Tema</string>
-    <string name="set_theme_cute_sub">por defecto \u00B7 tocá para elegir Sexy o Gentle</string>
-    <string name="set_theme_sub">tocá para elegir Cute, Sexy o Gentle</string>
-    <string name="set_language">Idioma · %1$s</string>
     <string name="set_cancel">Cancelar</string>
     <string name="set_language_switch_sub">Tocá para cambiar a %1$s</string>
 
