@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -97,6 +98,8 @@ fun WorkspacesScreen(
 
     Column(
         modifier = Modifier
+            .fillMaxSize()
+            .background(p.bg)
             .fillMaxWidth()
             // S28-5: the title must not collide with the status bar clock —
             // the same safe-drawing header every other screen has.

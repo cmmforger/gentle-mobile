@@ -176,6 +176,17 @@ private fun ThemeCard(theme: AppTheme, selected: Boolean, onSelect: () -> Unit) 
                         .border(1.dp, chrome.line, RoundedCornerShape(999.dp))
                         .padding(horizontal = 12.dp, vertical = 2.dp),
                 )
+            } else if (theme == AppTheme.PAPER) {
+                // Board 08: Paper carries a "new" pill in the same tag style.
+                Text(
+                    text = stringResource(R.string.theme_new),
+                    color = chrome.muted,
+                    fontSize = 11.sp,
+                    letterSpacing = 0.6.sp,
+                    modifier = Modifier
+                        .border(1.dp, chrome.line, RoundedCornerShape(999.dp))
+                        .padding(horizontal = 12.dp, vertical = 2.dp),
+                )
             }
         }
 

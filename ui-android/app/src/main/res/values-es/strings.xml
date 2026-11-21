@@ -354,9 +354,10 @@
 
     <!-- Selector de tema -->
     <string name="theme_title">Tema</string>
-    <string name="theme_intro">Mismo diseño, nuevos colores — la terminal y el resto de la app cambian juntos.</string>
+    <string name="theme_intro">Mismo diseño, nuevos colores — la app cambia, la terminal mantiene su paleta.</string>
     <string name="theme_accent">acento %1$s</string>
     <string name="theme_default">PREDETERMINADO</string>
+    <string name="theme_new">NUEVO</string>
 
     <!-- Prompt biométrico -->
     <string name="bio_title">Desbloquear Gentle Mobile</string>

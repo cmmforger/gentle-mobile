@@ -370,7 +370,10 @@ class MainActivity : FragmentActivity() {
                         sessionsDirOverride = devSessionsDirOverride,
                         wrapPreview = wrapPreview,
                         keyPath = keyPath,
-                        appTheme = effectiveTheme,
+                        // The pinned choice travels down (the Settings
+                        // row and the picker mark the stored pin), while the
+                        // rendering follows effectiveTheme above.
+                        appTheme = appTheme,
                         followThePhone = followThePhone,
                         language = language,
                         onSetLanguage = { chosen ->

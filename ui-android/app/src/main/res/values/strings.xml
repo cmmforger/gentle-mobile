@@ -354,9 +354,10 @@
 
     <!-- Theme picker -->
     <string name="theme_title">Theme</string>
-    <string name="theme_intro">Same layout, new colours — the terminal and the app chrome switch together.</string>
+    <string name="theme_intro">Same layout, new colours — the app switches, the terminal keeps its palette.</string>
     <string name="theme_accent">accent %1$s</string>
     <string name="theme_default">DEFAULT</string>
+    <string name="theme_new">NEW</string>
 
     <!-- Biometric prompt -->
     <string name="bio_title">Unlock Gentle Mobile</string>
