@@ -121,6 +121,8 @@
     <string name="ws_no_permission">No permission to open that directory on the host: %1$s</string>
     <string name="ws_is_git">git repository</string>
     <string name="ws_not_git">not a git repository — it can still be added</string>
+    <string name="ws_needs_you_one">1 needs you</string>
+    <string name="ws_needs_you_many">%1$d need you</string>
     <!-- T27 (S30-3): the `+` browses the machine\'s disks and folders -->
     <string name="ws_browse_title">Choose the folder</string>
     <string name="ws_browse_choose">Use this folder</string>
@@ -139,6 +141,22 @@
     <string name="inbox_group_done">Done</string>
     <string name="inbox_group_working">Working</string>    <string name="inbox_group_unknown">Unknown</string>
     <string name="inbox_group_count">%1$s \u00B7 %2$d</string>
+    <!-- T31 (S32b): the approval board. One needs-you count is the pill;
+         the approval block renders the pane\'s own question, command and
+         options; a risky answer is held until a second tap. -->
+    <string name="approval_pill_one">1 needs you</string>
+    <string name="approval_pill_many">%1$d need you</string>
+    <string name="cd_approval_pill">Walk through the agents waiting for you</string>
+    <string name="approval_command">Command:</string>
+    <string name="approval_case_empty">The pane is empty right now — nothing to read.</string>
+    <string name="approval_case_no_options">This pane does not read as a question with numbered options.</string>
+    <string name="approval_case_no_question">The options are there, but the question line is unreadable.</string>
+    <string name="approval_answer_manually">Answer it in the pane with its own keys.</string>
+    <string name="approval_hold_again">Tap again to send</string>
+    <string name="cd_approval_risky">Risky — this answer is held until you tap it again</string>
+    <string name="approval_walk_of">%1$d of %2$d</string>
+    <string name="approval_walk_next">Next ›</string>
+    <string name="approval_send_error">The answer did not reach the pane: %1$s</string>
     <string name="inbox_no_agents">No agents are running on this host right now.</string>
     <string name="inbox_interrupted_title">Connection interrupted.</string>
     <string name="inbox_interrupted_suffix">%1$s — what is on screen is the last information received.</string>

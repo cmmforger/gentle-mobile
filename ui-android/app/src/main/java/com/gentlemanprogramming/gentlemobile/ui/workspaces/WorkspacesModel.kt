@@ -72,6 +72,16 @@ object WorkspacesModel {
         if (agents.size == 1) WorkspaceEntry.Session(agents[0]) else WorkspaceEntry.AgentList
 
     /**
+     * T31 (S32b): the one needs-you count per workspace, computed from the
+     * snapshot's agents — so the count is visible where the board is
+     * reachable from, before any row opens.
+     */
+    fun needsYouByWorkspace(all: List<AgentDto>): Map<String, Int> =
+        all.filter { it.status == AgentStatusDto.BLOCKED }
+            .groupingBy { it.workspaceId }
+            .eachCount()
+
+    /**
      * The plain sentence for a failed path check (S26-3), or `null` when
      * the path is fine and the flow may continue to `workspace.create`.
      */

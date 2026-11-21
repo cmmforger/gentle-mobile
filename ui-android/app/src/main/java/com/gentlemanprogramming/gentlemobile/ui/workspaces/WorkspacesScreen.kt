@@ -72,6 +72,9 @@ fun WorkspacesScreen(
     rows: List<WorkspaceRowDto>?,
     loading: Boolean,
     error: String?,
+    // T31 (S32b): the one needs-you count per workspace, from the live
+    // snapshot's agents — visible before any row opens the board.
+    needsYouByWorkspace: Map<String, Int> = emptyMap(),
     browseOpen: Boolean,
     browseLevel: WorkspacesModel.BrowseState,
     disks: List<DiskDto>?,
@@ -202,7 +205,13 @@ fun WorkspacesScreen(
                     fontSize = 13.sp,
                 )
                 rows != null -> rows.forEachIndexed { index, row ->
-                    WorkspaceRow(row = row, onOpen = { onOpen(row) })
+                    WorkspaceRow(
+                        row = row,
+                        // T31: the needs-you count is visible where the board
+                        // is reachable from — on the row that opens it.
+                        needsYou = needsYouByWorkspace[row.id] ?: 0,
+                        onOpen = { onOpen(row) },
+                    )
                     if (index != rows.size - 1) HairlineSpacer()
                 }
             }
@@ -509,7 +518,7 @@ private fun GroupLabel(text: String) {
 
 /** The group header: quiet, uppercase, the same rule as the other screens. */
 @Composable
-private fun WorkspaceRow(row: WorkspaceRowDto, onOpen: () -> Unit) {
+private fun WorkspaceRow(row: WorkspaceRowDto, needsYou: Int, onOpen: () -> Unit) {
     val p = LocalPalette.current
     val agentsWord = if (row.agentCount == 1UL) {
         stringResource(R.string.ws_agents_one)
@@ -535,6 +544,19 @@ private fun WorkspaceRow(row: WorkspaceRowDto, onOpen: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
+                if (needsYou > 0) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (needsYou == 1) {
+                            stringResource(R.string.ws_needs_you_one)
+                        } else {
+                            stringResource(R.string.ws_needs_you_many, needsYou)
+                        },
+                        color = p.warning,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
                 if (row.focused) {
                     Spacer(Modifier.width(8.dp))
                     Text(

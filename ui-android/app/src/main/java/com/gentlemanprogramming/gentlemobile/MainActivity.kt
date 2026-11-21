@@ -144,6 +144,13 @@ import com.gentlemanprogramming.gentlemobile.core.refreshLease
 import com.gentlemanprogramming.gentlemobile.core.releaseLease
 import com.gentlemanprogramming.gentlemobile.core.resumeSession as coreResumeSession
 import com.gentlemanprogramming.gentlemobile.core.startSessionInDir as coreStartSessionInDir
+import com.gentlemanprogramming.gentlemobile.ui.approval.ApprovalBoardModel
+import com.gentlemanprogramming.gentlemobile.ui.approval.ApprovalGate
+import com.gentlemanprogramming.gentlemobile.ui.approval.ApprovalHold
+import com.gentlemanprogramming.gentlemobile.ui.approval.ApprovalParser
+import com.gentlemanprogramming.gentlemobile.ui.approval.ApprovalRead
+import com.gentlemanprogramming.gentlemobile.ui.approval.ApprovalRisk
+import com.gentlemanprogramming.gentlemobile.ui.approval.ApprovalWaitTracker
 import com.gentlemanprogramming.gentlemobile.ui.sessions.HeldLease
 import com.gentlemanprogramming.gentlemobile.ui.AgentActivity
 import com.gentlemanprogramming.gentlemobile.ui.AgentRowModel
@@ -554,6 +561,24 @@ private class ScreenState {
     /** S24-8: the per-agent last-observed activity this connection has seen;
      *  reset with every new connection, read by the inbox rows. */
     val activity = AgentActivity()
+
+    /** T31 (S32b): the approval board's state. The tracker and the parse
+     *  map reset with every new connection — a fresh host knows nothing
+     *  about what this one observed. */
+    val approvalWait = ApprovalWaitTracker()
+    var approvalParses by mutableStateOf<Map<String, ApprovalRead>>(emptyMap())
+    var approvalWalk by mutableStateOf(false)
+    var approvalWalkIndex by mutableStateOf(0)
+    var approvalHold by mutableStateOf<ApprovalHold?>(null)
+    var approvalBusy by mutableStateOf(false)
+    var approvalError by mutableStateOf<Pair<String, String>?>(null)
+
+    /** One pane's fresh read lands in the board's state: the map grows by
+     *  one entry and the timestamp makes every read honest about its age. */
+    fun rememberApproval(paneId: String, parse: ApprovalParser.Parse) {
+        approvalParses = approvalParses +
+            (paneId to ApprovalRead(parse, System.currentTimeMillis()))
+    }
 
     /** S24-1: the application context, captured once so messages composed
      *  on the worker threads (errors, drop reasons) can resolve their
@@ -1490,6 +1515,9 @@ fun ConnectScreen(
                 rows = screen.workspaces,
                 loading = screen.workspacesLoading,
                 error = screen.workspacesError,
+                needsYouByWorkspace = WorkspacesModel.needsYouByWorkspace(
+                    currentUi.snapshot?.agents ?: emptyList(),
+                ),
                 browseOpen = screen.browseOpen,
                 browseLevel = screen.browseLevel,
                 disks = screen.disks,
@@ -1947,6 +1975,15 @@ fun ConnectScreen(
                                 screen.sessions.values.forEach { it.resetBaseline() }
                                 screen.alertTracker.reset()
                                 screen.activity.reset()
+                                // T31: the approval board observes nothing about
+                                // this connection yet — no waits, no reads, no walk.
+                                screen.approvalWait.reset()
+                                screen.approvalParses = emptyMap()
+                                screen.approvalWalk = false
+                                screen.approvalWalkIndex = 0
+                                screen.approvalHold = null
+                                screen.approvalBusy = false
+                                screen.approvalError = null
                                 screen.inboxOpen = false
                                 // S24-4: a successful connection saves the
                                 // host with its name — the human's own words,
@@ -1973,6 +2010,11 @@ fun ConnectScreen(
                                     )
                                 }
                                 pollAlerts(context, screen, connection)
+                                // T31 (S32b): the approval board's slow reads ride
+                                // the same pollers pattern — registered for the
+                                // connection's life, doing nothing when the board
+                                // is closed or no agent is waiting.
+                                pollApprovals(screen, connection, generation)
                             }
                         }
                         poll(screen, connection, generation)
@@ -3408,6 +3450,181 @@ private fun pollAlerts(
     runOnce()
 }
 
+/**
+ * Approval-board polling (T31, S32b): a slow poller that feeds the wait
+ * tracker with every snapshot and re-reads the panes of the agents the
+ * board is showing — the ones it groups as waiting — so the question, the
+ * exact command and the options on screen are the pane's own current
+ * words. It rides the connection the app already holds, does nothing while
+ * the board is closed or nothing is waiting, and stops with the
+ * connection. The tap path re-reads the pane itself (ApprovalGate), so a
+ * fresh read here is display cadence, not the safety gate.
+ */
+private const val APPROVAL_POLL_MS = 2000L
+
+/** How long a displayed approval stays honest before the poller re-reads
+ *  the pane: the pane may have moved on since it was shown. */
+private const val APPROVAL_READ_TTL_MS = 2000L
+
+private fun pollApprovals(
+    screen: ScreenState,
+    connection: CompanionConnection,
+    generation: Int,
+) {
+    val slot = screen.pollers.register()
+    Log.i(TAG, "approval poller registered, active=${screen.pollers.count}")
+    fun boardCurrent(): Boolean {
+        val current = screen.ui
+        return screen.generation == generation &&
+            current is UiState.Connected &&
+            current.connection === connection
+    }
+    fun runOnce() {
+        executor.execute {
+            var reschedule = false
+            try {
+                val ended = ended(connection)
+                val snapshot = if (ended) {
+                    null
+                } else {
+                    (screen.ui as? UiState.Connected)
+                        ?.takeIf { it.connection === connection }?.snapshot
+                }
+                if (snapshot != null) {
+                    val statuses = snapshot.agents.associate { it.paneId to it.status }
+                    mainHandler.post {
+                        if (boardCurrent()) {
+                            screen.approvalWait.onStatuses(statuses, System.currentTimeMillis())
+                        }
+                    }
+                }
+                if (!ended && screen.inboxOpen && snapshot != null) {
+                    val agents = WorkspacesModel.agentsInWorkspace(snapshot.agents, screen.workspaceFilter)
+                        .filter { it.status == AgentStatusDto.BLOCKED }
+                    val now = System.currentTimeMillis()
+                    val stale = agents.filter { agent ->
+                        val read = screen.approvalParses[agent.paneId]
+                        read == null || now - read.readAtMs >= APPROVAL_READ_TTL_MS
+                    }
+                    for (agent in stale) {
+                        try {
+                            val pane = connection.readPane(agent.paneId)
+                            mainHandler.post {
+                                if (boardCurrent()) {
+                                    screen.rememberApproval(agent.paneId, ApprovalParser.parse(pane.text))
+                                }
+                            }
+                        } catch (error: Exception) {
+                            Log.i(TAG, "approval read failed for ${agent.paneId}: ${error.message}")
+                        }
+                    }
+                }
+                reschedule = !ended
+            } finally {
+                if (!reschedule) {
+                    slot.close()
+                    Log.i(TAG, "approval poller stopped, active=${screen.pollers.count}")
+                }
+            }
+            if (reschedule) {
+                mainHandler.postDelayed({
+                    if (boardCurrent() && !ended(connection)) {
+                        runOnce()
+                    } else {
+                        slot.close()
+                        Log.i(TAG, "approval poller stopped, active=${screen.pollers.count}")
+                    }
+                }, APPROVAL_POLL_MS)
+            }
+        }
+    }
+    runOnce()
+}
+
+/**
+ * The board's answer path (S32b-3, S32b-4): the first tap on a risky
+ * option only holds it — the pane is never told. On the confirming tap
+ * (or any safe option), the pane is read again and the answer is sent
+ * only when the question is still the one that was shown; if it changed,
+ * the fresh view replaces the shown one and nothing was sent.
+ */
+private fun answerApproval(
+    screen: ScreenState,
+    connection: CompanionConnection,
+    paneId: String,
+    option: ApprovalParser.Option,
+    shown: ApprovalParser.Parse.Question,
+    generation: Int,
+) {
+    if (screen.approvalBusy) return
+    if (
+        ApprovalRisk.isRisky(option.label, shown.command, shown.question) &&
+        screen.approvalHold != ApprovalHold(paneId, option.number)
+    ) {
+        // Held: a first tap asks for confirmation, it does not send.
+        screen.approvalHold = ApprovalHold(paneId, option.number)
+        return
+    }
+    screen.approvalHold = null
+    screen.approvalBusy = true
+    screen.approvalError = null
+    executor.execute {
+        val fresh = try {
+            ApprovalParser.parse(connection.readPane(paneId).text)
+        } catch (_: Exception) {
+            null
+        }
+        mainHandler.post {
+            val current = screen.ui
+            if (screen.generation != generation || current !is UiState.Connected || current.connection !== connection) {
+                screen.approvalBusy = false
+                return@post
+            }
+            if (fresh != null) screen.rememberApproval(paneId, fresh)
+            screen.approvalBusy = false
+            when (ApprovalGate.decide(shown, fresh)) {
+                ApprovalGate.Verdict.Stale -> Unit
+                ApprovalGate.Verdict.Send ->
+                    sendApprovalAnswer(screen, connection, paneId, option.number.toString(), generation)
+            }
+        }
+    }
+}
+
+/** The confirmed answer: the pane's own number, then Enter — the keys a
+ *  keyboard would send into that pane's dialog. */
+private fun sendApprovalAnswer(
+    screen: ScreenState,
+    connection: CompanionConnection,
+    paneId: String,
+    numberText: String,
+    generation: Int,
+) {
+    screen.approvalBusy = true
+    executor.execute {
+        try {
+            connection.sendKeys(paneId, listOf(numberText, "enter"))
+            mainHandler.post {
+                val current = screen.ui
+                if (screen.generation == generation && current is UiState.Connected && current.connection === connection) {
+                    screen.approvalBusy = false
+                    // The answer is in: the walk steps to the next waiting
+                    // agent, and stops when every one has been walked to.
+                    if (screen.approvalWalk) screen.approvalWalkIndex += 1
+                }
+            }
+        } catch (error: Exception) {
+            mainHandler.post {
+                val current = screen.ui
+                if (screen.generation == generation && current is UiState.Connected && current.connection === connection) {
+                    screen.approvalBusy = false
+                    screen.approvalError = paneId to describe(AppLocale.wrapStored(screen.appContext), error)
+                }
+            }
+        }
+    }
+}
+
 /** The notification permission as this device currently has it: `null`
  *  below Android 13, where there is no runtime permission to deny. */
 private fun notificationPermissionGranted(context: Context): Boolean? =
@@ -3863,6 +4080,13 @@ private fun InboxSection(
                             snapshot.agents,
                             screen.workspaceFilter,
                         )
+                        val nowMs = System.currentTimeMillis()
+                        val waitingMs = screen.approvalWait.snapshot()
+                            .mapValues { (nowMs - it.value).coerceAtLeast(0L) }
+                        val groups = ApprovalBoardModel.groups(agents, waitingMs)
+                        val waiting = groups
+                            .firstOrNull { it.group == ApprovalBoardModel.Group.NEEDS_YOU }
+                            ?.agents ?: emptyList()
                         when {
                             agents.isEmpty() -> Text(
                                 text = stringResource(R.string.inbox_no_agents),
@@ -3870,46 +4094,112 @@ private fun InboxSection(
                                 fontSize = 13.sp,
                             )
                             else -> {
-                        // `unknown` is not on the board; it keeps its own
-                        // honest group last rather than lying as idle.
-                        // S24-6: human words in sentence case, and the
-                        // count only when it is not one. S24-8: rows
-                        // lead with the project name, not the path.
-                        listOf(
-                            Triple(
-                                stringResource(R.string.inbox_group_needs_you),
-                                agents.filter { it.status == AgentStatusDto.BLOCKED },
-                                true,
-                            ),
-                            Triple(
-                                stringResource(R.string.inbox_group_done),
-                                agents.filter { it.status == AgentStatusDto.DONE },
-                                false,
-                            ),
-                            Triple(
-                                stringResource(R.string.inbox_group_working),
-                                agents.filter { it.status == AgentStatusDto.WORKING },
-                                false,
-                            ),
-                            Triple(
-                                // S27-8: the word `Idle` never renders —
-                                // idle agents list quietly after Working,
-                                // with no group label of their own.
-                                "",
-                                agents.filter { it.status == AgentStatusDto.IDLE },
-                                false,
-                            ),
-                            Triple(
-                                stringResource(R.string.inbox_group_unknown),
-                                agents.filter { it.status == AgentStatusDto.UNKNOWN },
-                                false,
-                            ),
-                        ).forEach { (label, groupAgents, needsYou) ->
-                            if (groupAgents.isNotEmpty()) {
-                                if (label.isNotEmpty()) {
-                                    GroupLabel(groupLabelWithCount(label, groupAgents.size), uppercase = false)
+                        // T31 (S32b): the approval board. The groups come out
+                        // of the pure model in the fixed order needs you →
+                        // working → done → idle, the honest `unknown` group
+                        // last. Waiting agents lead, longest waiting first.
+                        // The one needs-you count lives in the pill under the
+                        // header and in the group labels — nowhere else; the
+                        // pill is the walk's entry, stepping through every
+                        // waiting agent one after another.
+                        if (waiting.isNotEmpty()) {
+                            ApprovalCounterRow(
+                                count = waiting.size,
+                                onStartWalk = {
+                                    screen.approvalWalk = true
+                                    screen.approvalWalkIndex = 0
+                                },
+                            )
+                            Spacer(Modifier.height(Air.BETWEEN_CARDS_DP.dp))
+                        }
+                        if (screen.approvalWalk && waiting.isNotEmpty()) {
+                            // The walk ends itself when its queue runs out
+                            // (answered or stepped past the last one).
+                            LaunchedEffect(waiting.size, screen.approvalWalkIndex) {
+                                if (screen.approvalWalkIndex >= waiting.size) {
+                                    screen.approvalWalk = false
+                                    screen.approvalWalkIndex = 0
                                 }
-                                groupAgents.forEach { agent ->
+                            }
+                            waiting.getOrNull(screen.approvalWalkIndex)?.let { target ->
+                                ApprovalBlock(
+                                    agent = target,
+                                    read = screen.approvalParses[target.paneId],
+                                    busy = screen.approvalBusy,
+                                    held = screen.approvalHold,
+                                    error = screen.approvalError
+                                        ?.takeIf { it.first == target.paneId }?.second,
+                                    onAnswer = { option, shown ->
+                                        answerApproval(
+                                            screen,
+                                            current.connection,
+                                            target.paneId,
+                                            option,
+                                            shown,
+                                            screen.generation,
+                                        )
+                                    },
+                                    footer = {
+                                        ApprovalNextRow(
+                                            position = screen.approvalWalkIndex + 1,
+                                            total = waiting.size,
+                                            onNext = {
+                                                if (screen.approvalWalkIndex + 1 >= waiting.size) {
+                                                    screen.approvalWalk = false
+                                                    screen.approvalWalkIndex = 0
+                                                } else {
+                                                    screen.approvalWalkIndex += 1
+                                                }
+                                            },
+                                        )
+                                    },
+                                )
+                                Spacer(Modifier.height(Air.BETWEEN_CARDS_DP.dp))
+                            }
+                        }
+                        groups.forEach { ordered ->
+                            val (labelRes, needsYou) = when (ordered.group) {
+                                ApprovalBoardModel.Group.NEEDS_YOU ->
+                                    R.string.inbox_group_needs_you to true
+                                ApprovalBoardModel.Group.WORKING ->
+                                    R.string.inbox_group_working to false
+                                ApprovalBoardModel.Group.DONE ->
+                                    R.string.inbox_group_done to false
+                                // S27-8: the word `Idle` never renders — idle
+                                // agents list quietly, with no group label.
+                                ApprovalBoardModel.Group.IDLE -> null to false
+                                ApprovalBoardModel.Group.UNKNOWN ->
+                                    R.string.inbox_group_unknown to false
+                            }
+                            if (labelRes != null) {
+                                GroupLabel(
+                                    groupLabelWithCount(stringResource(labelRes), ordered.agents.size),
+                                    uppercase = false,
+                                )
+                            }
+                            ordered.agents.forEach { agent ->
+                                val read = screen.approvalParses[agent.paneId]
+                                if (needsYou && read != null) {
+                                    ApprovalBlock(
+                                        agent = agent,
+                                        read = read,
+                                        busy = screen.approvalBusy,
+                                        held = screen.approvalHold,
+                                        error = screen.approvalError
+                                            ?.takeIf { it.first == agent.paneId }?.second,
+                                        onAnswer = { option, shown ->
+                                            answerApproval(
+                                                screen,
+                                                current.connection,
+                                                agent.paneId,
+                                                option,
+                                                shown,
+                                                screen.generation,
+                                            )
+                                        },
+                                        footer = null,
+                                    )
+                                } else {
                                     InboxRow(
                                         agent,
                                         activity = screen.activity,
@@ -4881,6 +5171,299 @@ private fun Notice(message: String, color: androidx.compose.ui.graphics.Color) {
             text = message,
             color = color,
             fontSize = 13.sp,
+        )
+    }
+}
+
+// --- T31 (S32b): the approval board's surfaces. Content, never a dialog:
+// the question, the pane's exact command in mono, full-width option rows
+// at the 44 dp floor in the pane's own numbering, the risky ones held and
+// marked with the warning glyph, the safe option with no mark. All words
+// and tokens come from the pure rules in ui/approval and the strings
+// resources; nothing here invents a command or renumbers an option.
+
+/** The one needs-you count: the pill under the board's header, the walk's
+ *  entry (board 09). A 44 dp tap target, dot and chevron from the board. */
+@Composable
+private fun ApprovalCounterRow(count: Int, onStartWalk: () -> Unit) {
+    val pillShape = RoundedCornerShape(999.dp)
+    val cd = stringResource(R.string.cd_approval_pill)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = Air.TOUCH_DP.dp)
+            .clickable(onClick = onStartWalk)
+            .background(LocalPalette.current.surface, pillShape)
+            .border(1.dp, LocalPalette.current.line, pillShape)
+            .padding(horizontal = Air.CARD_PADDING_DP.dp)
+            .semantics { contentDescription = cd },
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        androidx.compose.foundation.layout.Box(
+            Modifier
+                .size(9.dp)
+                .background(LocalPalette.current.error, androidx.compose.foundation.shape.CircleShape),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = if (count == 1) {
+                stringResource(R.string.approval_pill_one)
+            } else {
+                stringResource(R.string.approval_pill_many, count)
+            },
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+        )
+        Text(text = "›", color = LocalPalette.current.muted, fontSize = 15.sp)
+    }
+}
+
+/** One waiting agent's approval card: the agent's project name over the
+ *  parsed body. When the pane has not been read yet it says it is reading
+ *  — never an empty card claiming to be one. The optional footer carries
+ *  the walk's progress row. */
+@Composable
+private fun ApprovalBlock(
+    agent: AgentDto,
+    read: ApprovalRead?,
+    busy: Boolean,
+    held: ApprovalHold?,
+    error: String?,
+    onAnswer: (ApprovalParser.Option, ApprovalParser.Parse.Question) -> Unit,
+    footer: (@Composable () -> Unit)? = null,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(LocalPalette.current.surface, RoundedCornerShape(Air.RADIUS_CARD_DP.dp))
+            .border(1.dp, LocalPalette.current.line, RoundedCornerShape(Air.RADIUS_CARD_DP.dp))
+            .padding(Air.CARD_PADDING_DP.dp),
+    ) {
+        Text(
+            text = AgentRowModel.projectTitle(agent.cwd, agent.name),
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = Air.ROW_NAME_SP.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(4.dp))
+        if (read == null) {
+            Text(
+                text = stringResource(R.string.session_reading_pane),
+                color = LocalPalette.current.muted,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        } else {
+            ApprovalBody(
+                paneId = agent.paneId,
+                parse = read.parse,
+                busy = busy,
+                held = held,
+                error = error,
+                onAnswer = onAnswer,
+            )
+        }
+        footer?.invoke()
+    }
+}
+
+/** The parsed body of one waiting agent: question, exact command, the
+ *  pane's own options — or the honest view when the pane does not read as
+ *  an approval. */
+@Composable
+private fun ApprovalBody(
+    paneId: String,
+    parse: ApprovalParser.Parse,
+    busy: Boolean,
+    held: ApprovalHold?,
+    error: String?,
+    onAnswer: (ApprovalParser.Option, ApprovalParser.Parse.Question) -> Unit,
+) {
+    when (parse) {
+        is ApprovalParser.Parse.Question -> {
+            Text(
+                text = parse.question,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = Air.BODY_SP.sp,
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = Air.BODY_SP.sp * Air.BODY_LINE_HEIGHT,
+            )
+            parse.command?.let { command ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = buildAnnotatedString {
+                        withStyle(SpanStyle(color = LocalPalette.current.accent)) {
+                            append(stringResource(R.string.approval_command) + " ")
+                        }
+                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.onBackground)) {
+                            append(command)
+                        }
+                    },
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = Air.COMMAND_SP.sp,
+                    lineHeight = Air.COMMAND_SP.sp * Air.BODY_LINE_HEIGHT,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            LocalPalette.current.surfaceRaised,
+                            RoundedCornerShape(Air.RADIUS_FIELD_DP.dp),
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            parse.options.forEachIndexed { index, option ->
+                if (index > 0) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(Air.HAIRLINE_DP.dp)
+                            .background(LocalPalette.current.line),
+                    )
+                }
+                ApprovalOptionRow(
+                    option = option,
+                    risky = ApprovalRisk.isRisky(option.label, parse.command, parse.question),
+                    heldNow = held == ApprovalHold(paneId, option.number),
+                    busy = busy,
+                    onAnswer = { onAnswer(option, parse) },
+                )
+            }
+        }
+        is ApprovalParser.Parse.Honest -> {
+            // S32b-5: no fake approval block — which case it is, the pane's
+            // own lines, and the keys to press. A wrong approval is worse
+            // than a manual one.
+            Text(
+                text = when (parse.reason) {
+                    ApprovalParser.Reason.EMPTY -> stringResource(R.string.approval_case_empty)
+                    ApprovalParser.Reason.NO_OPTIONS -> stringResource(R.string.approval_case_no_options)
+                    ApprovalParser.Reason.NO_QUESTION -> stringResource(R.string.approval_case_no_question)
+                },
+                color = LocalPalette.current.warning,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = parse.lines.takeLast(24).joinToString("\n"),
+                color = LocalPalette.current.text,
+                fontSize = Air.META_SP.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        LocalPalette.current.surfaceRaised,
+                        RoundedCornerShape(Air.RADIUS_FIELD_DP.dp),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.approval_answer_manually),
+                color = LocalPalette.current.muted,
+                fontSize = 12.sp,
+            )
+        }
+    }
+    error?.let { message ->
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = message,
+            color = LocalPalette.current.error,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+}
+
+/** One answer: full-width, 44 dp floor, the pane's own number. Risky
+ *  answers carry the warning glyph and are held on the first tap; the
+ *  safe option gets no mark. */
+@Composable
+private fun ApprovalOptionRow(
+    option: ApprovalParser.Option,
+    risky: Boolean,
+    heldNow: Boolean,
+    busy: Boolean,
+    onAnswer: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = Air.TOUCH_DP.dp)
+            .clickable(enabled = !busy, onClick = onAnswer)
+            .padding(vertical = 4.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "${option.number}.",
+            color = LocalPalette.current.muted,
+            fontSize = Air.COMMAND_SP.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.width(32.dp),
+        )
+        Text(
+            text = option.label,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = Air.ROW_NAME_SP.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
+        )
+        if (heldNow) {
+            Text(
+                text = stringResource(R.string.approval_hold_again),
+                color = LocalPalette.current.accent,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        val cdRisky = stringResource(R.string.cd_approval_risky)
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier.size(Air.TOUCH_DP.dp),
+            contentAlignment = androidx.compose.ui.Alignment.Center,
+        ) {
+            if (risky) {
+                Text(
+                    text = "⚠",
+                    color = LocalPalette.current.warning,
+                    fontSize = 16.sp,
+                    modifier = Modifier.semantics { contentDescription = cdRisky },
+                )
+            }
+        }
+    }
+}
+
+/** The walk's own row: where it stands, and the way to the next waiting
+ *  agent without answering. */
+@Composable
+private fun ApprovalNextRow(position: Int, total: Int, onNext: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = Air.TOUCH_DP.dp)
+            .clickable(onClick = onNext)
+            .padding(vertical = 4.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.approval_walk_of, position, total),
+            color = LocalPalette.current.muted,
+            fontSize = Air.META_SP.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = stringResource(R.string.approval_walk_next),
+            color = LocalPalette.current.accent,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
         )
     }
 }

@@ -268,4 +268,25 @@ class WorkspacesModelTest {
     fun a_workspace_with_no_agents_goes_to_the_honest_empty_list() {
         assertEquals(WorkspacesModel.WorkspaceEntry.AgentList, WorkspacesModel.workspaceEntry(emptyList()))
     }
+
+    // --- needsYouByWorkspace (T31, S32b) -----------------------------------------
+
+    @Test
+    fun `the needs-you count per workspace is the blocked agents of that workspace`() {
+        val all = listOf(
+            agent("p1", "w1F").copy(status = AgentStatusDto.BLOCKED),
+            agent("p2", "w1F").copy(status = AgentStatusDto.BLOCKED),
+            agent("p3", "wN").copy(status = AgentStatusDto.WORKING),
+        )
+        assertEquals(mapOf("w1F" to 2), WorkspacesModel.needsYouByWorkspace(all))
+    }
+
+    @Test
+    fun `no blocked agents means no needs-you count anywhere`() {
+        assertEquals(emptyMap<String, Int>(), WorkspacesModel.needsYouByWorkspace(emptyList()))
+        assertEquals(
+            emptyMap<String, Int>(),
+            WorkspacesModel.needsYouByWorkspace(listOf(agent("p1", "w1F").copy(status = AgentStatusDto.DONE))),
+        )
+    }
 }

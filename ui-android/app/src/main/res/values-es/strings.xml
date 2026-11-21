@@ -122,6 +122,8 @@
     <string name="ws_no_permission">Sin permiso para abrir ese directorio en el host: %1$s</string>
     <string name="ws_is_git">repositorio git</string>
     <string name="ws_not_git">no es un repositorio git — se puede agregar igual</string>
+    <string name="ws_needs_you_one">1 te necesita</string>
+    <string name="ws_needs_you_many">%1$d te necesitan</string>
     <!-- T27 (S30-3): el `+` recorre los discos y las carpetas de la máquina -->
     <string name="ws_browse_title">Elegí la carpeta</string>
     <string name="ws_browse_choose">Usar esta carpeta</string>
@@ -140,6 +142,23 @@
     <string name="inbox_group_done">Terminado</string>
     <string name="inbox_group_working">Trabajando</string>    <string name="inbox_group_unknown">Desconocido</string>
     <string name="inbox_group_count">%1$s \u00B7 %2$d</string>
+    <!-- T31 (S32b): tablero de aprobaciones. El conteo es uno solo (la
+         píldora); el bloque muestra la pregunta, el comando y las opciones
+         tal como los muestra el panel; lo arriesgado se sostiene hasta un
+         segundo toque. Voseo rioplatense. -->
+    <string name="approval_pill_one">1 te necesita</string>
+    <string name="approval_pill_many">%1$d te necesitan</string>
+    <string name="cd_approval_pill">Recorré los agentes que te esperan</string>
+    <string name="approval_command">Comando:</string>
+    <string name="approval_case_empty">El panel está vacío ahora: nada que leer.</string>
+    <string name="approval_case_no_options">Este panel no se lee como una pregunta con opciones numeradas.</string>
+    <string name="approval_case_no_question">Las opciones están, pero la línea de la pregunta no se lee.</string>
+    <string name="approval_answer_manually">Respondelo en el panel con sus propias teclas.</string>
+    <string name="approval_hold_again">Tocá otra vez para enviar</string>
+    <string name="cd_approval_risky">Arriesgado: esta respuesta se sostiene hasta un segundo toque</string>
+    <string name="approval_walk_of">%1$d de %2$d</string>
+    <string name="approval_walk_next">Siguiente ›</string>
+    <string name="approval_send_error">La respuesta no llegó al panel: %1$s</string>
     <string name="inbox_no_agents">No hay agentes corriendo en este host ahora mismo.</string>
     <string name="inbox_interrupted_title">Conexión interrumpida.</string>
     <string name="inbox_interrupted_suffix">%1$s — lo que se ve en pantalla es lo último que se recibió.</string>
