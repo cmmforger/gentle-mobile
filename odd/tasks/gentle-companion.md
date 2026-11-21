@@ -805,3 +805,16 @@ layer; the decision tests pass unmodified.
 same desktop TUI attached throughout and no change on our side. So "never reflows while the desktop is attached" was too
 strong: the arbitration flips with daemon state we do not control. The honest consequence is that wrap is a fallback for a
 state that comes and goes, not a permanent answer, and that the phone must keep detecting rather than assuming.
+
+**L33 (T33 closed — and the eyes earned their keep again):** The implementation passed 407 tests and built, but nobody had looked at a
+screen; the verification pass found a defect no test could: **`WorkspacesScreen` never painted its own background**, so in Paper it
+drew the hardcoded dark window colour behind dark-on-dark text and the title was nearly invisible — the classic "looks fine in the
+theme you designed it in". Fixed at the root column, and the screen is now correct in all four themes. Three smaller corrections the
+same pass caught: the theme picker's caption claimed the terminal follows the chrome (board `08` says the opposite — the terminal
+stays dark), the Gentleman-Paper card was missing its `NEW` tag, and Settings showed the *resolved* theme in the pinned row while
+Follow the phone was on instead of the stored pin (rendering keeps using the resolved theme; only the pin travels to the rows).
+Confirmed live: four themes listed with Cute as default, Paper persists across a force-stop, Follow the phone does dark→Cute and
+light→Paper and stays pinned when off, settings scrolls to the last card and both actions, and the session's send reaches the pane
+(send glyph, composer clears). Environment, reported not papered over: `sshd` on port 22 was not listening during that pass (the
+human had stopped it), so the worker used the task's own sshd on 2222 and stopped it after; `pi` failed OAuth as L30 predicts, so the
+approval grouping was verified structurally only. Commits `ec65dc5` (implementation) and `7b2822f` (the fixes). Next: T31.
