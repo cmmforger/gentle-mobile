@@ -141,7 +141,6 @@ class WrapGuardTest {
     fun `nothing cropped offers nothing and the 1-1 grid stays as it is`() {
         assertNull(WrapGuard.noticePlan(cropped = false, mode = WrapGuard.Fallback.FLAT, readLimited = false))
     }
-
     @Test
     fun `the cropped notice offers wrap as the primary action and the whole pane as the exact-layout fallback`() {
         val plan = WrapGuard.noticePlan(
@@ -184,6 +183,31 @@ class WrapGuardTest {
         )
         assertEquals(CropVoice.State.LIMITED, plan?.sentence)
         assertTrue(plan?.actions?.isEmpty() == true)
+    }
+
+    // --- the automatic default (T36): wrap engages on its own when cropped ------
+
+    @Test
+    fun `a cropped flat pane engages wrap on its own`() {
+        assertEquals(true, WrapGuard.autoWrap(cropped = true, wrapMode = false, declined = false))
+    }
+
+    @Test
+    fun `a pane that fits never engages wrap`() {
+        assertNull(WrapGuard.autoWrap(cropped = false, wrapMode = false, declined = false))
+    }
+
+    @Test
+    fun `a declined crop keeps the sharp grid until the pane fits again`() {
+        assertNull(WrapGuard.autoWrap(cropped = true, wrapMode = false, declined = true))
+        // Once the host stops cropping, the decline is forgotten and the
+        // automatic default stands again.
+        assertNull(WrapGuard.autoWrap(cropped = false, wrapMode = false, declined = true))
+    }
+
+    @Test
+    fun `wrap already on needs no second decision`() {
+        assertNull(WrapGuard.autoWrap(cropped = true, wrapMode = true, declined = false))
     }
 
     // --- the copy, per state ---------------------------------------------------

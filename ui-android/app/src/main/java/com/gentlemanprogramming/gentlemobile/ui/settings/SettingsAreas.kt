@@ -12,6 +12,7 @@ enum class SettingsArea {
     LANGUAGE,
     TYPEFACE,
     TERMINAL_FONT,
+    NOTIFICATIONS,
     ABOUT,
 }
 
@@ -21,6 +22,15 @@ enum class SettingsRow {
     PINNED_THEME,
 }
 
+/** The rows the Security card carries (T36): what a person can act on —
+ *  the device key, the saved hosts, the biometric gate and host pinning. */
+enum class SecurityRow {
+    DEVICE_KEY,
+    SAVED_HOSTS,
+    BIOMETRIC,
+    PINNING,
+}
+
 object SettingsAreas {
     val order: List<SettingsArea> = listOf(
         SettingsArea.SECURITY,
@@ -28,11 +38,19 @@ object SettingsAreas {
         SettingsArea.LANGUAGE,
         SettingsArea.TYPEFACE,
         SettingsArea.TERMINAL_FONT,
+        SettingsArea.NOTIFICATIONS,
         SettingsArea.ABOUT,
     )
 
     val appearanceRows: List<SettingsRow> = listOf(
         SettingsRow.FOLLOW_PHONE,
         SettingsRow.PINNED_THEME,
+    )
+
+    val securityRows: List<SecurityRow> = listOf(
+        SecurityRow.DEVICE_KEY,
+        SecurityRow.SAVED_HOSTS,
+        SecurityRow.BIOMETRIC,
+        SecurityRow.PINNING,
     )
 }

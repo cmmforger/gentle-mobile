@@ -163,6 +163,11 @@ import androidx.compose.ui.res.stringResource
 import com.gentlemanprogramming.gentlemobile.ui.sessions.ResumedSessionScreen
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesScreen
+import com.gentlemanprogramming.gentlemobile.ui.hosts.HostsModel
+import com.gentlemanprogramming.gentlemobile.ui.hosts.HostRowModel
+import com.gentlemanprogramming.gentlemobile.ui.hosts.HostScreenModel
+import com.gentlemanprogramming.gentlemobile.ui.hosts.HostScreenState
+import com.gentlemanprogramming.gentlemobile.ui.hosts.HostRowState
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsScreen
@@ -304,6 +309,16 @@ class MainActivity : FragmentActivity() {
             } else {
                 false
             }
+        // Debug-only, per-launch preview of the hosts work (S34): the live
+        // list's rows and one host's own screen, on fixture hosts, so the
+        // screens behind a live connection can be looked at. Same gate as
+        // wrap_preview — absent in release, view layer only.
+        val hostsPreview =
+            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                intent?.getBooleanExtra("hosts_preview", false) == true
+            } else {
+                false
+            }
         setContent {
             val themeStore = remember {
                 ThemeStore(SharedPreferencesStore(this@MainActivity))
@@ -365,6 +380,8 @@ class MainActivity : FragmentActivity() {
                     com.gentlemanprogramming.gentlemobile.ui.terminal.FixtureTerminal(
                         debugInfo = showFixtureDebug,
                     )
+                } else if (hostsPreview) {
+                    HostsPreview()
                 } else {
                     // The identity key lives in app-private storage now. The
                     // legacy external copy (the old adb-push path) is migrated
@@ -710,10 +727,21 @@ private class SessionUi {
     var mirrorCols by mutableStateOf(0)
 
     /** Wrap mode (S32a, T30): the cropped pane's text re-flowed to the
-     *  card's own columns, readable. Never the default: the sharp 1:1
-     *  grid stays until the human taps wrap, and wrap leaves on its own
-     *  when the host stops cropping (no typing). */
+     *  card's own columns, readable. T36: it is also the AUTOMATIC default
+     *  — when a confirmed crop is measured and wrap is off, it engages on
+     *  its own (WrapGuard.autoWrap); the sharp 1:1 grid stays what happens
+     *  when the pane fits, and wrap leaves on its own then too. */
     var wrapMode by mutableStateOf(false)
+
+    /** The user declined wrap by returning to 1:1 themselves: the automatic
+     *  default holds off until the pane fits again, so it never fights
+     *  their own choice (T36, WrapGuard.autoWrap). */
+    var wrapDeclined by mutableStateOf(false)
+
+    /** T36: this session view shows a pane that runs no agent — the phone
+     *  shows and keys it, and the composer is replaced by one honest line
+     *  (the daemon refuses prompts on non-agent panes, measured). */
+    var barePane by mutableStateOf(false)
 
     /** The phone's own 1:1 grid the fallback returns to, captured at claim
      *  decision time (the card's derived columns). */
@@ -738,6 +766,7 @@ private class SessionUi {
         wholePane = false
         mirrorCols = 0
         wrapMode = false
+        wrapDeclined = false
         cropNotice = false
         widestCells = 0
     }
@@ -790,7 +819,7 @@ private class SessionUi {
 }
 
 /** The screens reachable from the Pair flow; the design shows back buttons. */
-private enum class Route { Main, Settings, Themes, Sessions, StartSession, Resumed, Workspaces }
+private enum class Route { Main, Settings, Themes, Host, Sessions, StartSession, Resumed, Workspaces }
 
 /** The words a resume or a prompt failure shows: typed refusals keep their
  *  exact message (the core's Display carries the reason), anything else
@@ -1299,9 +1328,12 @@ fun ConnectScreen(
                 }
             }
             // S24-4: the host list is the home screen — after a disconnect
-            // the app shows the saved hosts, not the Pair form.
+            // the app shows the saved hosts, not the Pair form. The host's
+            // own screen (S34) may be where the disconnect came from: it
+            // falls back to the list too.
             screen.ui = UiState.Hosts
             screen.machine.reset()
+            route = Route.Main
         }
         // S18: disconnecting releases any advisory lease this device holds —
         // a dead link must not keep a session claimed.
@@ -1423,6 +1455,29 @@ fun ConnectScreen(
         return
     }
 
+    // S34 (T35): one saved host's own screen, reached by tapping it in the
+    // hosts list. It carries that host's own things — Workspaces, Session
+    // history, the connection state and the disconnect action — so the list
+    // itself stays a list. Only a host the app knows is live opens it; for
+    // a machine that is not connected the row still connects first, as it
+    // always did.
+    if (route == Route.Host) {
+        val liveEntry = HostsModel.liveEntry(screen.hosts, host, port)
+        if (screen.ui is UiState.Connected && liveEntry != null) {
+            HostScreen(
+                entry = liveEntry,
+                state = HostsModel.hostScreen(screen.machine.state),
+                onBack = { route = Route.Main },
+                onOpenWorkspaces = { route = Route.Workspaces },
+                onOpenSessions = { route = Route.Sessions },
+                onDisconnect = { disconnectLive() },
+            )
+            return
+        }
+        // No live connection behind the route: back to the host list.
+        route = Route.Main
+    }
+
     // T17a (S15/S18): the host's Gentle Shell sessions, listed over SFTP
     // and guarded by the advisory lease. Reached from the Nodes screen.
     if (route == Route.Sessions) {
@@ -1490,7 +1545,9 @@ fun ConnectScreen(
                 },
                 onBack = {
                     releaseHeldLease(screen)
-                    route = Route.Main
+                    // The sessions screen opens from the host's own screen
+                    // (S34); back returns there.
+                    route = Route.Host
                 },
             )
             return
@@ -1579,8 +1636,9 @@ fun ConnectScreen(
                 onBack = {
                     // Leaving the screen keeps the list cached in the state:
                     // re-entering re-reads it, but a mid-add pause does not
-                    // lose the work.
-                    route = Route.Main
+                    // lose the work. Workspaces opens from the host's own
+                    // screen (S34); back returns there.
+                    route = Route.Host
                 },
             )
             return
@@ -2000,6 +2058,10 @@ fun ConnectScreen(
                                 refreshSavedHosts()
                                 screen.machine.onLive()
                                 screen.ui = UiState.Connected(connection, snapshot = null)
+                                // S34: connecting first, then its screen — a
+                                // successful connect opens that host's own
+                                // screen, where its things live.
+                                route = Route.Host
                                 // T15 (S11): the foreground service keeps the
                                 // SSH link alive in the background, and the
                                 // slow alert poller watches for transitions.
@@ -2847,44 +2909,13 @@ fun ConnectScreen(
                         onOpenAgent = { openAgentSession(current, it) },
                     )
                 } else {
-                    // --- 02-nodes.html: hosts as hairline rows on one ---
-                    // --- surface, state as a plain word, agents count ---
-                    // --- for context, the row is the entry point into ---
-                    // --- the agent list.                              ---
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        // The badge must never claim a live link the machine
-                        // does not have: the word comes from the supervision
-                        // state, not from the fact that this branch renders.
-                        val stateWord = when (screen.machine.state) {
-                            is SupervisionState.Interrupted ->
-                                stringResource(R.string.nodes_state_interrupted)
-                            is SupervisionState.Failed ->
-                                stringResource(R.string.nodes_state_failed)
-                            is SupervisionState.Connecting ->
-                                stringResource(R.string.nodes_state_connecting)
-                            else -> stringResource(R.string.nodes_state_connected)
-                        }
-                        Text(
-                            text = "$stateWord · $session",
-                            color = if (screen.machine.state is SupervisionState.Connected) {
-                                LocalPalette.current.accent
-                            } else {
-                                LocalPalette.current.error
-                            },
-                            fontSize = 11.sp,
-                            letterSpacing = 0.8.sp,
-                        )
-                        Text(
-                            text = stringResource(R.string.nodes_disconnect),
-                            color = LocalPalette.current.muted,
-                            fontSize = 11.sp,
-                            modifier = Modifier.clickable { disconnectLive() },
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
+                    // --- 02-nodes.html + S34: the hosts screen is a    ---
+                    // --- clean list: one hairline row per host, the    ---
+                    // --- live one first, Rename on each, Add as the    ---
+                    // --- one accent action. Workspaces, Session        ---
+                    // --- history, the connection state and the         ---
+                    // --- disconnect action live inside the host's      ---
+                    // --- own screen (Route.Host).                      ---
                     val snapshot = current.snapshot
                     if (snapshot == null) {
                         Text(
@@ -2898,118 +2929,38 @@ fun ConnectScreen(
                     // its rows are local data (S24-4), and only the agent
                     // count used to need the host's answer.
                     Text(
-                            text = stringResource(R.string.nodes_your_hosts),
-                            color = MaterialTheme.colorScheme.onBackground,
-                            fontSize = 22.sp,
-                            lineHeight = 26.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        // S28-4: one place per thing. The connected host's
-                        // own surfaces live INSIDE its section — its name,
-                        // its workspaces, its session history — never as
-                        // siblings in a flat top-level list, and never the
-                        // projects again: the workspace screen already lists
-                        // them, so a row here opens it and lists nothing.
-                        screen.hosts.firstOrNull { entry ->
-                            entry.host.equals(host.trim(), ignoreCase = true) &&
-                                entry.port.trim() == port.trim()
-                        }?.let { liveEntry ->
-                            // The connected host leads its section: name,
-                            // state, rename — but no navigation row opening
-                            // a duplicate agent list (S28-4: the workspace
-                            // screen already does that).
-                            Row(
-                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Row {
-                                        Text(
-                                            text = liveEntry.name,
-                                            color = MaterialTheme.colorScheme.onBackground,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            text = if (interrupted != null) {
-                                                stringResource(R.string.nodes_state_row_interrupted)
-                                            } else {
-                                                stringResource(R.string.nodes_state_row_connected)
-                                            },
-                                            color = if (interrupted == null) {
-                                                LocalPalette.current.accent
-                                            } else {
-                                                LocalPalette.current.muted
-                                            },
-                                            fontSize = 11.sp,
-                                            letterSpacing = 0.5.sp,
-                                        )
-                                    }
-                                    Text(
-                                        text = "${liveEntry.user}@${liveEntry.host}:${liveEntry.port}",
-                                        color = LocalPalette.current.muted,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Text(
-                                    text = stringResource(R.string.hosts_rename),
-                                    color = LocalPalette.current.muted,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier
-                                        .clickable {
-                                            renameTarget = liveEntry
-                                            renameText = liveEntry.name
-                                        }
-                                        .padding(start = 12.dp, top = 12.dp, bottom = 12.dp),
-                                )
+                        text = stringResource(R.string.nodes_your_hosts),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 22.sp,
+                        lineHeight = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    val rows = HostsModel.listRows(
+                        screen.hosts,
+                        live = HostsModel.liveEntry(screen.hosts, host, port),
+                        liveState = if (interrupted != null) {
+                            HostScreenState.Interrupted
+                        } else {
+                            HostScreenState.Connected
+                        },
+                    )
+                    HostRows(
+                        rows = rows,
+                        onOpen = { row ->
+                            if (row.state == HostRowState.Saved) {
+                                connectTo(row.entry)
+                            } else {
+                                route = Route.Host
                             }
-                            // The host's own surfaces, nested under it — a
-                            // second host brings its own.
-                            Column(Modifier.padding(start = 12.dp)) {
-                                NodeRow(
-                                    name = stringResource(R.string.nodes_workspaces),
-                                    state = null,
-                                    meta = stringResource(R.string.nodes_workspaces_sub),
-                                    onOpen = { route = Route.Workspaces },
-                                )
-                                NodeRow(
-                                    name = stringResource(R.string.nodes_session_history),
-                                    state = null,
-                                    meta = stringResource(R.string.nodes_session_history_sub),
-                                    onOpen = { route = Route.Sessions },
-                                )
-                            }
-                        }
-                        // The other saved machines, in the order they were
-                        // added. Tapping one switches: the live link goes
-                        // down cleanly first.
-                        val otherHosts = screen.hosts.filter { entry ->
-                            !(entry.host.equals(host.trim(), ignoreCase = true) &&
-                                entry.port.trim() == port.trim())
-                        }
-                        if (otherHosts.isNotEmpty()) {
-                            GroupLabel(stringResource(R.string.nodes_other_hosts))
-                        }
-                        otherHosts.forEach { entry ->
-                            NodeRow(
-                                name = entry.name,
-                                state = stringResource(R.string.nodes_state_row_saved),
-                                meta = "${entry.user}@${entry.host}:${entry.port}",
-                                onOpen = { connectTo(entry) },
-                                renameLabel = stringResource(R.string.hosts_rename),
-                                onRename = {
-                                        renameTarget = entry
-                                        renameText = entry.name
-                                    },
-                            )
-                        }
-                        // S26-5: one small surface for the new name.
-                        renameTarget?.let { target ->
+                        },
+                        onRename = { entry ->
+                            renameTarget = entry
+                            renameText = entry.name
+                        },
+                    )
+                    // S26-5: one small surface for the new name.
+                    renameTarget?.let { target ->
                             RenameHostDialog(
                                 title = stringResource(R.string.hosts_rename_title),
                                 value = renameText,
@@ -3069,19 +3020,18 @@ fun ConnectScreen(
                         fontSize = 13.sp,
                     )
                 } else {
-                    screen.hosts.forEach { entry ->
-                        NodeRow(
-                            name = entry.name,
-                            state = stringResource(R.string.nodes_state_row_saved),
-                            meta = "${entry.user}@${entry.host}:${entry.port}",
-                            onOpen = { connectTo(entry) },
-                            renameLabel = stringResource(R.string.hosts_rename),
-                            onRename = {
-                                        renameTarget = entry
-                                        renameText = entry.name
-                                    },
-                        )
-                    }
+                    HostRows(
+                        rows = HostsModel.listRows(
+                            screen.hosts,
+                            live = null,
+                            liveState = HostScreenState.Unconnected,
+                        ),
+                        onOpen = { row -> connectTo(row.entry) },
+                        onRename = { entry ->
+                            renameTarget = entry
+                            renameText = entry.name
+                        },
+                    )
                     // S26-5: the same one-surface rename, on this list too.
                     renameTarget?.let { target ->
                         RenameHostDialog(
@@ -3930,6 +3880,17 @@ private fun scheduleCropCheck(
                     // on its own, and 1:1 shows the pane whole with no typing.
                     if (sessionUi.wrapMode && WrapGuard.wrapDone(widest, grantedCols)) {
                         sessionUi.wrapMode = false
+                        // The decline held off while the pane stayed cropped;
+                        // once it fits again the automatic default stands.
+                        sessionUi.wrapDeclined = false
+                    }
+                    // T36: wrap is the automatic default when the granted grid
+                    // crops wider pane content — no extra tap. A decline the
+                    // user made by returning to 1:1 holds until the pane fits.
+                    val auto = WrapGuard.autoWrap(sessionUi.cropNotice, sessionUi.wrapMode, sessionUi.wrapDeclined)
+                    if (auto == true) {
+                        Log.i(TAG, "wrap auto-engaged: widest=$widest granted=$grantedCols")
+                        sessionUi.wrapMode = true
                     }
                 }
             }
@@ -5659,6 +5620,190 @@ private fun NodeRow(
             Spacer(Modifier.width(8.dp))
         }
         Text(text = "›", color = LocalPalette.current.muted, fontSize = 15.sp)
+    }
+}
+
+/** The hairline between host rows (board 02): the hosts are rows separated
+ *  by a fine line on one surface, never nested cards. */
+@Composable
+private fun RowHairline() {
+    Spacer(
+        Modifier
+            .fillMaxWidth()
+            .height(Air.HAIRLINE_DP.dp)
+            .background(LocalPalette.current.line),
+    )
+}
+
+/** The hosts list's rows (S34): one row per host, a hairline between rows
+ *  (board 02), the state as one word — connected and interrupted in the
+ *  accent, saved quiet. Both the live and the unconnected list render the
+ *  same rows this way. */
+@Composable
+private fun HostRows(
+    rows: List<HostRowModel>,
+    onOpen: (HostRowModel) -> Unit,
+    onRename: (SavedHostEntry) -> Unit,
+) {
+    rows.forEachIndexed { index, row ->
+        NodeRow(
+            name = row.entry.name,
+            state = when (row.state) {
+                HostRowState.Connected -> stringResource(R.string.nodes_state_row_connected)
+                HostRowState.Interrupted -> stringResource(R.string.nodes_state_row_interrupted)
+                HostRowState.Saved -> stringResource(R.string.nodes_state_row_saved)
+            },
+            meta = HostsModel.address(row.entry),
+            stateAccent = row.state != HostRowState.Saved,
+            onOpen = { onOpen(row) },
+            renameLabel = stringResource(R.string.hosts_rename),
+            onRename = { onRename(row.entry) },
+        )
+        if (index < rows.size - 1) {
+            RowHairline()
+        }
+    }
+}
+
+/** One saved host's own screen (S34, T35): everything that host owns lives
+ *  here instead of the hosts list — its name and address, the connection
+ *  state in one word, Workspaces and Session history as rows, and the
+ *  disconnect action while a link may be up. Where the list shows every
+ *  machine, this screen is one machine's place. */
+@Composable
+private fun HostScreen(
+    entry: SavedHostEntry,
+    state: HostScreenModel,
+    onBack: () -> Unit,
+    onOpenWorkspaces: () -> Unit,
+    onOpenSessions: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        val backToHosts = stringResource(R.string.cd_back_to_hosts)
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(
+                text = "‹",
+                color = LocalPalette.current.accent,
+                fontSize = 20.sp,
+                modifier = Modifier
+                    .clickable(onClick = onBack)
+                    .semantics { contentDescription = backToHosts }
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = entry.name,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = Air.TITLE_SP.sp,
+                lineHeight = (Air.TITLE_SP * Air.TITLE_LINE_HEIGHT).sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Text(
+            text = HostsModel.address(entry),
+            color = LocalPalette.current.muted,
+            fontSize = Air.META_SP.sp,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 44.dp),
+        )
+        Spacer(Modifier.height(Air.BETWEEN_CARDS_DP.dp))
+        Text(
+            text = when (state.state) {
+                HostScreenState.Unconnected -> stringResource(R.string.nodes_state_not_connected)
+                HostScreenState.Connecting -> stringResource(R.string.nodes_state_connecting)
+                HostScreenState.Connected -> stringResource(R.string.nodes_state_connected)
+                HostScreenState.Interrupted -> stringResource(R.string.nodes_state_interrupted)
+                HostScreenState.Failed -> stringResource(R.string.nodes_state_failed)
+            },
+            color = if (state.state == HostScreenState.Connected) {
+                LocalPalette.current.accent
+            } else if (state.state == HostScreenState.Interrupted) {
+                LocalPalette.current.muted
+            } else {
+                LocalPalette.current.error
+            },
+            fontSize = 11.sp,
+            letterSpacing = 0.8.sp,
+        )
+        if (state.disconnectVisible) {
+            Spacer(Modifier.height(4.dp))
+            val disconnectLabel = stringResource(R.string.nodes_disconnect)
+            Box(
+                modifier = Modifier
+                    .heightIn(min = Air.TOUCH_DP.dp)
+                    .clickable(onClick = onDisconnect)
+                    .semantics { contentDescription = disconnectLabel },
+                contentAlignment = androidx.compose.ui.Alignment.CenterStart,
+            ) {
+                Text(
+                    text = disconnectLabel,
+                    color = LocalPalette.current.muted,
+                    fontSize = 13.sp,
+                )
+            }
+        }
+        Spacer(Modifier.height(Air.BETWEEN_CARDS_DP.dp))
+        NodeRow(
+            name = stringResource(R.string.nodes_workspaces),
+            state = null,
+            meta = stringResource(R.string.nodes_workspaces_sub),
+            onOpen = onOpenWorkspaces,
+        )
+        RowHairline()
+        NodeRow(
+            name = stringResource(R.string.nodes_session_history),
+            state = null,
+            meta = stringResource(R.string.nodes_session_history_sub),
+            onOpen = onOpenSessions,
+        )
+    }
+}
+
+/** Debug-only (S34 capture): the live list's rows and one host's own screen
+ *  on fixture hosts, so what sits behind a live connection can be looked at
+ *  without touching any daemon. Never in release. */
+@Composable
+private fun HostsPreview() {
+    val fixtureHosts = listOf(
+        SavedHostEntry("Desktop", "100.96.18.28", "22", "erick"),
+        SavedHostEntry("Notebook", "100.96.18.29", "22", "erick"),
+        SavedHostEntry("pi-lab", "192.168.18.10", "2222", "erick"),
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.nodes_your_hosts),
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 22.sp,
+            lineHeight = 26.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(4.dp))
+        HostRows(
+            rows = HostsModel.listRows(
+                fixtureHosts,
+                live = fixtureHosts.first(),
+                liveState = HostScreenState.Connected,
+            ),
+            onOpen = {},
+            onRename = {},
+        )
+        Spacer(Modifier.height(24.dp))
+        HostScreen(
+            entry = fixtureHosts.first(),
+            state = HostScreenModel(HostScreenState.Connected),
+            onBack = {},
+            onOpenWorkspaces = {},
+            onOpenSessions = {},
+            onDisconnect = {},
+        )
     }
 }
 

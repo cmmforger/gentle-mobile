@@ -65,6 +65,74 @@ class SessionsModelTest {
         )
     }
 
+    // --- the row's true state word (T36: closed / running / leased) -------------
+
+    private fun stateSession(lease: LeaseViewDto, modified: Long) = SessionDto(
+        fileName = "f.jsonl",
+        sessionId = "id",
+        cwd = null,
+        lastModifiedEpochMs = modified.toULong(),
+        messageCount = null,
+        lease = lease,
+    )
+
+    @Test
+    fun a_quiet_session_with_no_live_lease_reads_closed() {
+        val now = 1_763_632_800_000L
+        assertEquals(
+            SessionsModel.RowState.CLOSED,
+            SessionsModel.rowState(stateSession(LeaseViewDto.OPEN, now - 86_400_000L), now),
+        )
+        // A dead claim is not a live one either: the row says closed; the
+        // sheet carries the take-over flow.
+        assertEquals(
+            SessionsModel.RowState.CLOSED,
+            SessionsModel.rowState(stateSession(LeaseViewDto.STALE, now - 86_400_000L), now),
+        )
+    }
+
+    @Test
+    fun a_session_the_host_wrote_moments_ago_reads_running() {
+        val now = 1_763_632_800_000L
+        assertEquals(
+            SessionsModel.RowState.RUNNING,
+            SessionsModel.rowState(stateSession(LeaseViewDto.OPEN, now - 60_000), now),
+        )
+        // Exactly at the window edge the session is already quiet.
+        assertEquals(
+            SessionsModel.RowState.CLOSED,
+            SessionsModel.rowState(stateSession(LeaseViewDto.OPEN, now - SessionsModel.RUNNING_WINDOW_MS), now),
+        )
+    }
+
+    @Test
+    fun a_live_lease_reads_leased_whichever_device_holds_it() {
+        val now = 1_763_632_800_000L
+        assertEquals(
+            SessionsModel.RowState.LEASED,
+            SessionsModel.rowState(stateSession(LeaseViewDto.HELD_HERE, now - 60_000), now),
+        )
+        assertEquals(
+            SessionsModel.RowState.LEASED,
+            SessionsModel.rowState(stateSession(LeaseViewDto.IN_USE_ELSEWHERE, now - 60_000), now),
+        )
+        // A live lease wins over recency: the row never calls a leased
+        // session "running".
+        assertEquals(
+            SessionsModel.RowState.LEASED,
+            SessionsModel.rowState(stateSession(LeaseViewDto.IN_USE_ELSEWHERE, now - 86_400_000L), now),
+        )
+    }
+
+    @Test
+    fun a_reclaimed_row_keeps_its_visible_word() {
+        val now = 1_763_632_800_000L
+        assertEquals(
+            SessionsModel.RowState.RECLAIMED,
+            SessionsModel.rowState(stateSession(LeaseViewDto.HELD_HERE, now - 60_000), now, reclaimed = true),
+        )
+    }
+
     // --- resume gate (T17b: the RPC lane exists; the lease still gates) ---------
 
     @Test

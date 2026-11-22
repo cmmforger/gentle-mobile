@@ -113,6 +113,8 @@ fun WorkspacesScreen(
         // The header never scrolls away (T27): the back chevron is the way
         // up — out of the browser, or off the screen — and S6 forbids a
         // gesture-only way back. Only the body below it scrolls.
+        // T36: the header is the back chevron alone — the "one device at a
+        // time" line was noise (S34 round).
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
@@ -140,12 +142,6 @@ fun WorkspacesScreen(
                 )
             }
             Spacer(Modifier.weight(1f))
-            Text(
-                text = stringResource(R.string.hist_one_device),
-                color = p.muted,
-                fontSize = 11.sp,
-                letterSpacing = 0.8.sp,
-            )
         }
         Spacer(Modifier.height(8.dp))
 

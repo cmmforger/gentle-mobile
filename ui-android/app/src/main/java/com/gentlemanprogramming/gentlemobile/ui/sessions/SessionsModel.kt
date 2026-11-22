@@ -16,6 +16,33 @@ import java.security.MessageDigest
  */
 object SessionsModel {
 
+    /** Past this many milliseconds since the file's last host write, a
+     *  session with no live lease reads `closed`; inside the window it
+     *  reads `running` — what the app actually knows (T36): the host
+     *  wrote the session moments ago, so something may still be driving
+     *  it, and the row never offers to open it. */
+    const val RUNNING_WINDOW_MS = 10 * 60_000L
+
+    /** The row's true state, what the app knows about one session: no live
+     *  lease and quiet → closed; no live lease but written moments ago →
+     *  running; a live lease (here or elsewhere) → leased; a reclaimed
+     *  takeover keeps its visible word. The sheet maps each state to its
+     *  honest action — nothing may offer a button that cannot work. */
+    enum class RowState { CLOSED, RUNNING, LEASED, RECLAIMED }
+
+    /** The pure row-state rule (T36). A live lease wins over recency: a
+     *  leased session is never called `running`. */
+    fun rowState(
+        session: SessionDto,
+        nowMs: Long,
+        reclaimed: Boolean = false,
+    ): RowState = when {
+        reclaimed -> RowState.RECLAIMED
+        session.lease == LeaseViewDto.HELD_HERE || session.lease == LeaseViewDto.IN_USE_ELSEWHERE -> RowState.LEASED
+        nowMs - session.lastModifiedEpochMs.toLong() < RUNNING_WINDOW_MS -> RowState.RUNNING
+        else -> RowState.CLOSED
+    }
+
     /** The loading state of the sessions list (S24-3): it must say why it
      *  can be slow — the host's session files are read over SSH — and past
      *  two seconds say so, so the state never reads as frozen. The

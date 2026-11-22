@@ -90,6 +90,7 @@
     <string name="nodes_state_row_connected">conectado</string>
     <string name="nodes_state_row_interrupted">interrumpido</string>
     <string name="nodes_state_row_saved">guardado</string>
+    <string name="nodes_state_not_connected">Sin conexión</string>
     <string name="hosts_add">Agregar un equipo</string>
     <string name="hosts_rename">Cambiar nombre</string>
     <string name="hosts_rename_title">Poné un nombre a este host</string>
@@ -205,19 +206,16 @@
     <string name="att_too_large">el archivo es muy grande: %1$s, el host acepta hasta %2$s</string>
 
     <!-- Historial de sesiones (las sesiones guardadas del host) -->
-    <string name="hist_back">Hosts</string>
-    <string name="hist_one_device">un dispositivo a la vez</string>
     <string name="hist_title">Historial de sesiones</string>
     <string name="hist_subtitle">%1$s@%2$s \u00B7 gentle shell</string>
     <string name="hist_listing">Leyendo los archivos de sesión por la conexión — un host con muchas sesiones puede tardar un poco.</string>
     <string name="hist_listing_slow">Sigue leyendo — los archivos de sesión del host se leen por la conexión. (%1$d s hasta ahora)</string>
     <string name="hist_list_error">No se pudieron listar las sesiones: %1$s</string>
     <string name="hist_empty">No hay sesiones en este directorio.</string>
-    <string name="hist_state_free">libre</string>
-    <string name="hist_state_held_here">abierta en este dispositivo</string>
+    <string name="hist_state_closed">cerrada</string>
+    <string name="hist_state_running">en marcha</string>
+    <string name="hist_state_leased">retenida</string>
     <string name="hist_state_reclaimed">recién recuperada</string>
-    <string name="hist_state_elsewhere">en uso en otro lado</string>
-    <string name="hist_state_stale">se puede tomar</string>
     <string name="hist_note_taken">La tomaste — este dispositivo ahora puede retomarla.</string>
     <string name="hist_note_released">Soltada — la sesión está libre otra vez.</string>
     <string name="hist_note_reclaimed">La sesión quedó a medio terminar — la tomaste y podés retomarla.</string>
@@ -229,18 +227,18 @@
     <string name="hist_sheet_last_write">Última escritura</string>
     <string name="hist_sheet_messages">Mensajes</string>
     <string name="hist_sheet_state">Estado de la sesión</string>
-    <string name="hist_state_free_detail">libre — ningún dispositivo la está usando</string>
+    <string name="hist_state_closed_detail">cerrada — ningún dispositivo la tiene</string>
+    <string name="hist_state_running_detail">en marcha — el host la escribió hace un rato</string>
     <string name="hist_state_held_here_detail">en uso en este dispositivo</string>
     <string name="hist_state_elsewhere_detail">en uso en otro dispositivo</string>
     <string name="hist_state_stale_detail">quedó a medio terminar — el otro dispositivo dejó de responder, podés tomarla</string>
     <string name="hist_sheet_dir_missing">sin registrar</string>
     <string name="hist_sheet_messages_too_many">demasiados para contarlos rápido</string>
     <string name="hist_resume">Retomar sesión</string>
-    <string name="hist_resume_ok">Retomar abre la sesión como quedó — este dispositivo la tiene ahora.</string>
-    <string name="hist_resume_take_first">Tomá la sesión primero — retomarla la abre para este dispositivo, y solo un dispositivo puede usarla a la vez.</string>
-    <string name="hist_resume_elsewhere">En uso en otro lado — otro dispositivo está usando esta sesión ahora mismo, así que no se puede abrir acá.</string>
-    <string name="hist_resume_stale">La sesión quedó a medio terminar en el host. Tomala primero, después retomala.</string>
+    <string name="hist_resume_elsewhere">En uso en otro lado — otro dispositivo la tiene ahora mismo, así que no se puede abrir acá.</string>
+    <string name="hist_running_note">El host la escribió hace un rato — algo puede seguirla usando, así que no se ofrece acá. Actualizá en un minuto si ya terminó.</string>
     <string name="hist_take">Tomar</string>
+    <string name="hist_take_note">Tomarla hace de este dispositivo su dueño — después Retomar la abre como quedó.</string>
     <string name="hist_release">Soltar</string>
 
     <!-- Iniciar una sesión (S24-5): repositorios con historial -->

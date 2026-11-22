@@ -92,6 +92,18 @@ object WrapGuard {
     fun wrapDone(widestCells: Int, grantedCols: Int): Boolean =
         grantedCols > 0 && widestCells in 1..grantedCols
 
+    /** The automatic default (T36): when the granted grid crops wider pane
+     *  content, wrap engages ON ITS OWN — no extra tap — while the sharp
+     *  1:1 grid stays what happens when the pane fits. `true` engages wrap,
+     *  `null` changes nothing. A decline the user made (the return to 1:1)
+     *  holds until the host stops cropping, so the automatic default never
+     *  fights the user's own choice; once nothing is cropped the decline
+     *  is forgotten (the caller resets it on [wrapDone]). */
+    fun autoWrap(cropped: Boolean, wrapMode: Boolean, declined: Boolean): Boolean? = when {
+        wrapMode || declined || !cropped -> null
+        else -> true
+    }
+
     /** One wrap action in the reserved slot: wrap as the primary action,
      *  the whole-pane exact-layout fallback, or the return to 1:1. */
     enum class NoticeAction { WRAP, WHOLE, BACK }
