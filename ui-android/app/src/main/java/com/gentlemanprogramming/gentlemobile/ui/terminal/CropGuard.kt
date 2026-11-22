@@ -90,8 +90,8 @@ object CropGuard {
      * re-fire the claim it came from. Callers pass this instead of the raw
      * card height to [CardSurface.derive] and [TerminalFit.fit].
      */
-    fun cardHeightForGrid(totalHeightPx: Float, density: Float): Float =
-        (totalHeightPx - NOTICE_SLOT_DP * density).coerceAtLeast(0f)
+    fun cardHeightForGrid(totalHeightPx: Float, density: Float, reserveNotice: Boolean = true): Float =
+        if (reserveNotice) (totalHeightPx - NOTICE_SLOT_DP * density).coerceAtLeast(0f) else totalHeightPx
 
     /** The one decision the session screen's claim effect makes. */
     data class Grid(val cols: Int, val rows: Int)

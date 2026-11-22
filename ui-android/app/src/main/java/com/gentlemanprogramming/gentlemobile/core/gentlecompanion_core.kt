@@ -729,6 +729,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_pane(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_tab(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_workspace(
@@ -809,6 +811,8 @@ internal object UniffiLib {
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_create_workspace(`ptr`: Long,`cwd`: RustBuffer.ByValue,`label`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_disconnect(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_focus_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_focus_tab(`ptr`: Long,`tabId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1059,6 +1063,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect() and 0xFFFF) != 59131) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_pane() and 0xFFFF) != 51085) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_tab() and 0xFFFF) != 25907) {
@@ -1641,6 +1648,15 @@ public interface CompanionConnectionInterface {
     fun `disconnect`()
     
     /**
+     * Focus one pane of the current workspace (the pane switcher, T36):
+     * the daemon's own `pane.focus {pane_id}`, the same switch tapping a
+     * pane in the herdr TUI does. Verified live on protocol 22: a shell
+     * pane is focusable too, and the surface stream follows, so the
+     * pane the phone sees and keys is the pane the human picked.
+     */
+    fun `focusPane`(`paneId`: kotlin.String)
+    
+    /**
      * Focus one tab of the current workspace (S28-1): the daemon's own
      * `tab.focus {tab_id}` on the request lane. Verified live on protocol
      * 22: a tab with no agent is focusable — the daemon answers
@@ -1905,6 +1921,27 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
     UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_disconnect(
         it,
         _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Focus one pane of the current workspace (the pane switcher, T36):
+     * the daemon's own `pane.focus {pane_id}`, the same switch tapping a
+     * pane in the herdr TUI does. Verified live on protocol 22: a shell
+     * pane is focusable too, and the surface stream follows, so the
+     * pane the phone sees and keys is the pane the human picked.
+     */
+    @Throws(CompanionException::class)override fun `focusPane`(`paneId`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_focus_pane(
+        it,
+        
+        FfiConverterString.lower(`paneId`),_status)
 }
     }
     

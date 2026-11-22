@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.height
@@ -219,7 +220,11 @@ fun SessionsScreen(
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            // T36: the screen is the route's root (the early return inside
+            // ConnectScreen never reaches the connect column), so the
+            // background is the theme's own and it fills the phone — not
+            // just the content's height (the dark window below the rows).
+            .fillMaxSize()
             .background(p.bg)
             .safeDrawingPadding()
             .verticalScroll(rememberScrollState())

@@ -209,4 +209,12 @@ class CropGuardTest {
         val height = CropGuard.cardHeightForGrid(totalHeightPx = 800f, density = 2f)
         assertTrue(height > 0f)
     }
+
+    @Test
+    fun `with no notice showing the slot is not taken from the card`() {
+        val reserved = CropGuard.cardHeightForGrid(1475f, 2.625f, reserveNotice = true)
+        val free = CropGuard.cardHeightForGrid(1475f, 2.625f, reserveNotice = false)
+        assertEquals(1475f, free, 0f)
+        assertTrue(free > reserved)
+    }
 }

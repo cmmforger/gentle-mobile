@@ -172,6 +172,10 @@
     <!-- S28-1: the host's refusal when a tab could not be focused -->
     <string name="session_tab_failed">The tab could not be focused: %1$s</string>    <string name="session_reading_pane">Reading the pane\u2026</string>
     <string name="session_pane_empty">(the pane shows no text right now)</string>
+    <!-- T36: the pane switcher — the strip on the card opens the workspace's pane sheet -->
+    <string name="session_panes">Panes</string>
+    <string name="session_pane_shell">shell</string>
+    <string name="session_bare_pane">This pane runs a shell — the keys below reach it. The phone prompts agents only.</string>
     <string name="session_pane_truncated">The host left out older rows.</string>
     <string name="session_no_camera_app">no camera app is available on this device</string>
     <string name="session_no_gallery_app">no gallery app is available on this device</string>
