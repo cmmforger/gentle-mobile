@@ -379,6 +379,8 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T32 | Design pass: artboards for the light "Paper" theme as a fourth choice, the airy type and spacing rules, and the approval block as content (question, exact command in mono, full-width option rows, risky answers marked) | S33 | design | — |
 | T33 | Implement the Paper theme as a fourth option with its tokens, and the air/typography pass across the existing screens | S33 | worker | — |
 | T35 | Move Workspaces and Session history out of the hosts list into each host's own screen, leaving the list to hosts only, Rename and Add | S34 | worker | — |
+| T37 | PTY lane in the core: open an SSH session with `request_pty(cols, rows)`, send `window_change` on resize, and expose one bidirectional byte stream — the mechanism a real terminal needs, proven with tests before any UI | S33 S34 | worker | — |
+| T38 | Terminal on screen: render that PTY stream with the Termux `terminal-emulator` engine (Apache-2.0, credited) inside our session screen, with our theme's terminal palette, running `herdr` inside it | S33 | worker | — |
 | T34 | Approval block inside the session (board `09` P2/P4): the same question, command and held answers while looking at the agent's pane, instead of only from the board | S32b | worker | — |
 | T31 | Approval board: agents grouped by what they need, the exact command before an approval, one-tap answers with a re-read before sending, risky answers held, one needs-you count everywhere | S32b | worker | — |
 | T29 | Honest crop: detect that the granted grid crops wider pane content, say it in one line, and offer the whole pane scaled as an explicit fallback; anchor every notice so it cannot change the derived grid and re-fire the claim | S31c | worker | — |
