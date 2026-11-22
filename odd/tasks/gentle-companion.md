@@ -830,3 +830,14 @@ approval grouping was verified structurally only. Commits `ec65dc5` (implementat
 **L35 (one correction from the phone test):** The human, using the 0.8.0 build, asked for one IA correction: the connected host's row carried
 *Workspaces* and *Session history* inline, which loaded the hosts screen and limited how many hosts fit. Those two cards move inside the host's
 own screen; the list keeps name, address, state, Rename and Add. Host renaming already works and stays as is. Recorded as S34/T35.
+
+**L36 (the terminal verdict: mirroring is the ceiling, and collie is the honest benchmark):** The human's judgement on the 0.8.0 build is
+that the terminal is unusable next to Termux, herdr and collie: small, cramped, not made for a phone. The cause is architectural, not
+cosmetic — every one of those either owns the PTY at phone size (Termux, herdr on a desktop) or refuses to draw a terminal at all
+(collie, ADR 0008: *"collie does not run a terminal emulator"*), while this app mirrors a 184-column grid rendered for the desktop and
+can only shrink, crop or re-flow it. Decision taken with the human: **stop mirroring for the terminal** and become the terminal — our own
+PTY over SSH sized to the phone, parsing VT locally, running **`herdr`'s TUI inside it** (the human chose herdr over a bare shell),
+keeping the herdr API lane for what it does well (board, approvals, agent state). First slice: PTY + local terminal with a shell, then
+herdr inside, then the terminal as a tab beside the board with today's wrap as the fallback. Also recorded: collie (MIT, PWA over the
+tailnet, no app store) is the honest benchmark for phone UX here and should be tried side by side before more of our own money goes into
+a terminal nobody can read.
