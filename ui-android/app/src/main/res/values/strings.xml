@@ -89,6 +89,7 @@
     <string name="nodes_state_row_connected">connected</string>
     <string name="nodes_state_row_interrupted">interrupted</string>
     <string name="nodes_state_row_saved">saved</string>
+    <string name="nodes_state_not_connected">Not connected</string>
     <string name="hosts_add">Add a host</string>
     <string name="hosts_rename">Rename</string>
     <string name="hosts_rename_title">Name this host</string>
@@ -171,6 +172,10 @@
     <!-- S28-1: the host's refusal when a tab could not be focused -->
     <string name="session_tab_failed">The tab could not be focused: %1$s</string>    <string name="session_reading_pane">Reading the pane\u2026</string>
     <string name="session_pane_empty">(the pane shows no text right now)</string>
+    <!-- T36: the pane switcher — the strip on the card opens the workspace's pane sheet -->
+    <string name="session_panes">Panes</string>
+    <string name="session_pane_shell">shell</string>
+    <string name="session_bare_pane">This pane runs a shell — the keys below reach it. The phone prompts agents only.</string>
     <string name="session_pane_truncated">The host left out older rows.</string>
     <string name="session_no_camera_app">no camera app is available on this device</string>
     <string name="session_no_gallery_app">no gallery app is available on this device</string>
@@ -204,19 +209,16 @@
     <string name="att_too_large">the file is too large: %1$s, the host accepts up to %2$s</string>
 
     <!-- Session history (the host\u2019s stored sessions) -->
-    <string name="hist_back">Nodes</string>
-    <string name="hist_one_device">one device at a time</string>
     <string name="hist_title">Session history</string>
     <string name="hist_subtitle">%1$s@%2$s \u00B7 gentle shell</string>
     <string name="hist_listing">Reading the session files over the connection — a host with many sessions can take a while.</string>
     <string name="hist_listing_slow">Still reading — the host\u2019s session files are being read over the connection. (%1$d s so far)</string>
     <string name="hist_list_error">The sessions could not be listed: %1$s</string>
     <string name="hist_empty">No sessions in this directory.</string>
-    <string name="hist_state_free">free</string>
-    <string name="hist_state_held_here">open on this device</string>
+    <string name="hist_state_closed">closed</string>
+    <string name="hist_state_running">running</string>
+    <string name="hist_state_leased">leased</string>
     <string name="hist_state_reclaimed">taken over just now</string>
-    <string name="hist_state_elsewhere">in use elsewhere</string>
-    <string name="hist_state_stale">can be taken over</string>
     <string name="hist_note_taken">You took it over — this device can now resume it.</string>
     <string name="hist_note_released">Released — the session is free again.</string>
     <string name="hist_note_reclaimed">The session was left unfinished — you took it over and can resume it.</string>
@@ -228,18 +230,18 @@
     <string name="hist_sheet_last_write">Last write</string>
     <string name="hist_sheet_messages">Messages</string>
     <string name="hist_sheet_state">Session state</string>
-    <string name="hist_state_free_detail">free — no device is using it</string>
+    <string name="hist_state_closed_detail">closed — no device has it</string>
+    <string name="hist_state_running_detail">running — the host wrote this session moments ago</string>
     <string name="hist_state_held_here_detail">in use on this device</string>
     <string name="hist_state_elsewhere_detail">in use on another device</string>
     <string name="hist_state_stale_detail">left unfinished — the other device stopped responding, you can take it over</string>
     <string name="hist_sheet_dir_missing">not recorded</string>
     <string name="hist_sheet_messages_too_many">too large to count cheaply</string>
     <string name="hist_resume">Resume session</string>
-    <string name="hist_resume_ok">Resuming opens the session as it was left — this device has it now.</string>
-    <string name="hist_resume_take_first">Take over the session first — resuming opens it for this device, and only one device may use it at a time.</string>
-    <string name="hist_resume_elsewhere">In use elsewhere — another device is using this session right now, so it must not be opened here.</string>
-    <string name="hist_resume_stale">The session was left unfinished on the host. Take it over first, then resume.</string>
+    <string name="hist_resume_elsewhere">In use elsewhere — another device holds this session right now, so it must not be opened here.</string>
+    <string name="hist_running_note">The host wrote this session moments ago — something may still be driving it, so it is not offered here. Refresh in a minute if it finished.</string>
     <string name="hist_take">Take over</string>
+    <string name="hist_take_note">Taking it makes this device its holder — then Resume opens it as it was left.</string>
     <string name="hist_release">Release</string>
 
     <!-- Start a session (S24-5): repositories with history -->

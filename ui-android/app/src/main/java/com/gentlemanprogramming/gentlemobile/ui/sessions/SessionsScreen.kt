@@ -3,19 +3,23 @@ package com.gentlemanprogramming.gentlemobile.ui.sessions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -29,6 +33,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.core.HostProfileDto
+import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
@@ -212,35 +220,42 @@ fun SessionsScreen(
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            // T36: the screen is the route's root (the early return inside
+            // ConnectScreen never reaches the connect column), so the
+            // background is the theme's own and it fills the phone — not
+            // just the content's height (the dark window below the rows).
+            .fillMaxSize()
+            .background(p.bg)
             .safeDrawingPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp),
+            .padding(horizontal = Air.SIDE_DP.dp)
+            .padding(top = Air.TOP_DP.dp),
     ) {
-        Row(
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                text = stringResource(R.string.hist_back),
-                color = p.accent,
-                fontSize = 13.sp,
+        // T36: the same back-button header every screen has — an accent
+        // chevron in a 44 dp touch target, the title below. The old text
+        // row named the screen it came from and carried the noise line
+        // beside it; both are gone.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val backCd = stringResource(R.string.cd_back)
+            Box(
                 modifier = Modifier
+                    .size(Air.TOUCH_DP.dp)
                     .clickable {
                         // Closing the screen releases the lease we hold (S18).
                         onBack()
                     }
-                    .padding(vertical = 12.dp),
-            )
-            Text(
-                text = stringResource(R.string.hist_one_device),
-                color = p.muted,
-                fontSize = 11.sp,
-                letterSpacing = 0.8.sp,
-            )
+                    .semantics { contentDescription = backCd },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_back_chevron),
+                    contentDescription = null,
+                    tint = p.accent,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         Text(
             text = stringResource(R.string.hist_title),
             color = MaterialTheme.colorScheme.onBackground,
@@ -306,12 +321,12 @@ fun SessionsScreen(
             )
             else -> sessions!!.forEach { session ->
                 val isHeldHere = heldLease?.sessionId == session.sessionId
-                val view = if (isHeldHere) LeaseViewDto.HELD_HERE else session.lease
                 val reclaimed = session.sessionId in reclaimedIds && isHeldHere
+                val row = SessionsModel.rowState(session, System.currentTimeMillis(), reclaimed)
                 SessionRow(
                     session = session,
-                    state = stateWord(view, reclaimed),
-                    isBlocked = view == LeaseViewDto.IN_USE_ELSEWHERE,
+                    state = stateWord(row),
+                    isBlocked = row == SessionsModel.RowState.LEASED && !isHeldHere,
                     onClick = { sheetFor = session },
                 )
             }
@@ -338,9 +353,12 @@ fun SessionsScreen(
     }
 
     sheetFor?.let { session ->
+        val isHeldHere = heldLease?.sessionId == session.sessionId
+        val row = SessionsModel.rowState(session, System.currentTimeMillis(), reclaimed = session.sessionId in reclaimedIds && isHeldHere)
         SessionSheet(
             session = session,
-            isHeldHere = heldLease?.sessionId == session.sessionId,
+            row = row,
+            isHeldHere = isHeldHere,
             onTake = { takeLease(session) },
             onRelease = { releaseHeld() },
             onResume = { sheetFor = null; onResume(session, sessionsDir) },
@@ -403,6 +421,7 @@ private fun SessionRow(
 @Composable
 private fun SessionSheet(
     session: SessionDto,
+    row: SessionsModel.RowState,
     isHeldHere: Boolean,
     onTake: () -> Unit,
     onRelease: () -> Unit,
@@ -410,8 +429,6 @@ private fun SessionSheet(
     onDismiss: () -> Unit,
 ) {
     val p = LocalPalette.current
-    val view = if (isHeldHere) LeaseViewDto.HELD_HERE else session.lease
-    val leaseReason = resumeReason(view, isHeldHere)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = p.surface,
@@ -449,60 +466,101 @@ private fun SessionSheet(
             )
             SheetField(
                 stringResource(R.string.hist_sheet_state),
-                when (view) {
-                    LeaseViewDto.OPEN -> stringResource(R.string.hist_state_free_detail)
-                    LeaseViewDto.HELD_HERE -> stringResource(R.string.hist_state_held_here_detail)
-                    LeaseViewDto.IN_USE_ELSEWHERE -> stringResource(R.string.hist_state_elsewhere_detail)
-                    LeaseViewDto.STALE -> stringResource(R.string.hist_state_stale_detail)
+                when (row) {
+                    SessionsModel.RowState.CLOSED ->
+                        if (session.lease == LeaseViewDto.STALE) {
+                            stringResource(R.string.hist_state_stale_detail)
+                        } else {
+                            stringResource(R.string.hist_state_closed_detail)
+                        }
+                    SessionsModel.RowState.RUNNING -> stringResource(R.string.hist_state_running_detail)
+                    SessionsModel.RowState.LEASED ->
+                        if (isHeldHere) {
+                            stringResource(R.string.hist_state_held_here_detail)
+                        } else {
+                            stringResource(R.string.hist_state_elsewhere_detail)
+                        }
+                    SessionsModel.RowState.RECLAIMED -> stringResource(R.string.hist_state_held_here_detail)
                 },
             )
             Spacer(Modifier.height(16.dp))
-            // The resume action (T17b, S15/S18): enabled only while this
-            // device holds the lease. The core re-checks the lease before
-            // spawning, so a stale screen can never open a held session.
-            Button(
-                onClick = onResume,
-                enabled = isHeldHere,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = p.accent,
-                    contentColor = p.bg,
-                    disabledContainerColor = p.surfaceRaised,
-                    disabledContentColor = p.textDisabled,
-                ),
-            ) {
-                Text(text = stringResource(R.string.hist_resume), fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = leaseReason ?: stringResource(R.string.hist_resume_ok),
-                color = p.muted,
-                fontSize = 12.sp,
-            )
-            Spacer(Modifier.height(12.dp))
-            TextButton(
-                onClick = if (isHeldHere) onRelease else onTake,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = if (isHeldHere) {
-                        stringResource(R.string.hist_release)
+            // One honest primary action per state (T36): a closed session is
+            // taken first (the lease is ours before any child exists, S18),
+            // a held one resumes, and a running or elsewhere-leased session
+            // gets a sentence instead of a button that cannot work.
+            when (row) {
+                SessionsModel.RowState.LEASED -> {
+                    if (isHeldHere) {
+                        Button(
+                            onClick = onResume,
+                            enabled = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = p.accent,
+                                contentColor = p.bg,
+                            ),
+                        ) {
+                            Text(text = stringResource(R.string.hist_resume), fontWeight = FontWeight.SemiBold)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = onRelease, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = stringResource(R.string.hist_release),
+                                color = p.accent,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     } else {
-                        stringResource(R.string.hist_take)
-                    },
-                    color = p.accent,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            if (!isHeldHere && view == LeaseViewDto.STALE) {
-                Text(
-                    text = stringResource(R.string.hist_note_reclaimed),
-                    color = p.muted,
-                    fontSize = 11.sp,
-                )
+                        Text(
+                            text = stringResource(R.string.hist_resume_elsewhere),
+                            color = p.muted,
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
+                SessionsModel.RowState.RUNNING -> {
+                    Text(
+                        text = stringResource(R.string.hist_running_note),
+                        color = p.muted,
+                        fontSize = 13.sp,
+                    )
+                }
+                SessionsModel.RowState.CLOSED, SessionsModel.RowState.RECLAIMED -> {
+                    Button(
+                        onClick = onTake,
+                        enabled = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = p.accent,
+                            contentColor = p.bg,
+                        ),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.hist_take),
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.hist_take_note),
+                        color = p.muted,
+                        fontSize = 12.sp,
+                    )
+                    if (session.lease == LeaseViewDto.STALE) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.hist_note_reclaimed),
+                            color = p.muted,
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
             }
         }
     }
@@ -539,27 +597,14 @@ private fun listingStatus(elapsedMs: Long): String =
         stringResource(R.string.hist_listing_slow, elapsedMs / 1000)
     }
 
-/** The row's state word, localized (the pure [SessionsModel.stateWord] rule). */
+/** The row's state word, localized — the true word for what the app knows
+ *  (T36): closed / running / leased, in both languages. */
 @Composable
-private fun stateWord(view: LeaseViewDto, reclaimed: Boolean = false): String = when (view) {
-    LeaseViewDto.OPEN -> stringResource(R.string.hist_state_free)
-    LeaseViewDto.HELD_HERE ->
-        if (reclaimed) stringResource(R.string.hist_state_reclaimed)
-        else stringResource(R.string.hist_state_held_here)
-    LeaseViewDto.IN_USE_ELSEWHERE -> stringResource(R.string.hist_state_elsewhere)
-    LeaseViewDto.STALE -> stringResource(R.string.hist_state_stale)
-}
-
-/** Why Resume is disabled for this row, localized (the pure
- *  [SessionsModel.resumeReason] rule); `null` when it may run. */
-@Composable
-private fun resumeReason(view: LeaseViewDto, isHeldHere: Boolean): String? {
-    if (isHeldHere) return null
-    return when (view) {
-        LeaseViewDto.OPEN, LeaseViewDto.HELD_HERE -> stringResource(R.string.hist_resume_take_first)
-        LeaseViewDto.IN_USE_ELSEWHERE -> stringResource(R.string.hist_resume_elsewhere)
-        LeaseViewDto.STALE -> stringResource(R.string.hist_resume_stale)
-    }
+private fun stateWord(row: SessionsModel.RowState): String = when (row) {
+    SessionsModel.RowState.CLOSED -> stringResource(R.string.hist_state_closed)
+    SessionsModel.RowState.RUNNING -> stringResource(R.string.hist_state_running)
+    SessionsModel.RowState.LEASED -> stringResource(R.string.hist_state_leased)
+    SessionsModel.RowState.RECLAIMED -> stringResource(R.string.hist_state_reclaimed)
 }
 
 /** Relative last-used time, localized (the pure [SessionsModel.relativeTime] rule). */

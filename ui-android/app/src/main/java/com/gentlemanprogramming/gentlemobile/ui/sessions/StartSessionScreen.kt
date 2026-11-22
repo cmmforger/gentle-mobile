@@ -95,12 +95,6 @@ fun StartSessionScreen(
                     .padding(vertical = 12.dp),
             )
             Spacer(Modifier.weight(1f))
-            Text(
-                text = stringResource(R.string.hist_one_device),
-                color = p.muted,
-                fontSize = 11.sp,
-                letterSpacing = 0.8.sp,
-            )
         }
         Spacer(Modifier.height(8.dp))
         Text(
