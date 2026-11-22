@@ -668,6 +668,27 @@ impl Connection {
         })
     }
 
+    /// Focus one pane (`pane.focus {pane_id}`, the pane switcher's own
+    /// switch, T36): the daemon's `PaneTarget` on the same request lane —
+    /// measured from `herdr api schema --json`, protocol 22, and verified
+    /// live: a shell pane is focusable, and the surface stream — which
+    /// renders the focused pane — follows, so the phone's visible pane
+    /// follows too.
+    pub fn pane_focus(&self, pane_id: &str) -> std::result::Result<(), crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_PANE_FOCUS,
+            crate::requests::pane_focus_params(pane_id),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_pane_focus(&value).map_err(crate::requests::HubError::Request)
+        })
+    }
+
     /// Re-render at a new surface size (S28-3): the grid the card's own
     /// geometry derived (cols × rows in cells) and the cell size it renders
     /// at, in pixels — the daemon needs the cell dimensions to reflow the

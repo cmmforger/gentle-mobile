@@ -1144,6 +1144,21 @@ impl CompanionConnection {
         connection.tab_focus(&tab_id).map_err(CompanionError::from)
     }
 
+    /// Focus one pane of the current workspace (the pane switcher, T36):
+    /// the daemon's own `pane.focus {pane_id}`, the same switch tapping a
+    /// pane in the herdr TUI does. Verified live on protocol 22: a shell
+    /// pane is focusable too, and the surface stream follows, so the
+    /// pane the phone sees and keys is the pane the human picked.
+    pub fn focus_pane(&self, pane_id: String) -> Result<(), CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        connection.pane_focus(&pane_id).map_err(CompanionError::from)
+    }
+
     /// Ask the daemon to re-render at a new surface size (S28-3): the grid
     /// the phone's terminal card derived from its own geometry, plus the
     /// cell size it renders at in pixels — the daemon needs the cell

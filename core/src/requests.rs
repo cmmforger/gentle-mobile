@@ -271,6 +271,33 @@ pub fn parse_tab_focus(response: &Value) -> std::result::Result<(), RequestError
     }
 }
 
+/// `pane.focus` parameters: the pane id (the daemon's `PaneTarget`, same
+/// schema as `pane.get`, protocol 22).
+pub fn pane_focus_params(pane_id: &str) -> Value {
+    json!({ "pane_id": pane_id })
+}
+
+/// Map a `pane.focus` reply: the daemon answers `pane_info`, the focused
+/// pane's own row — the same shape `pane.get` returns.
+pub fn parse_pane_focus(response: &Value) -> std::result::Result<(), RequestError> {
+    if let Some(refused) = RequestError::refused_from(response) {
+        return Err(refused);
+    }
+    let result_type = response
+        .get("result")
+        .and_then(|result| result.get("type"))
+        .and_then(Value::as_str);
+    match result_type {
+        Some("pane_info") => Ok(()),
+        Some(other) => Err(RequestError::BadResponse {
+            detail: format!("the pane focus reply was `{other}`, not `pane_info`"),
+        }),
+        None => Err(RequestError::BadResponse {
+            detail: "the pane focus reply has no result type".to_owned(),
+        }),
+    }
+}
+
 /// `worktree.list` parameters: one workspace id — the daemon inspects the
 /// git repository behind that workspace's panes. Sent **without**
 /// `trust_repository`: measured read-only, and the app must never silently
@@ -346,6 +373,7 @@ pub const METHOD_WORKSPACE_LIST: &str = "workspace.list";
 pub const METHOD_WORKSPACE_CREATE: &str = "workspace.create";
 pub const METHOD_WORKSPACE_FOCUS: &str = "workspace.focus";
 pub const METHOD_TAB_FOCUS: &str = "tab.focus";
+pub const METHOD_PANE_FOCUS: &str = "pane.focus";
 pub const METHOD_WORKTREE_LIST: &str = "worktree.list";
 
 /// One workspace as `workspace.list` reports it. Shapes measured live on
@@ -1265,6 +1293,47 @@ fn tab_focus_refusal_names_the_tab_code() {
     .expect_err("a refusal is an error");
     match error {
         RequestError::Refused { code, .. } => assert_eq!(code, "tab_not_found"),
+        other => panic!("expected RequestError::Refused, got {other:?}"),
+    }
+}
+
+#[test]
+fn pane_focus_params_carry_the_pane_id() {
+    let params = pane_focus_params("w1G:p2");
+    assert_eq!(params, json!({"pane_id": "w1G:p2"}));
+}
+
+#[test]
+fn pane_focus_accepts_the_pane_info_result() {
+    // Measured live: `herdr pane focus w1G:p2` answers `pane_info` with the
+    // focused pane's row; a shell pane is focusable, so the switcher can
+    // reach a pane no agent runs in.
+    let reply = json!({
+        "id": "companion-1",
+        "result": {
+            "type": "pane_info",
+            "pane": {
+                "pane_id": "w1G:p2", "workspace_id": "w1G", "tab_id": "w1G:t1",
+                "agent_status": "unknown"
+            }
+        }
+    });
+    assert!(parse_pane_focus(&reply).is_ok(), "pane_info is a focus");
+    let error = parse_pane_focus(&json!({"id": "x", "result": {"type": "ok"}}))
+        .expect_err("an unknown result shape is not a focus proof");
+    assert!(matches!(error, RequestError::BadResponse { .. }), "{error:?}");
+}
+
+#[test]
+fn pane_focus_refusal_names_the_pane_code() {
+    // The daemon's typed refusal for an unknown pane id.
+    let error = parse_pane_focus(&refused_response(
+        "pane_not_found",
+        "pane wZZZ:pX not found",
+    ))
+    .expect_err("a refusal is an error");
+    match error {
+        RequestError::Refused { code, .. } => assert_eq!(code, "pane_not_found"),
         other => panic!("expected RequestError::Refused, got {other:?}"),
     }
 }
