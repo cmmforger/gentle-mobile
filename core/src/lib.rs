@@ -26,6 +26,7 @@ pub mod error;
 pub mod paths;
 pub mod pin;
 pub mod profile;
+pub mod pty;
 pub mod requests;
 pub mod rpc;
 pub mod sessions;
