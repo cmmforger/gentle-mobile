@@ -849,3 +849,14 @@ keeping the herdr API lane for what it does well (board, approvals, agent state)
 herdr inside, then the terminal as a tab beside the board with today's wrap as the fallback. Also recorded: collie (MIT, PWA over the
 tailnet, no app store) is the honest benchmark for phone UX here and should be tried side by side before more of our own money goes into
 a terminal nobody can read.
+
+**L37 (T37 closed — the PTY lane exists and the size really travels):** `core/src/pty.rs` opens a session channel, requests a PTY with
+`xterm-256color` and the phone's `cols`/`rows`, sends `window-change` in place on resize, and exposes one bidirectional byte stream with
+the rules a terminal needs: a partial read reaches the caller at once, an oversized chunk is carried across reads, a closed channel
+reports end-of-stream once with the host's exit status, and a quiet stream can be cancelled without leaking the channel. Proven live over
+a real sshd: **`stty size: 31 rows x 97 cols (asked 31 x 97)`** — the geometry the phone asks for is the geometry the host's PTY has, which
+is the whole reason Termux reads well and mirroring a 184-column grid never can. 8 new tests over a fake, 187 core tests. Commit for this
+slice; T38 (the Termux engine drawing it with herdr inside) waits for the UI pass to release the phone files.
+**Two self-inflicted incidents, owned:** deleting scratch mid-flight removed the probe key and the session `TMPDIR` while this worker was
+using them — it fell back to the throwaway sshd on 2222 for the live proof and one test run failed transiently until the directory came back.
+Cleanup happens when nobody is working, and it is reported before, not after.
