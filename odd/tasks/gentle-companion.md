@@ -308,6 +308,12 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   structured activity view is the biggest piece and is built on the lane this app already has (`gentle-shell --mode rpc`
   gives structured transcript entries and dialogs), not on a new one.
 
+
+- **S34 — The hosts screen is a clean list; each host keeps its own things inside.** The human, testing on the phone: the connected
+  host's row was carrying *Workspaces* and *Session history* inline, which made the hosts screen heavy. Those two cards move **inside
+  the host's own screen** — the one you reach by tapping the host — so the list stays a list (name, `user@host:port`, state, Rename)
+  and more hosts fit. Hosts are already renameable and that does not change.
+
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -372,6 +378,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T30 | Wrap mode: re-wrap the pane's text to the phone's columns when the granted grid crops it, readable and colour-preserving where the read carries it, with the sharp 1:1 grid as the default and the whole pane kept as the exact-layout fallback | S32a | worker | — |
 | T32 | Design pass: artboards for the light "Paper" theme as a fourth choice, the airy type and spacing rules, and the approval block as content (question, exact command in mono, full-width option rows, risky answers marked) | S33 | design | — |
 | T33 | Implement the Paper theme as a fourth option with its tokens, and the air/typography pass across the existing screens | S33 | worker | — |
+| T35 | Move Workspaces and Session history out of the hosts list into each host's own screen, leaving the list to hosts only, Rename and Add | S34 | worker | — |
 | T34 | Approval block inside the session (board `09` P2/P4): the same question, command and held answers while looking at the agent's pane, instead of only from the board | S32b | worker | — |
 | T31 | Approval board: agents grouped by what they need, the exact command before an approval, one-tap answers with a re-read before sending, risky answers held, one needs-you count everywhere | S32b | worker | — |
 | T29 | Honest crop: detect that the granted grid crops wider pane content, say it in one line, and offer the whole pane scaled as an explicit fallback; anchor every notice so it cannot change the derived grid and re-fire the claim | S31c | worker | — |
@@ -819,3 +826,7 @@ light→Paper and stays pinned when off, settings scrolls to the last card and b
 (send glyph, composer clears). Environment, reported not papered over: `sshd` on port 22 was not listening during that pass (the
 human had stopped it), so the worker used the task's own sshd on 2222 and stopped it after; `pi` failed OAuth as L30 predicts, so the
 approval grouping was verified structurally only. Commits `ec65dc5` (implementation) and `7b2822f` (the fixes). Next: T31.
+
+**L35 (one correction from the phone test):** The human, using the 0.8.0 build, asked for one IA correction: the connected host's row carried
+*Workspaces* and *Session history* inline, which loaded the hosts screen and limited how many hosts fit. Those two cards move inside the host's
+own screen; the list keeps name, address, state, Rename and Add. Host renaming already works and stays as is. Recorded as S34/T35.
