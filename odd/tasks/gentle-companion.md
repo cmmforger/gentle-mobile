@@ -880,3 +880,16 @@ because Termux shows it and hiding it never helped; they suspect it caused some 
 module and its 19 tests are deleted, `pollSurface` stores the frame as it arrives, and nothing pads rows any more. This removes the heuristic that
 changed meaning when the bar's label flipped between idle and working, the four extra rows requested from the pane, and the blank band that the
 padding could leave at the top of the card.
+
+**L40 (0.9.0 shipped — the phone fixes and the pane shown whole):** The parked branch was completed and merged (`wip/t36-reported-bugs` → `main`,
+one delivery of ~2.2k authored lines, above the review slice — recorded here as such). What landed: the hosts list is a list and each host keeps
+Workspaces and Session history inside; session history has the back chevron, lost "one device at a time", and states that are true (running/closed
+instead of a blanket `libre`); the inert `1 2 3` chips are a real pane switcher backed by a new `pane.focus` in the core; wrap is the default for
+wide panes; the settings security section is trimmed; colours come from the active theme on every screen including session history; and the image
+attach error is fixed at the upload path. Then **S35**: the composer crop is deleted (not disabled) so the pane shows whole the way Termux shows it,
+and the notice slot is reserved only while a notice shows, which removes the dead band above the card without bringing back the claim
+oscillation it was protecting. Verified by the parent on the emulator, not by a report: clean hosts list, both cards inside the host, no dead band,
+the pane visible down to its composer rows and metrics. 439 JVM tests. Signed **0.9.0** (versionCode 9) in `~/Downloads`. Machine left clean:
+emulator killed, daemon back to the owner's eight workspaces (the cancelled worker's `t36b-ws` closed), screenshots and scratch deleted.
+Still open: **T38** (the Termux engine drawing our own PTY with herdr inside) and the collie comparison, which the owner wants to decide with both
+in hand.
