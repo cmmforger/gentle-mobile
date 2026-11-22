@@ -314,6 +314,13 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   the host's own screen** — the one you reach by tapping the host — so the list stays a list (name, `user@host:port`, state, Rename)
   and more hosts fit. Hosts are already renameable and that does not change.
 
+
+- **S35 — The composer stays visible; the crop goes (supersedes S29).** The human: *"se puede dejar la terminal con el waiting for input, como
+  lo tenía antes, ya que termux lo muestra y no hay problema, no es necesario ocultarlo. Quizás es uno de los problemas que también ha dado
+  en la app móvil"*. So the pane is shown **complete**, composer bar included: no detection by the bar's label, no prompt-row heuristic, no
+  extra rows requested, no blank padding. The whole `ComposerCrop` machinery and its tests are deleted rather than disabled, and the session
+  screen renders the frame exactly as the host drew it.
+
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -867,3 +874,9 @@ mid-verification: its work is committed as `5215c7b` on branch **`wip/t36-report
 lane committed and independent of that branch. **Nothing in that WIP is proven**: no build, no screenshots, no report — the worker was
 cancelled before any of it. Tonight's state: emulator dead, daemon back to the human's eight workspaces, no listener of ours, the scratch
 directory and the session's temp dirs deleted. Resume by building the branch first and looking at the seven screens before trusting any of it.
+
+**L39 (S29 reversed by the human — the pane is shown whole):** While testing, the human asked to bring back the composer bar ("waiting for input")
+because Termux shows it and hiding it never helped; they suspect it caused some of the app's odd behaviour. Agreed and done: the `ComposerCrop`
+module and its 19 tests are deleted, `pollSurface` stores the frame as it arrives, and nothing pads rows any more. This removes the heuristic that
+changed meaning when the bar's label flipped between idle and working, the four extra rows requested from the pane, and the blank band that the
+padding could leave at the top of the card.
