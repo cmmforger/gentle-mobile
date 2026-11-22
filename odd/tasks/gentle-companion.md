@@ -394,6 +394,7 @@ handoff). Commit column stays `—` until implementation is authorized.
   agent state) with wrap for reading, and the terminal tab carries real terminal work with `herdr` inside. Sending images from the
   phone (SFTP upload plus the `[attached image: path]` line) is a separate path and stays.
 | T38 | Terminal on screen: render that PTY stream with the Termux `terminal-emulator` engine (Apache-2.0, credited) inside our session screen, with our theme's terminal palette, running `herdr` inside it | S33 | worker | — |
+| T39 | Session screen: back to the edge, panels and refresh as header icons with the PANELES row deleted, key chips that never truncate (`↵` instead of a cut `E`), momentary keys with a pressed state, and no line cut at the card's bottom | S35 | worker | — |
 | T34 | Approval block inside the session (board `09` P2/P4): the same question, command and held answers while looking at the agent's pane, instead of only from the board | S32b | worker | — |
 | T31 | Approval board: agents grouped by what they need, the exact command before an approval, one-tap answers with a re-read before sending, risky answers held, one needs-you count everywhere | S32b | worker | — |
 | T29 | Honest crop: detect that the granted grid crops wider pane content, say it in one line, and offer the whole pane scaled as an explicit fallback; anchor every notice so it cannot change the derived grid and re-fire the claim | S31c | worker | — |
