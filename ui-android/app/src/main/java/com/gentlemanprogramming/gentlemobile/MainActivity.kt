@@ -14,6 +14,9 @@ import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
@@ -21,6 +24,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -58,6 +62,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -194,6 +199,7 @@ import com.gentlemanprogramming.gentlemobile.security.parseHostSpec
 import com.gentlemanprogramming.gentlemobile.security.requireBiometricUnlock
 import com.gentlemanprogramming.gentlemobile.ui.settings.SettingsScreen
 import com.gentlemanprogramming.gentlemobile.ui.session.AddResult
+import com.gentlemanprogramming.gentlemobile.ui.session.ExtraKeyRowModel
 import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
 import com.gentlemanprogramming.gentlemobile.ui.session.formatBytes
 import com.gentlemanprogramming.gentlemobile.ui.session.AndroidDictationEngine
@@ -218,6 +224,7 @@ import com.gentlemanprogramming.gentlemobile.ui.terminal.CardSurface
 import com.gentlemanprogramming.gentlemobile.ui.terminal.ClaimFlight
 import com.gentlemanprogramming.gentlemobile.ui.terminal.CropGuard
 import com.gentlemanprogramming.gentlemobile.ui.terminal.CropVoice
+import com.gentlemanprogramming.gentlemobile.ui.terminal.LineGuard
 import com.gentlemanprogramming.gentlemobile.ui.terminal.WrapGuard
 import com.gentlemanprogramming.gentlemobile.ui.terminal.PanePresentation
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFit
@@ -4291,10 +4298,29 @@ private fun SessionScreen(
         // name/kind, so a screen never reads `pi` (S27-5). The glyphs are
         // small, in the theme's accent, and back is a chevron (S28-2) — the
         // 44 dp touch target stays.
+        // T36: the pane switcher — one sheet lists every pane of the
+        // workspace, its title and its state. Picking a pane focuses it on
+        // the host (the daemon's own `pane.focus`); the surface stream
+        // follows the focused pane, so what the phone shows and keys is
+        // the pane the human picked. T39: the sheet opens from the header
+        // icon; the strip that named the row is gone, its height in the
+        // terminal.
+        val paneRows = PaneSwitcherModel.rows(
+            panes = panes,
+            agents = sessionUi.agents,
+            tabs = tabs,
+            workspaceId = agent.workspaceId,
+            currentPaneId = sessionUi.barePaneId ?: agent.paneId,
+        )
+        val paneSheetsCd = stringResource(R.string.session_panes)
+        // T39: the pane sheet lives in the header now — the strip that
+        // named it is gone and its height belongs to the terminal.
+        var paneSheet by remember { mutableStateOf(false) }
         Row(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 16.dp),
         ) {
+            // T39: the back control sits at the real left edge — the row's
+            // own 16 dp inset went and the title keeps its distance instead.
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -4308,6 +4334,7 @@ private fun SessionScreen(
                     modifier = Modifier.size(18.dp),
                 )
             }
+            Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = AgentRowModel.sessionTitle(agent.cwd, agent.name),
@@ -4328,6 +4355,28 @@ private fun SessionScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+            // T39: the pane switcher is a header icon beside refresh — the
+            // same sheet the strip used to open, without the strip's row.
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clickable(enabled = paneRows.isNotEmpty(), onClick = { paneSheet = true })
+                    .semantics {
+                        contentDescription = paneSheetsCd
+                    },
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_pane),
+                    contentDescription = null,
+                    tint = if (paneRows.isNotEmpty()) {
+                        LocalPalette.current.accent
+                    } else {
+                        LocalPalette.current.muted
+                    },
+                    modifier = Modifier.size(18.dp),
+                )
             }
             Box(
                 modifier = Modifier
@@ -4354,64 +4403,9 @@ private fun SessionScreen(
         // Terminal area: the cell grid from the surface stream. Before the
         // first surface arrives (or if the host never sends one) the pane's
         // visible text shows here instead — never a silently empty view.
-        // T36: the pane switcher — one strip opens one sheet with every
-        // pane of the workspace, its title and its state, the visible one
-        // marked. Picking a pane focuses it on the host (the daemon's own
-        // `pane.focus`, the same switch tapping a pane in the herdr TUI
-        // does); the surface stream follows the focused pane, so what the
-        // phone shows and keys is the pane the human picked.
-        val paneRows = PaneSwitcherModel.rows(
-            panes = panes,
-            agents = sessionUi.agents,
-            tabs = tabs,
-            workspaceId = agent.workspaceId,
-            currentPaneId = sessionUi.barePaneId ?: agent.paneId,
-        )
-        val viewedRow = paneRows.firstOrNull { it.current }
-        // S30-1: one quiet gap between the header and the card — the two
-        // stacked spacer rows the strip replaced read as one dead band.
+        // S28-1: the host's typed refusal when a focus did not land — the
+        // header never claimed a switch that did not happen.
         if (paneRows.isNotEmpty()) {
-            var paneSheet by remember { mutableStateOf(false) }
-            Row(
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable { paneSheet = true }
-                    .padding(horizontal = 16.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.session_panes).uppercase(),
-                    color = LocalPalette.current.muted,
-                    fontSize = 11.sp,
-                    letterSpacing = 0.8.sp,
-                )
-                Spacer(Modifier.weight(1f))
-                viewedRow?.let { row ->
-                    Text(
-                        text = row.title,
-                        color = if (row.agentPane) {
-                            LocalPalette.current.accent
-                        } else {
-                            MaterialTheme.colorScheme.onBackground
-                        },
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = paneStateWord(row),
-                        color = LocalPalette.current.muted,
-                        fontSize = 11.sp,
-                    )
-                }
-            }
-            // S28-1: the host's typed refusal when a focus did not land —
-            // the strip never claimed a switch that did not happen.
             sessionUi.tabError?.let { error ->
                 Text(
                     text = error,
@@ -4721,6 +4715,41 @@ private fun SessionScreen(
                     }
                 }
             }
+            // T39: the whole-line bottom edge in wrap mode — the card's
+            // height and the wrapped lines share one pitch, so a settled
+            // view never leaves a half-drawn line at the card's edge
+            // ([LineGuard]). The geometry is computed once here and given
+            // to the view, so the fit and the height can never disagree.
+            val wrapGeometry = if (wrapViewActive && sessionUi.pane != null) {
+                with(density) {
+                    val padPx = WrapGuard.WRAP_PADDING_DP.dp.toPx()
+                    val usable = (cardConstraints.maxWidth.toFloat() - 2f * padPx).coerceAtLeast(0f)
+                    val floorPx = 16.sp.toPx()
+                    val font = WrapGuard.wrapFont(usable, painted, floorPx, maxPx)
+                    WrapGeometry(
+                        fontPx = font,
+                        lineHeightPx = font * metrics.lineHeightRatio,
+                        cols = WrapGuard.wrapCols(usable, font, painted),
+                    )
+                }
+            } else {
+                null
+            }
+            // T39: a settled scroll rests on a line boundary — flat mode
+            // snaps to the cell pitch, wrap mode to the wrapped lines' own
+            // pitch — so a half-drawn line never stays at the card's edge.
+            val snapLinePx = wrapGeometry?.lineHeightPx ?: (metrics.lineHeightRatio * effectivePx)
+            LaunchedEffect(vScroll, snapLinePx) {
+                var wasScrolling = false
+                snapshotFlow { vScroll.isScrollInProgress }.collect { scrolling ->
+                    if (!scrolling && wasScrolling) {
+                        val current = vScroll.value.toFloat()
+                        val target = LineGuard.snapOffsetPx(current, snapLinePx, vScroll.maxValue.toFloat())
+                        if (target != current) vScroll.scrollTo(target.toInt())
+                    }
+                    wasScrolling = scrolling
+                }
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -4735,12 +4764,20 @@ private fun SessionScreen(
                     // one. The derived grid is untouched. Wrap mode is
                     // the other deliberate view: the card fills its
                     // height and the re-flowed text scrolls vertically.
+                    // T39: in wrap mode the height is a whole number of
+                    // line pitches — the last visible line fits fully or
+                    // is not drawn.
                     .height(
                         with(density) {
-                            if (sessionUi.wholePane || sessionUi.wrapMode || wrapPreview) {
-                                cardHeightPx.toDp()
-                            } else {
-                                minOf(gridHeightPx, cardHeightPx).toDp()
+                            when {
+                                sessionUi.wholePane -> cardHeightPx.toDp()
+                                wrapGeometry != null ->
+                                    LineGuard.wholeLinesHeightPx(
+                                        cardHeightPx,
+                                        wrapGeometry.lineHeightPx,
+                                    ).toDp()
+                                sessionUi.wrapMode || wrapPreview -> cardHeightPx.toDp()
+                                else -> minOf(gridHeightPx, cardHeightPx).toDp()
                             }
                         },
                     )
@@ -4771,7 +4808,7 @@ private fun SessionScreen(
                         )
                         Spacer(Modifier.height(letterbox))
                     }
-                } else if (wrapViewActive) {
+                } else if (wrapViewActive && wrapGeometry != null) {
                     // S32a rule 3: the pane's text re-flowed to the card's
                     // own columns, readable — no horizontal clipping, no
                     // pinch, vertical scroll when the text is taller than
@@ -4780,9 +4817,7 @@ private fun SessionScreen(
                     // terminal's foreground colour.
                     WrappedPaneText(
                         text = sessionUi.pane?.text ?: "",
-                        cardWidthPx = cardConstraints.maxWidth.toFloat(),
-                        advanceRatio = painted,
-                        maxPx = maxPx,
+                        geometry = wrapGeometry,
                     )
                 } else {
                 // The renderer guarantees the whole frame fits the
@@ -5150,45 +5185,48 @@ private fun SessionNoticeSlot(
 }
 
 /**
- * Wrap mode's view (S32a rule 3): the pane's read text re-flowed to the
- * card's own columns at the largest font that fits, rendered in the
+ * Wrap mode's view (S32a rule 3): the pane's read text re-flowed at the
+ * geometry the session screen computed ([WrapGeometry]) — the same font
+ * and line pitch the card's whole-line height derives from, so the card
+ * bottom edge always lies on a line boundary (T39). Rendered in the
  * terminal's foreground colour (the read carries no styling), one line per
- * wrapped line, vertical scroll when it is taller than the card. An empty
- * pane says so instead of showing a blank card as success.
+ * wrapped line, vertical scroll when it is taller than the card via the
+ * card's own scroll. An empty pane says so instead of showing a blank card
+ * as success.
  */
+private class WrapGeometry(
+    val fontPx: Float,
+    val lineHeightPx: Float,
+    val cols: Int,
+)
+
 @Composable
 private fun WrappedPaneText(
     text: String,
-    cardWidthPx: Float,
-    advanceRatio: Float,
-    maxPx: Float,
+    geometry: WrapGeometry,
 ) {
     val density = LocalDensity.current
     val typefaces = rememberTypefaces()
     val monoFamily = remember(typefaces) {
         FontFamily(typefaces.regular ?: android.graphics.Typeface.MONOSPACE)
     }
-    val padPx = with(density) { WrapGuard.WRAP_PADDING_DP.dp.toPx() }
-    val usablePx = (cardWidthPx - 2f * padPx).coerceAtLeast(0f)
-    // Reading floor of the wrap view: 16 sp — text for reading, never a
-    // headline. The cap stays the terminal's own (28 sp).
-    val floorPx = with(density) { 16.sp.toPx() }
-    val fontPx = WrapGuard.wrapFont(usablePx, advanceRatio, floorPx, maxPx)
-    val cols = WrapGuard.wrapCols(usablePx, fontPx, advanceRatio)
-    val lines = remember(text, cols) { WrapGuard.lines(text, cols) }
-    // No verticalScroll here: the terminal card above already scrolls
-    // vertically, and nesting a second scrollable measures with infinite
-    // height constraints (the crash the first wrap tap hit).
+    val fontSp = with(density) { geometry.fontPx.toSp() }
+    val lineSp = with(density) { geometry.lineHeightPx.toSp() }
+    val lines = remember(text, geometry.cols) { WrapGuard.lines(text, geometry.cols) }
+    // T39: no vertical padding — the card's height is a whole number of
+    // line pitches measured from the content's top, so a straddling line
+    // can never rest at the card's bottom edge.
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(horizontal = 8.dp),
     ) {
         if (lines.all { it.isBlank() }) {
             Text(
                 text = stringResource(R.string.session_pane_empty),
                 color = LocalPalette.current.text,
-                fontSize = with(density) { fontPx.toSp() },
+                fontSize = fontSp,
+                lineHeight = lineSp,
                 fontFamily = monoFamily,
             )
         } else {
@@ -5196,7 +5234,8 @@ private fun WrappedPaneText(
                 Text(
                     text = line,
                     color = LocalPalette.current.text,
-                    fontSize = with(density) { fontPx.toSp() },
+                    fontSize = fontSp,
+                    lineHeight = lineSp,
                     fontFamily = monoFamily,
                 )
             }
@@ -6056,7 +6095,13 @@ private fun PaneSwitcherSheet(
  * Every key here is representable on the wire (measured), so no chip needs
  * a disabled state; a failed send shows the host's typed refusal instead of
  * pretending the key landed.
+ *
+ * T39: the labels come from [ExtraKeyRowModel] — the arrows and Enter are
+ * their glyphs so no word is ever cut mid-character — and the chips flow
+ * to a second row instead of clipping. Momentary keys fill briefly while
+ * the tap happens, so a press reads as a press.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ExtraKeyRow(
     sessionUi: SessionUi,
@@ -6080,25 +6125,27 @@ private fun ExtraKeyRow(
     }
 
     Column(modifier = modifier) {
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            // Sticky toggles first, in the board's order.
-            ExtraKeyChip("Esc", enabled = true, sending = sessionUi.keySending) { press("esc") }
-            ExtraKeyChip("Tab", enabled = true, sending = sessionUi.keySending) { press("tab") }
-            ExtraKeyChip(
-                "Ctrl",
-                enabled = true,
-                pressed = sessionUi.ctrlSticky,
-                sending = sessionUi.keySending,
-            ) { sessionUi.ctrlSticky = !sessionUi.ctrlSticky }
-            ExtraKeyChip(
-                "Alt",
-                enabled = true,
-                pressed = sessionUi.altSticky,
-                sending = sessionUi.keySending,
-            ) { sessionUi.altSticky = !sessionUi.altSticky }
-            ExtraKeyChip("↑", enabled = true, sending = sessionUi.keySending) { press("up") }
-            ExtraKeyChip("↓", enabled = true, sending = sessionUi.keySending) { press("down") }
-            ExtraKeyChip("Enter", enabled = true, sending = sessionUi.keySending) { press("enter") }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            // Sticky toggles keep their word; the momentary keys keep the
+            // model's labels — words where the word fits, glyphs elsewhere.
+            ExtraKeyRowModel.chips().forEach { chip ->
+                when (chip.kind) {
+                    ExtraKeyRowModel.Kind.STICKY -> ExtraKeyChip(
+                        label = chip.label,
+                        enabled = true,
+                        pressed = chip.id == "ctrl" && sessionUi.ctrlSticky ||
+                            chip.id == "alt" && sessionUi.altSticky,
+                        sending = sessionUi.keySending,
+                    ) {
+                        if (chip.id == "ctrl") sessionUi.ctrlSticky = !sessionUi.ctrlSticky
+                        else sessionUi.altSticky = !sessionUi.altSticky
+                    }
+                    ExtraKeyRowModel.Kind.MOMENTARY -> MomentaryKeyChip(
+                        label = chip.label,
+                        sending = sessionUi.keySending,
+                    ) { press(chip.id) }
+                }
+            }
         }
         sessionUi.keyError?.let { error ->
             Spacer(Modifier.height(4.dp))
@@ -6124,6 +6171,7 @@ private fun ExtraKeyChip(
     enabled: Boolean,
     pressed: Boolean = false,
     sending: Boolean = false,
+    interaction: MutableInteractionSource = remember { MutableInteractionSource() },
     onPress: () -> Unit,
 ) {
     val palette = LocalPalette.current
@@ -6134,7 +6182,11 @@ private fun ExtraKeyChip(
         contentAlignment = androidx.compose.ui.Alignment.Center,
     ) {
         val clickModifier = if (enabled && !sending) {
-            Modifier.clickable(onClick = onPress)
+            Modifier.clickable(
+                interactionSource = interaction,
+                indication = LocalIndication.current,
+                onClick = onPress,
+            )
         } else {
             Modifier
         }
@@ -6164,8 +6216,48 @@ private fun ExtraKeyChip(
                 },
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                softWrap = false,
             )
         }
+    }
+}
+
+/** How long a momentary chip keeps its pressed fill after the tap releases,
+ * so a quick tap still reads as a press. */
+private const val KEY_FLASH_MS = 180L
+
+/**
+ * A momentary key chip (T39): the same visual as [ExtraKeyChip], and a
+ * filled pressed state for exactly the life of the tap — the interaction
+ * source's own press, held a beat after release so a quick tap reads as
+ * "this was pressed", never as a sticky toggle that stayed down.
+ */
+@Composable
+private fun MomentaryKeyChip(
+    label: String,
+    sending: Boolean,
+    onPress: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed = interaction.collectIsPressedAsState().value
+    var flash by remember { mutableStateOf(false) }
+    LaunchedEffect(pressed) {
+        if (pressed) {
+            flash = true
+        } else if (flash) {
+            delay(KEY_FLASH_MS)
+            flash = false
+        }
+    }
+    ExtraKeyChip(
+        label = label,
+        enabled = true,
+        pressed = flash,
+        sending = sending,
+        interaction = interaction,
+    ) {
+        onPress()
     }
 }
 
