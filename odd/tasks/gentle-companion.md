@@ -860,3 +860,10 @@ slice; T38 (the Termux engine drawing it with herdr inside) waits for the UI pas
 **Two self-inflicted incidents, owned:** deleting scratch mid-flight removed the probe key and the session `TMPDIR` while this worker was
 using them — it fell back to the throwaway sshd on 2222 for the live proof and one test run failed transiently until the directory came back.
 Cleanup happens when nobody is working, and it is reported before, not after.
+
+**L38 (stopped for the day, nothing lost):** The owner had to shut the machine down, so the pass on the seven reported fixes was stopped
+mid-verification: its work is committed as `5215c7b` on branch **`wip/t36-reported-bugs`** (1298 authored lines, one slice — above the
+~400-line review size, so when it is published it should be split or reviewed as a WIP). `main` stays clean at `5d1d330`, with T37's PTY
+lane committed and independent of that branch. **Nothing in that WIP is proven**: no build, no screenshots, no report — the worker was
+cancelled before any of it. Tonight's state: emulator dead, daemon back to the human's eight workspaces, no listener of ours, the scratch
+directory and the session's temp dirs deleted. Resume by building the branch first and looking at the seven screens before trusting any of it.
