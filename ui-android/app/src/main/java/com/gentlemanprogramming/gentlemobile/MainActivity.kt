@@ -4339,8 +4339,8 @@ private fun SessionScreen(
                 Text(
                     text = AgentRowModel.sessionTitle(agent.cwd, agent.name),
                     color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = Air.TITLE_SP.sp,
-                    lineHeight = (Air.TITLE_SP * Air.TITLE_LINE_HEIGHT).sp,
+                    fontSize = 20.sp,
+                    lineHeight = (20 * Air.TITLE_LINE_HEIGHT).sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -6125,25 +6125,32 @@ private fun ExtraKeyRow(
     }
 
     Column(modifier = modifier) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        // One row, always: each chip shares the width evenly, so the glyphs
+        // for the arrows and Enter can never be pushed onto a second line.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             // Sticky toggles keep their word; the momentary keys keep the
             // model's labels — words where the word fits, glyphs elsewhere.
             ExtraKeyRowModel.chips().forEach { chip ->
-                when (chip.kind) {
-                    ExtraKeyRowModel.Kind.STICKY -> ExtraKeyChip(
-                        label = chip.label,
-                        enabled = true,
-                        pressed = chip.id == "ctrl" && sessionUi.ctrlSticky ||
-                            chip.id == "alt" && sessionUi.altSticky,
-                        sending = sessionUi.keySending,
-                    ) {
-                        if (chip.id == "ctrl") sessionUi.ctrlSticky = !sessionUi.ctrlSticky
-                        else sessionUi.altSticky = !sessionUi.altSticky
+                Box(Modifier.weight(1f), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                    when (chip.kind) {
+                        ExtraKeyRowModel.Kind.STICKY -> ExtraKeyChip(
+                            label = chip.label,
+                            enabled = true,
+                            pressed = chip.id == "ctrl" && sessionUi.ctrlSticky ||
+                                chip.id == "alt" && sessionUi.altSticky,
+                            sending = sessionUi.keySending,
+                        ) {
+                            if (chip.id == "ctrl") sessionUi.ctrlSticky = !sessionUi.ctrlSticky
+                            else sessionUi.altSticky = !sessionUi.altSticky
+                        }
+                        ExtraKeyRowModel.Kind.MOMENTARY -> MomentaryKeyChip(
+                            label = chip.label,
+                            sending = sessionUi.keySending,
+                        ) { press(chip.id) }
                     }
-                    ExtraKeyRowModel.Kind.MOMENTARY -> MomentaryKeyChip(
-                        label = chip.label,
-                        sending = sessionUi.keySending,
-                    ) { press(chip.id) }
                 }
             }
         }
