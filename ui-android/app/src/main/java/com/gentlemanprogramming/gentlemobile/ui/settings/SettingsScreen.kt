@@ -601,7 +601,7 @@ private fun SettingsCard(
             Column {
                 Text(
                     text = title,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = p.accent,
                     fontSize = Air.ROW_NAME_SP.sp,
                     lineHeight = (Air.ROW_NAME_SP * Air.ROW_NAME_LINE_HEIGHT).sp,
                     fontWeight = FontWeight.SemiBold,
@@ -636,11 +636,11 @@ private fun CardIcon(icon: Painter?, glyph: String?) {
                 painter = icon,
                 contentDescription = null,
                 modifier = Modifier.size(19.dp),
-                colorFilter = ColorFilter.tint(p.text),
+                colorFilter = ColorFilter.tint(p.accent),
             )
             else -> Text(
                 text = glyph ?: "",
-                color = p.text,
+                color = p.accent,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
             )
