@@ -441,4 +441,8 @@
     <string name="err_unsupported_method">Este host no ofrece %1$s.</string>
     <string name="err_transport">La conexión al host falló: %1$s</string>
     <string name="err_timeout">El host tardó demasiado en responder: %1$s</string>
+
+    <!-- T42: la terminal real -->
+    <string name="terminal_title">Terminal</string>
+    <string name="terminal_open">Abrir terminal</string>
 </resources>

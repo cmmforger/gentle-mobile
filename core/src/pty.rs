@@ -3,7 +3,11 @@
 //! reopening the channel**, and one bidirectional byte stream. No UI and no
 //! UniFFI here; a later slice wires this to the terminal screen.
 
-use std::{time::Duration, collections::VecDeque};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex as StdMutex},
+    time::Duration,
+};
 
 use crate::profile::HostProfile;
 
@@ -66,6 +70,9 @@ pub trait PtyLike {
     ) -> Result<(), PtyError>;
     /// Ask the host to start the user's shell on it.
     async fn request_shell(&mut self) -> Result<(), PtyError>;
+    /// Run `command` on the PTY instead of the default shell — a login
+    /// shell started in a chosen working directory.
+    async fn request_exec(&mut self, command: &str) -> Result<(), PtyError>;
     /// Reshape the terminal without reopening the channel.
     async fn window_change(&mut self, cols: u32, rows: u32) -> Result<(), PtyError>;
     /// The next channel message; a dead connection is a typed error.
@@ -74,6 +81,22 @@ pub trait PtyLike {
     async fn write(&mut self, data: &[u8]) -> Result<(), PtyError>;
     /// Close the channel.
     async fn close(&mut self) -> Result<(), PtyError>;
+}
+
+/// Quote a value for a POSIX shell single-quoted word: wrap in single
+/// quotes and escape an embedded single quote as `'\''`.
+pub fn shell_quote(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('\'');
+    for ch in value.chars() {
+        if ch == '\'' {
+            quoted.push_str("'\\''");
+        } else {
+            quoted.push(ch);
+        }
+    }
+    quoted.push('\'');
+    quoted
 }
 
 /// One terminal session over a [`PtyLike`] channel: the stream rules live
@@ -119,6 +142,32 @@ impl<C: PtyLike> PtySession<C> {
     pub async fn open(mut channel: C, cols: u32, rows: u32) -> Result<Self, PtyError> {
         channel.request_pty(TERMINAL_TYPE, cols, rows, true).await?;
         channel.request_shell().await?;
+        Ok(Self {
+            channel,
+            cols,
+            rows,
+            pending: VecDeque::new(),
+            ended: false,
+            status: None,
+        })
+    }
+
+    /// Open one terminal whose shell starts in `cwd`: a PTY of exactly the
+    /// asked size (`echo` on) and the login shell executed with that working
+    /// directory — `cd` first, then `exec` the shell, so the PTY never runs
+    /// anything but the shell.
+    pub async fn open_in(
+        mut channel: C,
+        cols: u32,
+        rows: u32,
+        cwd: &str,
+    ) -> Result<Self, PtyError> {
+        channel.request_pty(TERMINAL_TYPE, cols, rows, true).await?;
+        let command = format!(
+            "cd -- {} && exec \"${{SHELL:-/bin/bash}}\" -l",
+            shell_quote(cwd)
+        );
+        channel.request_exec(&command).await?;
         Ok(Self {
             channel,
             cols,
@@ -256,6 +305,13 @@ impl PtyLike for ChannelPty {
             .map_err(|error| pty_transport_error("the shell request failed", error))
     }
 
+    async fn request_exec(&mut self, command: &str) -> Result<(), PtyError> {
+        self.channel
+            .exec(false, command)
+            .await
+            .map_err(|error| pty_transport_error("the exec request failed", error))
+    }
+
     async fn window_change(&mut self, cols: u32, rows: u32) -> Result<(), PtyError> {
         self.channel
             .window_change(cols, rows, 0, 0)
@@ -300,22 +356,33 @@ impl PtyLike for ChannelPty {
 }
 
 impl HostPty {
-    /// One pinned SSH session carrying one PTY of the asked size, with the
-    /// host's shell running in it. Host-key and transport failures come typed.
-    pub async fn connect(profile: &HostProfile, cols: u32, rows: u32) -> Result<Self, PtyError> {
+    async fn open_channel(
+        profile: &HostProfile,
+    ) -> Result<
+        (
+            russh::client::Handle<crate::connection::KeyVerifier>,
+            russh::Channel<russh::client::Msg>,
+        ),
+        PtyError,
+    > {
         let ssh =
             crate::requests::connect_pinned_ssh(profile, &std::sync::atomic::AtomicBool::new(false))
                 .await
                 .map_err(|error| PtyError::Transport { detail: error.to_string() })?;
-        let opened = ssh.channel_open_session().await;
-        let channel = match opened {
-            Ok(channel) => channel,
+        match ssh.channel_open_session().await {
+            Ok(channel) => Ok((ssh, channel)),
             Err(error) => {
                 let detail = format!("the session channel could not open: {error}");
                 let _ = ssh.disconnect(russh::Disconnect::ByApplication, "", "en").await;
-                return Err(PtyError::Refused { detail });
+                Err(PtyError::Refused { detail })
             }
-        };
+        }
+    }
+
+    /// One pinned SSH session carrying one PTY of the asked size, with the
+    /// host's shell running in it. Host-key and transport failures come typed.
+    pub async fn connect(profile: &HostProfile, cols: u32, rows: u32) -> Result<Self, PtyError> {
+        let (ssh, channel) = Self::open_channel(profile).await?;
         match PtySession::open(ChannelPty { channel }, cols, rows).await {
             Ok(session) => Ok(Self { ssh, session }),
             Err(error) => {
@@ -323,6 +390,35 @@ impl HostPty {
                 Err(error)
             }
         }
+    }
+
+    /// [`HostPty::connect`], but the shell starts in `cwd` — a plain login
+    /// shell, never an agent (T42).
+    pub async fn connect_in(
+        profile: &HostProfile,
+        cols: u32,
+        rows: u32,
+        cwd: &str,
+    ) -> Result<Self, PtyError> {
+        let (ssh, channel) = Self::open_channel(profile).await?;
+        match PtySession::open_in(ChannelPty { channel }, cols, rows, cwd).await {
+            Ok(session) => Ok(Self { ssh, session }),
+            Err(error) => {
+                let _ = ssh.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+                Err(error)
+            }
+        }
+    }
+
+    /// Split the pinned SSH session and its PTY stream (the pump owns the
+    /// stream; the caller keeps the transport to disconnect at the end).
+    pub fn into_parts(
+        self,
+    ) -> (
+        russh::client::Handle<crate::connection::KeyVerifier>,
+        PtySession<ChannelPty>,
+    ) {
+        (self.ssh, self.session)
     }
 
     /// The current terminal geometry.
@@ -380,6 +476,104 @@ impl HostPty {
     }
 }
 
+/// One command the UI sends into a running terminal pump.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PtyCommand {
+    /// Keystrokes / paste, delivered verbatim in one piece.
+    Write(Vec<u8>),
+    /// Reshape the terminal without reopening the channel.
+    Resize(u32, u32),
+    /// Orderly shutdown: close the channel and end the pump.
+    Close,
+}
+
+/// The state a terminal pump shares with the UI: bytes as they arrive
+/// (never batched behind a full buffer), the end of stream, the host's
+/// exit status, the current geometry, and the reason it ended.
+#[derive(Default)]
+pub struct PtyShared {
+    pub output: VecDeque<u8>,
+    pub ended: bool,
+    pub exit_status: Option<u32>,
+    pub size: (u32, u32),
+    pub last_error: Option<String>,
+}
+
+impl PtyShared {
+    /// Drain up to `max` arrived bytes; an empty answer means none are
+    /// pending, never an error.
+    pub fn drain(&mut self, max: usize) -> Vec<u8> {
+        let take = max.min(self.output.len());
+        self.output.drain(..take).collect()
+    }
+}
+
+/// The terminal pump: read the PTY and deliver bytes as they arrive while
+/// serving write/resize/close commands on the same loop — a quiet shell
+/// (no output) still answers a write or a resize the moment it is asked.
+/// Returns the session so a test can reclaim its fake channel; the real
+/// caller drops it with the SSH session.
+pub async fn pump_terminal<C: PtyLike>(
+    mut session: PtySession<C>,
+    mut commands: tokio::sync::mpsc::Receiver<PtyCommand>,
+    shared: Arc<StdMutex<PtyShared>>,
+) -> PtySession<C> {
+    let mut buf = [0u8; 4096];
+    loop {
+        tokio::select! {
+            read = session.read(&mut buf) => {
+                match read {
+                    Ok(0) => {
+                        let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        state.ended = true;
+                        state.exit_status = session.exit_status();
+                        break;
+                    }
+                    Ok(n) => {
+                        let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        state.output.extend(&buf[..n]);
+                    }
+                    Err(error) => {
+                        let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        state.ended = true;
+                        state.last_error = Some(error.to_string());
+                        break;
+                    }
+                }
+            }
+            command = commands.recv() => {
+                match command {
+                    Some(PtyCommand::Write(bytes)) => {
+                        if session.write(&bytes).await.is_err() {
+                            let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            state.ended = true;
+                            state.last_error = Some("the terminal write failed".to_owned());
+                            break;
+                        }
+                    }
+                    Some(PtyCommand::Resize(cols, rows)) => {
+                        if session.resize(cols, rows).await.is_err() {
+                            let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            state.ended = true;
+                            state.last_error = Some("the terminal resize failed".to_owned());
+                            break;
+                        }
+                        let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        state.size = (cols, rows);
+                    }
+                    Some(PtyCommand::Close) | None => {
+                        let _ = session.close().await;
+                        let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        state.ended = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    session
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,6 +595,7 @@ mod tests {
         script: Mutex<VecDeque<TestStep>>,
         pty_requests: Mutex<Vec<(String, u32, u32, bool)>>,
         shell_requests: Mutex<usize>,
+        exec_requests: Mutex<Vec<String>>,
         window_changes: Mutex<Vec<(u32, u32)>>,
         writes: Mutex<Vec<u8>>,
         close_requests: Mutex<usize>,
@@ -413,6 +608,7 @@ mod tests {
                 script: Mutex::new(script.into()),
                 pty_requests: Mutex::new(Vec::new()),
                 shell_requests: Mutex::new(0),
+                exec_requests: Mutex::new(Vec::new()),
                 window_changes: Mutex::new(Vec::new()),
                 writes: Mutex::new(Vec::new()),
                 close_requests: Mutex::new(0),
@@ -437,6 +633,13 @@ mod tests {
                 .shell_requests
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
+        }
+
+        fn exec_request_records(&self) -> Vec<String> {
+            self.exec_requests
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
         }
 
         fn window_change_records(&self) -> Vec<(u32, u32)> {
@@ -481,6 +684,14 @@ mod tests {
                 .shell_requests
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) += 1;
+            Ok(())
+        }
+
+        async fn request_exec(&mut self, command: &str) -> Result<(), PtyError> {
+            self.exec_requests
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(command.to_owned());
             Ok(())
         }
 
@@ -700,6 +911,100 @@ mod tests {
         session.close().await.unwrap_or_else(|error| panic!("close failed: {error}"));
         let fake = session.into_channel();
         assert_eq!(fake.close_request_count(), 1, "an explicit close releases the channel");
+    }
+
+    // --- T42: the login shell starts in the asked working directory -----
+
+    #[test]
+    fn shell_quote_wraps_and_escapes_embedded_quotes() {
+        assert_eq!(shell_quote("/srv/a"), "'/srv/a'");
+        assert_eq!(shell_quote("/srv/o'reilly"), "'/srv/o'\\''reilly'");
+        assert_eq!(shell_quote(""), "''");
+    }
+
+    #[tokio::test]
+    async fn open_in_requests_a_pty_and_execs_a_login_shell_in_the_cwd() {
+        let fake = FakePty::new(Vec::new());
+        let session = PtySession::open_in(fake, 80, 24, "/srv/a")
+            .await
+            .unwrap_or_else(|error| panic!("open_in failed: {error}"));
+        let fake = fake_of(session);
+        assert_eq!(
+            fake.pty_request_records(),
+            vec![(TERMINAL_TYPE.to_owned(), 80, 24, true)],
+            "the PTY is requested at the asked size"
+        );
+        assert_eq!(
+            fake.exec_request_records(),
+            vec!["cd -- '/srv/a' && exec \"${SHELL:-/bin/bash}\" -l".to_owned()],
+            "the exec starts a login shell in the asked cwd, never a shell in home"
+        );
+        assert_eq!(fake.shell_request_count(), 0, "no default-home shell is started first");
+    }
+
+    #[tokio::test]
+    async fn open_in_escapes_a_cwd_with_a_single_quote() {
+        let fake = FakePty::new(Vec::new());
+        let session = PtySession::open_in(fake, 80, 24, "/srv/o'reilly")
+            .await
+            .unwrap_or_else(|error| panic!("open_in failed: {error}"));
+        let fake = fake_of(session);
+        assert_eq!(
+            fake.exec_request_records(),
+            vec!["cd -- '/srv/o'\\''reilly' && exec \"${SHELL:-/bin/bash}\" -l".to_owned()]
+        );
+    }
+
+    // --- T42: the pump maps UI requests to the byte stream ---------------
+
+    #[tokio::test]
+    async fn the_pump_delivers_output_as_it_arrives_and_serves_write_resize_close() {
+        let fake = FakePty::new(vec![
+            TestStep::Sleep(Duration::from_millis(40)),
+            TestStep::Data(b"hello".to_vec()),
+            // Stay alive after the burst so Close still has a listener.
+            TestStep::Sleep(Duration::from_secs(5)),
+        ]);
+        let session = PtySession::open(fake, 80, 24)
+            .await
+            .unwrap_or_else(|error| panic!("open failed: {error}"));
+        let shared = Arc::new(StdMutex::new(PtyShared::default()));
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        let pump_shared = shared.clone();
+        let pump = tokio::spawn(async move { pump_terminal(session, rx, pump_shared).await });
+
+        tx.send(PtyCommand::Write(b"ls\n".to_vec()))
+            .await
+            .unwrap_or_else(|error| panic!("write send failed: {error}"));
+        tx.send(PtyCommand::Resize(38, 20))
+            .await
+            .unwrap_or_else(|error| panic!("resize send failed: {error}"));
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if !shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner).output.is_empty() {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "output never arrived");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        tx.send(PtyCommand::Close)
+            .await
+            .unwrap_or_else(|error| panic!("close send failed: {error}"));
+
+        let session = pump
+            .await
+            .unwrap_or_else(|error| panic!("pump failed: {error}"));
+        let fake = session.into_channel();
+        assert_eq!(fake.written_bytes(), b"ls\n".to_vec(), "write maps to the channel verbatim");
+        assert_eq!(fake.window_change_records(), vec![(38, 20)], "resize maps to window-change");
+        assert_eq!(
+            shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner).drain(64),
+            b"hello".to_vec(),
+            "the host's bytes reach the shared buffer as they arrive"
+        );
+        assert!(shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner).ended);
+        assert_eq!(fake.close_request_count(), 1, "close releases the channel");
     }
 
     // --- The real live machine (never a CI expectation) ------------------

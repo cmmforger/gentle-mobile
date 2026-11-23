@@ -235,6 +235,21 @@ impl From<crate::requests::HubError> for CompanionError {
     }
 }
 
+impl From<crate::pty::PtyError> for CompanionError {
+    fn from(error: crate::pty::PtyError) -> Self {
+        match error {
+            crate::pty::PtyError::Refused { detail } => {
+                CompanionError::Transport { detail: format!("the host refused: {detail}") }
+            }
+            crate::pty::PtyError::Timeout { detail } => CompanionError::Timeout { detail },
+            crate::pty::PtyError::Disconnected => CompanionError::Transport {
+                detail: "the connection is gone".to_owned(),
+            },
+            crate::pty::PtyError::Transport { detail } => CompanionError::Transport { detail },
+        }
+    }
+}
+
 /// One agent pane read: exactly the visible text the host would show for
 /// that pane, plus whether the daemon had to leave anything out.
 #[derive(uniffi::Record, Debug, Clone)]
@@ -874,6 +889,191 @@ impl RpcResumedSession {
             }
         }
         Ok(())
+    }
+}
+
+/// One terminal session over the PTY lane (T37/T42): the pinned SSH
+/// connection plus a phone-sized PTY running the host's shell in the
+/// workspace's folder — never an agent. Output is drained off the UI thread
+/// by [`TerminalSession::read`] and delivered the moment it arrives, never
+/// batched behind a full buffer.
+#[derive(uniffi::Object)]
+pub struct TerminalSession {
+    commands: StdMutex<Option<tokio::sync::mpsc::Sender<crate::pty::PtyCommand>>>,
+    shared: Arc<StdMutex<crate::pty::PtyShared>>,
+    handle: StdMutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+impl std::fmt::Debug for TerminalSession {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("TerminalSession")
+            .field("ended", &self.is_closed())
+            .finish()
+    }
+}
+
+/// Open one terminal over the pinned SSH connection: a plain login shell in
+/// `cwd` (empty means the host's default), a PTY of exactly `cols` × `rows`.
+/// The call returns once the PTY and the shell are up — or the failure is
+/// typed, with nothing half-open; the byte stream then lives in the returned
+/// object's [`TerminalSession::read`].
+#[uniffi::export]
+pub fn start_terminal(
+    profile: HostProfileDto,
+    cwd: String,
+    cols: u32,
+    rows: u32,
+) -> Result<Arc<TerminalSession>, CompanionError> {
+    let profile = profile.into_core();
+    let shared = Arc::new(StdMutex::new(crate::pty::PtyShared::default()));
+    if let Ok(mut state) = shared.lock() {
+        state.size = (cols, rows);
+    }
+    let (commands_tx, commands_rx) = tokio::sync::mpsc::channel::<crate::pty::PtyCommand>(16);
+    let (announced_tx, announced_rx) = crossbeam_channel::bounded::<Result<(), crate::pty::PtyError>>(1);
+    let shared_for_thread = shared.clone();
+    let handle = std::thread::Builder::new()
+        .name("gentle-pty".to_owned())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            match runtime {
+                Ok(runtime) => runtime.block_on(async move {
+                    match crate::pty::HostPty::connect_in(&profile, cols, rows, &cwd).await {
+                        Ok(host) => {
+                            let (ssh, session) = host.into_parts();
+                            if announced_tx.send(Ok(())).is_err() {
+                                let _ = ssh
+                                    .disconnect(russh::Disconnect::ByApplication, "", "en")
+                                    .await;
+                                return;
+                            }
+                            crate::pty::pump_terminal(session, commands_rx, shared_for_thread).await;
+                            let _ = ssh.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+                        }
+                        Err(error) => {
+                            if let Ok(mut state) = shared_for_thread.lock() {
+                                state.ended = true;
+                                state.last_error = Some(error.to_string());
+                            }
+                            let _ = announced_tx.send(Err(error));
+                        }
+                    }
+                }),
+                Err(error) => {
+                    let _ = announced_tx.send(Err(crate::pty::PtyError::Transport {
+                        detail: format!("the terminal pump runtime could not start: {error}"),
+                    }));
+                }
+            }
+        })
+        .map_err(|error| CompanionError::Transport {
+            detail: format!("the terminal pump thread could not start: {error}"),
+        })?;
+    announced_rx
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .map_err(|_| CompanionError::Timeout {
+            detail: "the terminal never came up".to_owned(),
+        })?
+        .map_err(CompanionError::from)?;
+    Ok(Arc::new(TerminalSession {
+        commands: StdMutex::new(Some(commands_tx)),
+        shared,
+        handle: StdMutex::new(Some(handle)),
+    }))
+}
+
+#[uniffi::export]
+impl TerminalSession {
+    /// The current column count.
+    pub fn cols(&self) -> u32 {
+        self.shared.lock().map(|state| state.size.0).unwrap_or(0)
+    }
+
+    /// The current row count.
+    pub fn rows(&self) -> u32 {
+        self.shared.lock().map(|state| state.size.1).unwrap_or(0)
+    }
+
+    /// True once the stream reached its end, however it ended.
+    pub fn is_closed(&self) -> bool {
+        self.shared.lock().map(|state| state.ended).unwrap_or(true)
+    }
+
+    /// The shell's exit status, once the host sent one.
+    pub fn exit_status(&self) -> Option<u32> {
+        self.shared.lock().ok().and_then(|state| state.exit_status)
+    }
+
+    /// The reason the pump ended, once it has.
+    pub fn last_error(&self) -> Option<String> {
+        self.shared.lock().ok().and_then(|state| state.last_error.clone())
+    }
+
+    /// The next bytes from the host, delivered the moment they arrive.
+    /// Up to `max_bytes`; an empty answer means none are pending, never an
+    /// error — the UI polls this and redraws as soon as bytes exist.
+    pub fn read(&self, max_bytes: u32) -> Vec<u8> {
+        self.shared
+            .lock()
+            .map(|mut state| state.drain(max_bytes as usize))
+            .unwrap_or_default()
+    }
+
+    /// Write keystrokes or paste to the host in one piece, verbatim.
+    pub fn write(&self, bytes: Vec<u8>) -> Result<(), CompanionError> {
+        let sender = self
+            .commands
+            .lock()
+            .map_err(|_| CompanionError::Transport {
+                detail: "the terminal is not available".to_owned(),
+            })?
+            .clone();
+        let sender = sender.ok_or(CompanionError::Transport {
+            detail: "the terminal is closed".to_owned(),
+        })?;
+        sender
+            .try_send(crate::pty::PtyCommand::Write(bytes))
+            .map_err(|_| CompanionError::Transport { detail: "the terminal is closed".to_owned() })
+    }
+
+    /// Reshape the terminal without reopening the channel.
+    pub fn resize(&self, cols: u32, rows: u32) -> Result<(), CompanionError> {
+        let sender = self
+            .commands
+            .lock()
+            .map_err(|_| CompanionError::Transport {
+                detail: "the terminal is not available".to_owned(),
+            })?
+            .clone();
+        let sender = sender.ok_or(CompanionError::Transport {
+            detail: "the terminal is closed".to_owned(),
+        })?;
+        sender
+            .try_send(crate::pty::PtyCommand::Resize(cols, rows))
+            .map_err(|_| CompanionError::Transport { detail: "the terminal is closed".to_owned() })?;
+        if let Ok(mut state) = self.shared.lock() {
+            state.size = (cols, rows);
+        }
+        Ok(())
+    }
+
+    /// Orderly shutdown: close the channel and join the pump. Idempotent.
+    /// Named `close_session` because the generated binding already
+    /// implements `AutoCloseable.close`.
+    pub fn close_session(&self) {
+        if let Ok(mut commands) = self.commands.lock() {
+            if let Some(sender) = commands.take() {
+                let _ = sender.try_send(crate::pty::PtyCommand::Close);
+            }
+        }
+        if let Ok(mut handle) = self.handle.lock() {
+            if let Some(handle) = handle.take() {
+                let _ = handle.join();
+            }
+        }
     }
 }
 

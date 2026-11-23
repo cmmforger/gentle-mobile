@@ -440,4 +440,8 @@
     <string name="err_unsupported_method">This host does not offer %1$s.</string>
     <string name="err_transport">The connection to the host failed: %1$s</string>
     <string name="err_timeout">The host took too long to answer: %1$s</string>
+
+    <!-- T42: the real terminal -->
+    <string name="terminal_title">Terminal</string>
+    <string name="terminal_open">Open terminal</string>
 </resources>

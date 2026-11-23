@@ -140,6 +140,7 @@ import com.gentlemanprogramming.gentlemobile.core.PaneReadDto
 import com.gentlemanprogramming.gentlemobile.core.SnapshotDto
 import com.gentlemanprogramming.gentlemobile.core.SurfaceSizeDto
 import com.gentlemanprogramming.gentlemobile.core.TabDto
+import com.gentlemanprogramming.gentlemobile.core.TerminalSession
 import com.gentlemanprogramming.gentlemobile.core.UploadProgressListener
 import com.gentlemanprogramming.gentlemobile.core.composePrompt as coreComposePrompt
 import com.gentlemanprogramming.gentlemobile.core.planUpload as corePlanUpload
@@ -151,6 +152,7 @@ import com.gentlemanprogramming.gentlemobile.core.refreshLease
 import com.gentlemanprogramming.gentlemobile.core.releaseLease
 import com.gentlemanprogramming.gentlemobile.core.resumeSession as coreResumeSession
 import com.gentlemanprogramming.gentlemobile.core.startSessionInDir as coreStartSessionInDir
+import com.gentlemanprogramming.gentlemobile.core.startTerminal as coreStartTerminal
 import com.gentlemanprogramming.gentlemobile.ui.approval.ApprovalBoardModel
 import com.gentlemanprogramming.gentlemobile.ui.approval.ApprovalGate
 import com.gentlemanprogramming.gentlemobile.ui.approval.ApprovalHold
@@ -237,6 +239,8 @@ import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalDefaultBackgrou
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalSurface
 import com.gentlemanprogramming.gentlemobile.ui.terminal.rememberTypefaces
 import com.gentlemanprogramming.gentlemobile.ui.terminal.rememberTerminalCellMetrics
+import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalScreen
+import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFixtureScreen
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -330,6 +334,14 @@ class MainActivity : FragmentActivity() {
             } else {
                 false
             }
+        // Debug-only, per-launch proof of the real PTY terminal's rendering:
+        // a canned stream, no sshd. Same gate as wrap_preview.
+        val terminalFixture =
+            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                intent?.getBooleanExtra("terminal_fixture", false) == true
+            } else {
+                false
+            }
         setContent {
             val themeStore = remember {
                 ThemeStore(SharedPreferencesStore(this@MainActivity))
@@ -403,6 +415,11 @@ class MainActivity : FragmentActivity() {
                 if (showFixture) {
                     com.gentlemanprogramming.gentlemobile.ui.terminal.FixtureTerminal(
                         debugInfo = showFixtureDebug,
+                    )
+                } else if (terminalFixture) {
+                    TerminalFixtureScreen(
+                        theme = effectiveTheme,
+                        onBack = { finish() },
                     )
                 } else if (hostsPreview) {
                     HostsPreview()
@@ -541,6 +558,15 @@ private class ScreenState {
     var resumedSending by mutableStateOf(false)
     var resumedSendError by mutableStateOf<String?>(null)
     var resumedCloseError by mutableStateOf<String?>(null)
+
+    /** T42: the real terminal — our own PTY lane drawn locally. Opened from
+     *  the session's pane sheet; back returns to the herdr session, which
+     *  stays alive underneath. */
+    var terminalSession by mutableStateOf<TerminalSession?>(null)
+    var terminalStarting by mutableStateOf(false)
+    var terminalError by mutableStateOf<String?>(null)
+    var terminalTitle by mutableStateOf<String?>(null)
+    var terminalCwd by mutableStateOf<String?>(null)
 
     /** S24-5: the start-session screen's state — the sessions the history
      *  screen already listed (the repositories derive from them, nothing is
@@ -848,7 +874,7 @@ private class SessionUi {
 }
 
 /** The screens reachable from the Pair flow; the design shows back buttons. */
-private enum class Route { Main, Settings, Themes, Host, Sessions, StartSession, Resumed, Workspaces }
+private enum class Route { Main, Settings, Themes, Host, Sessions, StartSession, Resumed, Workspaces, Terminal }
 
 /** The words a resume or a prompt failure shows: typed refusals keep their
  *  exact message (the core's Display carries the reason), anything else
@@ -1101,6 +1127,19 @@ fun ConnectScreen(
             // session is open, scoped to this agent's workspace.
             pollWorkspaceTabs(screen, sessionUi, connection, agent.workspaceId, agent.paneId, generation)
         }
+    }
+
+    /** T42: open the real terminal for this session — a plain login shell in
+     *  the workspace's folder, over our own PTY. The herdr session stays
+     *  alive underneath; back returns to it. */
+    fun openTerminal(current: UiState.Session) {
+        val profile = screen.profile ?: return
+        screen.terminalSession = null
+        screen.terminalStarting = false
+        screen.terminalError = null
+        screen.terminalCwd = current.agent.cwd.orEmpty()
+        screen.terminalTitle = AgentRowModel.sessionTitle(current.agent.cwd, current.agent.name)
+        route = Route.Terminal
     }
 
     /** S24-5: start a fresh session in `dir` (a repository with history, or
@@ -1782,6 +1821,57 @@ fun ConnectScreen(
         }
         // The session is gone (teardown): back to the list.
         route = Route.Sessions
+    }
+
+    // T42: the real terminal — our own PTY, a bare login shell in the
+    // workspace folder, drawn locally. Opened from the session's pane sheet;
+    // back returns to the herdr session, which stays alive underneath.
+    if (route == Route.Terminal) {
+        val terminalProfile = screen.profile
+        if (terminalProfile != null) {
+            TerminalScreen(
+                title = screen.terminalTitle ?: stringResource(R.string.terminal_title),
+                theme = appTheme,
+                session = screen.terminalSession,
+                starting = screen.terminalStarting,
+                error = screen.terminalError,
+                onStart = { cols, rows ->
+                    if (screen.terminalSession == null && !screen.terminalStarting) {
+                        screen.terminalStarting = true
+                        screen.terminalError = null
+                        val cwd = screen.terminalCwd.orEmpty()
+                        executor.execute {
+                            try {
+                                val started = coreStartTerminal(
+                                    terminalProfile,
+                                    cwd,
+                                    cols.toUInt(),
+                                    rows.toUInt(),
+                                )
+                                mainHandler.post {
+                                    screen.terminalSession = started
+                                    screen.terminalStarting = false
+                                    screen.terminalError = null
+                                }
+                            } catch (e: Exception) {
+                                mainHandler.post {
+                                    screen.terminalStarting = false
+                                    screen.terminalError = describe(context, e)
+                                }
+                            }
+                        }
+                    }
+                },
+                onBack = {
+                    screen.terminalSession?.closeSession()
+                    screen.terminalSession = null
+                    screen.terminalError = null
+                    route = Route.Main
+                },
+            )
+            return
+        }
+        route = Route.Main
     }
 
     // Pairing link paste + QR scan.
@@ -3292,6 +3382,7 @@ fun ConnectScreen(
                         }
                     },
                     wrapPreview = wrapPreview,
+                    onOpenTerminal = { openTerminal(current) },
                 )
             }
         }
@@ -4260,6 +4351,8 @@ private fun SessionScreen(
     // that is not cropped. View layer only — the WrapGuard decisions and
     // their tests are untouched, and the extra is absent in release.
     wrapPreview: Boolean = false,
+    // T42: open the real terminal for this session from the pane sheet.
+    onOpenTerminal: () -> Unit,
 ) {
     val interrupted = supervision as? SupervisionState.Interrupted
     // T13: the two pickers behind the composer's camera and clip icons.
@@ -4453,6 +4546,10 @@ private fun SessionScreen(
                     onPick = { row ->
                         paneSheet = false
                         onPaneSelected(row)
+                    },
+                    onOpenTerminal = {
+                        paneSheet = false
+                        onOpenTerminal()
                     },
                 )
             }
@@ -6063,6 +6160,7 @@ private fun PaneSwitcherSheet(
     rows: List<PaneSwitcherModel.Row>,
     onDismiss: () -> Unit,
     onPick: (PaneSwitcherModel.Row) -> Unit,
+    onOpenTerminal: () -> Unit,
 ) {
     val p = LocalPalette.current
     ModalBottomSheet(
@@ -6109,6 +6207,22 @@ private fun PaneSwitcherSheet(
                         )
                     }
                 }
+            }
+            // T42: the real terminal, from the same sheet — the herdr
+            // surface and the approval view stay one tap back.
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .clickable { onOpenTerminal() },
+            ) {
+                Text(
+                    text = stringResource(R.string.terminal_open),
+                    color = p.accent,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             Spacer(Modifier.height(12.dp))
         }
