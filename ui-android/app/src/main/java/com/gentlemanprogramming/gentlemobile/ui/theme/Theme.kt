@@ -1,10 +1,13 @@
 package com.gentlemanprogramming.gentlemobile.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 /**
  * One theme applied through Material 3 so every screen follows it: a theme
  * swap rewrites the backing values and never changes layout (S9). Values come
@@ -33,12 +36,50 @@ fun materialScheme(p: Palette) = darkColorScheme(
     inverseOnSurface = p.text,
 )
 
+/**
+ * Every screen draws with the typeface the app holds: the family is
+ * handed to `MaterialTheme` once, so a switch applies everywhere without
+ * touching composables.
+ */
+fun fontFamilyFor(choice: AppTypeface): FontFamily {
+    val face = bundledFace(choice) ?: return FontFamily.Default
+    val regular = Font(face.regular)
+    return face.bold?.let { FontFamily(regular, Font(it, FontWeight.Bold)) }
+        ?: FontFamily(regular)
+}
+
+private fun typographyOf(family: FontFamily): Typography {
+    val base = Typography()
+    return Typography(
+        displayLarge = base.displayLarge.copy(fontFamily = family),
+        displayMedium = base.displayMedium.copy(fontFamily = family),
+        displaySmall = base.displaySmall.copy(fontFamily = family),
+        headlineLarge = base.headlineLarge.copy(fontFamily = family),
+        headlineMedium = base.headlineMedium.copy(fontFamily = family),
+        headlineSmall = base.headlineSmall.copy(fontFamily = family),
+        titleLarge = base.titleLarge.copy(fontFamily = family),
+        titleMedium = base.titleMedium.copy(fontFamily = family),
+        titleSmall = base.titleSmall.copy(fontFamily = family),
+        bodyLarge = base.bodyLarge.copy(fontFamily = family),
+        bodyMedium = base.bodyMedium.copy(fontFamily = family),
+        bodySmall = base.bodySmall.copy(fontFamily = family),
+        labelLarge = base.labelLarge.copy(fontFamily = family),
+        labelMedium = base.labelMedium.copy(fontFamily = family),
+        labelSmall = base.labelSmall.copy(fontFamily = family),
+    )
+}
+
 @Composable
-fun GentleMobileTheme(theme: AppTheme = AppTheme.default, content: @Composable () -> Unit) {
+fun GentleMobileTheme(
+    theme: AppTheme = AppTheme.default,
+    typeface: AppTypeface = AppTypeface.default,
+    content: @Composable () -> Unit,
+) {
     val palette = paletteOf(theme)
     CompositionLocalProvider(LocalPalette provides palette) {
         MaterialTheme(
             colorScheme = materialScheme(palette),
+            typography = typographyOf(fontFamilyFor(typeface)),
             content = content,
         )
     }

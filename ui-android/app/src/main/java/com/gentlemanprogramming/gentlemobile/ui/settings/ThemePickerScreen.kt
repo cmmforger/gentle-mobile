@@ -67,7 +67,7 @@ fun ThemePickerScreen(
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("‹", color = p.text, fontSize = 18.sp)
+                Text("‹", color = p.accent, fontSize = 20.sp)
             }
             Spacer(Modifier.width(8.dp))
             Text(text = stringResource(R.string.theme_title), color = p.muted, fontSize = 13.sp)

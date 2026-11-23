@@ -24,6 +24,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -60,6 +61,8 @@ import com.gentlemanprogramming.gentlemobile.ui.locale.AppLanguage
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
+import com.gentlemanprogramming.gentlemobile.ui.theme.AppTypeface
+import com.gentlemanprogramming.gentlemobile.ui.theme.fontFamilyFor
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import java.security.MessageDigest
@@ -77,6 +80,7 @@ import java.security.MessageDigest
  * is disabled with its exact reason — never a dead control that pretends to
  * work.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     identity: DeviceIdentity.Identity?,
@@ -87,8 +91,10 @@ fun SettingsScreen(
     theme: AppTheme,
     followThePhone: Boolean,
     language: AppLanguage,
+    typeface: AppTypeface,
     onSetFollowThePhone: (Boolean) -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
+    onSetTypeface: (AppTypeface) -> Unit,
     connected: Boolean,
     regenerated: Boolean,
     /** T15 (S11): the notification permission as the device holds it —
@@ -108,6 +114,7 @@ fun SettingsScreen(
     var confirmRegenerate by remember { mutableStateOf(false) }
     var confirmRevoke by remember { mutableStateOf(false) }
     var hostsOpen by remember { mutableStateOf(false) }
+    var typefacePickerOpen by remember { mutableStateOf(false) }
     // Sessions directory (T17a): the override lives across screens, so the
     // edit state belongs to the function, not to a card slot.
     val context = LocalContext.current
@@ -383,12 +390,15 @@ fun SettingsScreen(
             sub = stringResource(R.string.set_area_typeface_sub),
             iconGlyph = "Aa",
         ) {
-            // Read-only by design (L31): the app uses the platform UI face,
-            // with every weight it ships. A picker the app cannot back is a
-            // fake control — not drawn.
             SettingRow(
                 name = stringResource(R.string.set_typeface_family),
-                sub = stringResource(R.string.set_typeface_value),
+                sub = if (typeface == AppTypeface.SYSTEM) {
+                    stringResource(R.string.set_typeface_value)
+                } else {
+                    typeface.label
+                },
+                onClick = { typefacePickerOpen = true },
+                trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
             )
             Footnote(stringResource(R.string.set_typeface_foot))
         }
@@ -525,6 +535,57 @@ fun SettingsScreen(
             },
             onDismiss = { confirmRevoke = false },
         )
+    }
+    if (typefacePickerOpen) {
+        ModalBottomSheet(
+            onDismissRequest = { typefacePickerOpen = false },
+            containerColor = p.surface,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Air.CARD_PADDING_DP.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.set_area_typeface),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(8.dp))
+                for (choice in AppTypeface.entries) {
+                    val current = choice == typeface
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = Air.TOUCH_DP.dp)
+                            .clickable {
+                                typefacePickerOpen = false
+                                onSetTypeface(choice)
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // The row is its own preview: it draws in the face it names.
+                        Text(
+                            text = if (choice == AppTypeface.SYSTEM) {
+                                stringResource(R.string.set_typeface_value)
+                            } else {
+                                choice.label
+                            },
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 15.sp,
+                            fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                            fontFamily = fontFamilyFor(choice),
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (current) {
+                            Text("✓", color = p.accent, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -679,7 +740,7 @@ private fun SettingRow(
                 text = sub,
                 color = p.muted,
                 fontSize = if (isMono) 11.sp else 13.sp,
-                fontFamily = if (isMono) FontFamily.Monospace else FontFamily.Default,
+                fontFamily = if (isMono) FontFamily.Monospace else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )

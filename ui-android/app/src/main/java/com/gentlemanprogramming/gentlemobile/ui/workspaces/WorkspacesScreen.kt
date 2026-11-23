@@ -557,7 +557,9 @@ private fun WorkspaceRow(row: WorkspaceRowDto, needsYou: Int, onOpen: () -> Unit
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = stringResource(R.string.ws_focused),
-                        color = p.accent,
+                        // Readable on both themes and distinct from the
+                        // title: the ink, never the accent.
+                        color = p.text,
                         fontSize = 11.sp,
                         letterSpacing = 0.5.sp,
                     )

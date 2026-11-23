@@ -309,7 +309,7 @@
     <string name="set_area_typeface_sub">The app\u2019s own face, on this device.</string>
     <string name="set_typeface_family">Family</string>
     <string name="set_typeface_value">System</string>
-    <string name="set_typeface_foot">Your phone\u2019s UI font, with every weight it ships, so bold text stays bold.</string>
+    <string name="set_typeface_foot">The choice draws every screen at once, and survives a restart. Space Grotesk and IBM Plex Sans ship regular and bold; Aldrich is one weight.</string>
     <string name="set_area_terminal_font">Terminal font</string>
     <string name="set_area_terminal_font_sub">The terminal and the draft field, on this device.</string>
     <string name="set_terminal_font_value">JetBrains Mono (bundled)</string>
