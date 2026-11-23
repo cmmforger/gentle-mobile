@@ -3160,6 +3160,10 @@ fun ConnectScreen(
                         // The pane poller stops itself: its generation check
                         // no longer matches a Connected screen.
                         poll(screen, current.connection, screen.generation)
+                        // Back lands on the workspaces of this host, not on the
+                        // host list: the point of leaving a session is picking
+                        // another workspace, one tap away.
+                        route = Route.Workspaces
                     },
                     onRetry = { gated { connect(acceptChallenge = null, pair = pairParams) } },
                     onRefresh = {
