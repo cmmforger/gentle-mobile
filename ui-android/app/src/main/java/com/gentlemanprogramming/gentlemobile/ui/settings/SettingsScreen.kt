@@ -63,6 +63,8 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTypeface
 import com.gentlemanprogramming.gentlemobile.ui.theme.fontFamilyFor
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalAppTypeface
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalOnSetTypeface
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import java.security.MessageDigest
@@ -91,10 +93,8 @@ fun SettingsScreen(
     theme: AppTheme,
     followThePhone: Boolean,
     language: AppLanguage,
-    typeface: AppTypeface,
     onSetFollowThePhone: (Boolean) -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
-    onSetTypeface: (AppTypeface) -> Unit,
     connected: Boolean,
     regenerated: Boolean,
     /** T15 (S11): the notification permission as the device holds it —
@@ -111,6 +111,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
 ) {
     val p = LocalPalette.current
+    val typeface = LocalAppTypeface.current
+    val onSetTypeface = LocalOnSetTypeface.current
     var confirmRegenerate by remember { mutableStateOf(false) }
     var confirmRevoke by remember { mutableStateOf(false) }
     var hostsOpen by remember { mutableStateOf(false) }

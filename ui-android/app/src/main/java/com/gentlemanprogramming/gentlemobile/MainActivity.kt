@@ -364,7 +364,16 @@ class MainActivity : FragmentActivity() {
                 LocalLifecycleOwner provides this@MainActivity,
                 LocalOnBackPressedDispatcherOwner provides this@MainActivity,
             ) {
-                GentleMobileTheme(effectiveTheme, typeface) {
+                GentleMobileTheme(
+                    effectiveTheme,
+                    typeface,
+                    onSetTypeface = { chosen ->
+                        // Applied immediately (the composition rebuilds the
+                        // typography) and persisted for the next launch.
+                        typefaceStore.select(chosen)
+                        typeface = chosen
+                    },
+                ) {
                 // The chrome follows the theme it renders: Paper's light page
                 // needs dark icons on the system bars, the dark themes keep
                 // light ones.
@@ -414,7 +423,7 @@ class MainActivity : FragmentActivity() {
                         appTheme = appTheme,
                         followThePhone = followThePhone,
                         language = language,
-                        typeface = typeface,
+                        openAgentPane = openAgentPane,
                         onSetLanguage = { chosen ->
                             // Applied immediately (the composition provides
                             // a context in the new locale), persisted for the
@@ -422,7 +431,6 @@ class MainActivity : FragmentActivity() {
                             localeStore.select(chosen)
                             language = chosen
                         },
-                        openAgentPane = openAgentPane,
                         onSelectTheme = { theme ->
                             // Applied immediately, persisted for the next launch,
                             // and Follow the phone turns off: a pin wins over the
@@ -435,12 +443,6 @@ class MainActivity : FragmentActivity() {
                         onSetFollowThePhone = { follow ->
                             followThePhone = follow
                             themeStore.setFollowThePhone(follow)
-                        },
-                        onSetTypeface = { chosen ->
-                            // Applied immediately (the composition rebuilds
-                            // the typography), persisted for the next launch.
-                            typefaceStore.select(chosen)
-                            typeface = chosen
                         },
                     )
                 }
@@ -865,8 +867,6 @@ fun ConnectScreen(
     followThePhone: Boolean,
     language: AppLanguage,
     onSetLanguage: (AppLanguage) -> Unit,
-    typeface: AppTypeface = AppTypeface.SYSTEM,
-    onSetTypeface: (AppTypeface) -> Unit = {},
     onSelectTheme: (AppTheme) -> Unit,
     onSetFollowThePhone: (Boolean) -> Unit,
     openAgentPane: androidx.compose.runtime.MutableState<String?>,
@@ -1387,8 +1387,6 @@ fun ConnectScreen(
             language = language,
             onSetFollowThePhone = onSetFollowThePhone,
             onSetLanguage = onSetLanguage,
-            typeface = typeface,
-            onSetTypeface = onSetTypeface,
             connected = screen.ui is UiState.Connected,
             regenerated = regenerated,
             notificationsGranted = notificationsGranted,

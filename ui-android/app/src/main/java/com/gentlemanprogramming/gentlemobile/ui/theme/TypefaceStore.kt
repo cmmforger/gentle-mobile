@@ -1,13 +1,15 @@
 package com.gentlemanprogramming.gentlemobile.ui.theme
 
+import androidx.compose.runtime.ProvidableCompositionLocal
+import androidx.compose.runtime.staticCompositionLocalOf
 import com.gentlemanprogramming.gentlemobile.R
 
 /**
- * The interface typeface the app draws with: the platform face by
- * default, or one of the bundled OFL faces. Applied through the
- * `MaterialTheme` typography in [Theme.kt], so every screen follows without
- * touching each composable. The terminal keeps JetBrains Mono — this is the
- * chrome's face, never the terminal's.
+ * The interface typeface the app draws with: the platform face by default,
+ * or one of the bundled OFL faces. Applied through the `MaterialTheme`
+ * typography in Theme.kt, so every screen follows without touching each
+ * composable. The terminal keeps JetBrains Mono — this is the chrome's
+ * face, never the terminal's.
  */
 enum class AppTypeface(val label: String) {
     SYSTEM("System"),
@@ -58,3 +60,10 @@ fun bundledFace(choice: AppTypeface): BundledFace? = when (choice) {
     AppTypeface.IBM_PLEX_SANS -> BundledFace(R.font.ibm_plex_sans_regular, R.font.ibm_plex_sans_bold)
     AppTypeface.ALDRICH -> BundledFace(R.font.aldrich_regular, null)
 }
+
+/** The choice and the way to change it, provided beside [LocalPalette] so
+ *  the settings screen reads it without threading a parameter through the
+ *  connect flow. */
+val LocalAppTypeface = staticCompositionLocalOf { AppTypeface.default }
+val LocalOnSetTypeface: ProvidableCompositionLocal<(AppTypeface) -> Unit> =
+    staticCompositionLocalOf { {} }

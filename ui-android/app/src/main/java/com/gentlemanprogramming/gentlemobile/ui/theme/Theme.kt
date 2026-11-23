@@ -73,10 +73,15 @@ private fun typographyOf(family: FontFamily): Typography {
 fun GentleMobileTheme(
     theme: AppTheme = AppTheme.default,
     typeface: AppTypeface = AppTypeface.default,
+    onSetTypeface: (AppTypeface) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val palette = paletteOf(theme)
-    CompositionLocalProvider(LocalPalette provides palette) {
+    CompositionLocalProvider(
+        LocalPalette provides palette,
+        LocalAppTypeface provides typeface,
+        LocalOnSetTypeface provides onSetTypeface,
+    ) {
         MaterialTheme(
             colorScheme = materialScheme(palette),
             typography = typographyOf(fontFamilyFor(typeface)),
