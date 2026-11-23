@@ -533,7 +533,7 @@ private fun WorkspaceRow(row: WorkspaceRowDto, needsYou: Int, onOpen: () -> Unit
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = row.label,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = p.accent,
                     fontSize = Air.ROW_NAME_SP.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
