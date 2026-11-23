@@ -395,6 +395,7 @@ handoff). Commit column stays `—` until implementation is authorized.
   phone (SFTP upload plus the `[attached image: path]` line) is a separate path and stays.
 | T38 | Terminal on screen: render that PTY stream with the Termux `terminal-emulator` engine (Apache-2.0, credited) inside our session screen, with our theme's terminal palette, running `herdr` inside it | S33 | worker | — |
 | T39 | Session screen: back to the edge, panels and refresh as header icons with the PANELES row deleted, key chips that never truncate (`↵` instead of a cut `E`), momentary keys with a pressed state, and no line cut at the card's bottom | S35 | worker | — |
+| T40 | Bundle three OFL typefaces (Space Grotesk, IBM Plex Sans, Aldrich) with a real picker in Settings that applies app-wide, persists, and is credited in NOTICE | S33 | worker | — |
 | T34 | Approval block inside the session (board `09` P2/P4): the same question, command and held answers while looking at the agent's pane, instead of only from the board | S32b | worker | — |
 | T31 | Approval board: agents grouped by what they need, the exact command before an approval, one-tap answers with a re-read before sending, risky answers held, one needs-you count everywhere | S32b | worker | — |
 | T29 | Honest crop: detect that the granted grid crops wider pane content, say it in one line, and offer the whole pane scaled as an explicit fallback; anchor every notice so it cannot change the derived grid and re-fire the claim | S31c | worker | — |
@@ -894,3 +895,5 @@ the pane visible down to its composer rows and metrics. 439 JVM tests. Signed **
 emulator killed, daemon back to the owner's eight workspaces (the cancelled worker's `t36b-ws` closed), screenshots and scratch deleted.
 Still open: **T38** (the Termux engine drawing our own PTY with herdr inside) and the collie comparison, which the owner wants to decide with both
 in hand.
+
+**L42 (two colour fixes and fonts):** The workspaces rows drew their names with the Material ink (near white in Cute) and the settings back chevron was ink where every other screen draws it in the accent — both now take the theme (`1930b9c`, 0.9.5). The human then chose, out of three options for typefaces, the small one: **bundle two or three OFL faces and give the Typeface row a real picker** — Space Grotesk, IBM Plex Sans and Aldrich, applied app-wide through the Material `Typography` so no screen needs touching, credited in `NOTICE` like Iconoir. T40 carries it.
