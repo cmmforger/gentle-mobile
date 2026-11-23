@@ -21,7 +21,12 @@ import java.util.concurrent.atomic.AtomicInteger
  * * the foreground return retries an interrupted link **exactly once** —
  *   never a silent loop that hides a failure;
  * * data on screen is **live only in the connected state** — a stale
- *   snapshot is never rendered as if it were live.
+ *   snapshot is never rendered as if it were live;
+ * * (T41) **a background gap is not evidence of failure**: a drop observed
+ *   while the app is backgrounded is recorded, never painted or latched.
+ *   The return probes the live connection first, and only a failed probe
+ *   surfaces the interrupted state; a successful probe clears the stale
+ *   drop and stays connected without a reconnect.
  */
 sealed interface SupervisionState {
     /** No attempt is running: the form is up, nothing to supervise. */
@@ -46,6 +51,21 @@ sealed interface SupervisionState {
     data class Failed(val reason: String) : SupervisionState
 }
 
+/** What the caller must do after the app returned to the foreground (T41). */
+enum class ForegroundAction {
+    /** Nothing to do: the link is as it was, or already handled. */
+    Nothing,
+
+    /** The link was interrupted and its one automatic attempt is available:
+     *  start exactly one reconnect. */
+    Retry,
+
+    /** A drop was observed while the app was backgrounded but the link is
+     *  still held connected: probe the live connection first. Only a failed
+     *  probe may surface the interrupted state. */
+    Probe,
+}
+
 /** The word a data header must show for what is on screen. */
 fun livenessLabel(state: SupervisionState): String = when (state) {
     is SupervisionState.Connected -> "live"
@@ -67,17 +87,26 @@ class SupervisionMachine {
      *  failed auto attempt is recorded instead of re-arming the loop. */
     private var autoAttemptActive: Boolean = false
 
+    /** T41: the app is in the background. A drop there is a gap, not
+     *  evidence that the link died. */
+    private var backgrounded: Boolean = false
+
+    /** A drop observed while backgrounded, not yet resolved by a probe. */
+    private var dropObservedWhileBackgrounded: Boolean = false
+
     /** Begin an attempt: a fresh connect, or a retry after an interruption.
      *  The attempt counter always advances, so the UI can show it. */
     fun begin() {
         attempts += 1
         autoAttemptActive = false
+        dropObservedWhileBackgrounded = false
         state = SupervisionState.Connecting(attempts)
     }
 
     /** The attempt reached a live connection. */
     fun onLive() {
         autoAttemptActive = false
+        dropObservedWhileBackgrounded = false
         state = SupervisionState.Connected
     }
 
@@ -85,8 +114,15 @@ class SupervisionMachine {
      *  From connected or connecting this records the interruption with its
      *  reason; a failed automatic attempt is marked so the foreground return
      *  does not retry forever. Already-interrupted and other states keep
-     *  their first honest reason. */
+     *  their first honest reason.
+     *
+     *  T41: while the app is backgrounded a drop is a gap, not a verdict —
+     *  it is recorded for the return's probe but never latched here. */
     fun onDropped(reason: String) {
+        if (backgrounded && state is SupervisionState.Connected) {
+            dropObservedWhileBackgrounded = true
+            return
+        }
         val wasAuto = autoAttemptActive
         autoAttemptActive = false
         val previousAutoUsed = (state as? SupervisionState.Interrupted)?.autoRetryUsed ?: false
@@ -104,30 +140,53 @@ class SupervisionMachine {
      *  paper over it, only an explicit user action restarts. */
     fun onRefused(reason: String) {
         autoAttemptActive = false
+        dropObservedWhileBackgrounded = false
         if (state is SupervisionState.Connecting) {
             state = SupervisionState.Failed(reason)
         }
     }
 
-    /** The app returned to the foreground. When (and only when) the link is
-     *  interrupted and its one automatic attempt has not been spent, start
-     *  exactly one: true means an attempt is now in flight. */
-    fun onForeground(): Boolean {
+    /** The app went to the background (T41): from here on, drops are gaps. */
+    fun onBackgrounded() {
+        backgrounded = true
+    }
+
+    /** The app returned to the foreground. The caller must act on the
+     *  returned action: [ForegroundAction.Retry] starts the one automatic
+     *  reconnect, [ForegroundAction.Probe] probes the live connection before
+     *  painting any state, [ForegroundAction.Nothing] leaves everything as it
+     *  is. */
+    fun onForegrounded(): ForegroundAction {
+        backgrounded = false
+        val hadBackgroundDrop = dropObservedWhileBackgrounded
+        dropObservedWhileBackgrounded = false
         val current = state
-        return if (current is SupervisionState.Interrupted && !current.autoRetryUsed) {
-            attempts += 1
-            autoAttemptActive = true
-            state = SupervisionState.Connecting(attempts)
-            true
-        } else {
-            false
+        return when {
+            current is SupervisionState.Interrupted && !current.autoRetryUsed -> {
+                attempts += 1
+                autoAttemptActive = true
+                state = SupervisionState.Connecting(attempts)
+                ForegroundAction.Retry
+            }
+            hadBackgroundDrop && current is SupervisionState.Connected ->
+                ForegroundAction.Probe
+            else -> ForegroundAction.Nothing
         }
+    }
+
+    /** A successful probe (T41): the link is alive. Clear the stale
+     *  background drop and stay connected — no reconnect, so the session
+     *  view is never redirected or re-claimed by the check. */
+    fun onProbeAlive() {
+        dropObservedWhileBackgrounded = false
     }
 
     /** The user gave up on this connection: nothing is supervised. */
     fun reset() {
         attempts = 0
         autoAttemptActive = false
+        backgrounded = false
+        dropObservedWhileBackgrounded = false
         state = SupervisionState.Idle
     }
 }

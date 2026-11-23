@@ -119,6 +119,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.gentlemanprogramming.gentlemobile.supervision.ForegroundAction
 import com.gentlemanprogramming.gentlemobile.supervision.PollTracker
 import com.gentlemanprogramming.gentlemobile.supervision.SupervisionMachine
 import com.gentlemanprogramming.gentlemobile.supervision.SupervisionState
@@ -2160,69 +2161,77 @@ fun ConnectScreen(
         screen.ui = UiState.Form
     }
 
-    // Foreground return (T8c): never assume the socket survived a sleep. A
-    // live link gets a cheap liveness probe — an unanswered probe ends the
-    // connection and the pollers surface the interruption; an interrupted
-    // link gets exactly one automatic attempt, never a silent loop.
+    // Foreground return (T8c + T41): the machine decides. A drop observed
+    // while the app was backgrounded is never latched — the return probes the
+    // live connection first, and only a failed probe surfaces the state; a
+    // successful probe clears the stale drop with no reconnect. An
+    // interrupted link gets exactly one automatic attempt, never a loop.
     fun onAppForeground() {
-        when (val supervision = screen.machine.state) {
-            is SupervisionState.Interrupted -> {
-                if (screen.machine.onForeground()) {
-                    connect(acceptChallenge = null, pair = null)
-                }
+        when (screen.machine.onForegrounded()) {
+            ForegroundAction.Retry -> {
+                connect(acceptChallenge = null, pair = null)
             }
-            is SupervisionState.Connected -> {
-                val current = screen.ui
-                if (current is UiState.Connected) {
-                    val connection = current.connection
-                    val generation = screen.generation
-                    executor.execute {
-                        val dead = try {
-                            connection.isDisconnected()
+            ForegroundAction.Probe -> {
+                val connection = when (val current = screen.ui) {
+                    is UiState.Connected -> current.connection
+                    is UiState.Session -> current.connection
+                    else -> null
+                }
+                if (connection == null) return
+                val generation = screen.generation
+                executor.execute {
+                    val dead = try {
+                        connection.isDisconnected()
+                    } catch (_: Exception) {
+                        true
+                    }
+                    if (dead) {
+                        mainHandler.post {
+                            if (screen.generation == generation) {
+                                screen.machine.onDropped(
+                                    AppLocale.wrapStored(screen.appContext)
+                                        .getString(R.string.session_reason_link_down),
+                                )
+                            }
+                        }
+                    } else {
+                        mainHandler.post {
+                            if (screen.generation == generation) {
+                                screen.machine.onProbeAlive()
+                            }
+                        }
+                        // Cheap probe: ping now; a host that stays silent
+                        // ends the connection within a few seconds, and
+                        // the pollers report the interruption.
+                        try {
+                            connection.probeLiveness()
                         } catch (_: Exception) {
-                            true
                         }
-                        if (dead) {
-                            mainHandler.post {
-                                if (screen.generation == generation) {
-                                    screen.machine.onDropped(
-                                        AppLocale.wrapStored(screen.appContext)
-                                            .getString(R.string.session_reason_link_down),
-                                    )
-                                }
-                            }
-                        } else {
-                            // Cheap probe: ping now; a host that stays silent
-                            // ends the connection within a few seconds, and
-                            // the pollers report the interruption.
-                            try {
-                                connection.probeLiveness()
-                            } catch (_: Exception) {
-                            }
-                        }
-                    }
-                } else if (current is UiState.Session) {
-                    // S31c rule 1: return-to-app re-measures once. The
-                    // desktop may have let go while the app slept — the
-                    // pane could be at the phone's width again, or the
-                    // crop could have appeared (or returned). Same
-                    // trigger set as rebind and tab switch.
-                    val sessionUi = screen.sessions[current.agent.paneId]
-                    val granted = sessionUi?.requestedCols
-                    if (sessionUi != null && granted != null) {
-                        scheduleCropCheck(
-                            screen,
-                            screen.generation,
-                            sessionUi,
-                            current.connection,
-                            current.agent.paneId,
-                            granted,
-                            sessionUi.oneToOneCols,
-                        )
                     }
                 }
             }
-            else -> {}
+            ForegroundAction.Nothing -> {}
+        }
+
+        // S31c rule 1: return-to-app re-measures once on a live session —
+        // the desktop may have let go while the app slept. The read never
+        // re-claims or resizes the pane, so the terminal view is untouched.
+        if (screen.machine.state !is SupervisionState.Connected) return
+        val current = screen.ui
+        if (current is UiState.Session) {
+            val sessionUi = screen.sessions[current.agent.paneId]
+            val granted = sessionUi?.requestedCols
+            if (sessionUi != null && granted != null) {
+                scheduleCropCheck(
+                    screen,
+                    screen.generation,
+                    sessionUi,
+                    current.connection,
+                    current.agent.paneId,
+                    granted,
+                    sessionUi.oneToOneCols,
+                )
+            }
         }
     }
 
@@ -2239,7 +2248,10 @@ fun ConnectScreen(
                     notificationsGranted = notificationPermissionGranted(context)
                     onAppForeground()
                 }
-                Lifecycle.Event.ON_PAUSE -> screen.appInForeground = false
+                Lifecycle.Event.ON_PAUSE -> {
+                    screen.appInForeground = false
+                    screen.machine.onBackgrounded()
+                }
                 else -> {}
             }
         }

@@ -9,7 +9,9 @@ import org.junit.Test
  * The supervision brain, unit-tested as pure transitions (T8c): connected →
  * interrupted on a watchdog drop, interrupted → connecting on retry, failed
  * on refusal — plus the "no stale data as live" rule and the poller counter
- * that proves teardown.
+ * that proves teardown. T41 adds the background rules: a gap while the app
+ * is backgrounded never produces the interrupted state, and a failed versus
+ * successful probe decides the state on resume.
  */
 class SupervisionTest {
 
@@ -74,7 +76,7 @@ class SupervisionTest {
         machine.onDropped("link was down while asleep")
 
         // First foreground: exactly one automatic attempt.
-        assertTrue(machine.onForeground())
+        assertEquals(ForegroundAction.Retry, machine.onForegrounded())
         assertTrue(machine.state is SupervisionState.Connecting)
 
         // The automatic attempt fails: back to interrupted, auto used up.
@@ -83,7 +85,7 @@ class SupervisionTest {
         assertTrue("the failed auto attempt must be recorded", interrupted.autoRetryUsed)
 
         // Second foreground: never a silent loop — no more automatic attempts.
-        assertFalse(machine.onForeground())
+        assertEquals(ForegroundAction.Nothing, machine.onForegrounded())
         assertTrue(machine.state is SupervisionState.Interrupted)
     }
 
@@ -92,8 +94,84 @@ class SupervisionTest {
         val machine = SupervisionMachine()
         machine.begin()
         machine.onLive()
-        assertFalse(machine.onForeground())
+        assertEquals(ForegroundAction.Nothing, machine.onForegrounded())
         assertEquals(SupervisionState.Connected, machine.state)
+    }
+
+    // T41 rule 1: a background gap is not evidence of failure.
+    @Test
+    fun `a background gap never produces the interrupted state`() {
+        val machine = SupervisionMachine()
+        machine.begin()
+        machine.onLive()
+        machine.onBackgrounded()
+        machine.onDropped("keepalive gave up while the app was away")
+        assertEquals(
+            "a background gap must not latch the interrupted state",
+            SupervisionState.Connected,
+            machine.state,
+        )
+        assertTrue(machine.isLive)
+    }
+
+    // T41 rule 2: a failed-vs-successful probe decides the state on resume.
+    @Test
+    fun `a failed probe surfaces the interruption on resume`() {
+        val machine = SupervisionMachine()
+        machine.begin()
+        machine.onLive()
+        machine.onBackgrounded()
+        machine.onDropped("background gap")
+
+        assertEquals(ForegroundAction.Probe, machine.onForegrounded())
+        assertEquals(
+            "the background gap stays latent until the probe fails",
+            SupervisionState.Connected,
+            machine.state,
+        )
+
+        machine.onDropped("the host did not answer the probe")
+        assertEquals(
+            SupervisionState.Interrupted(reason = "the host did not answer the probe", autoRetryUsed = false),
+            machine.state,
+        )
+    }
+
+    @Test
+    fun `a successful probe clears the stale background drop and stays connected`() {
+        val machine = SupervisionMachine()
+        machine.begin()
+        machine.onLive()
+        machine.onBackgrounded()
+        machine.onDropped("background gap")
+
+        assertEquals(ForegroundAction.Probe, machine.onForegrounded())
+        machine.onProbeAlive()
+        assertEquals(SupervisionState.Connected, machine.state)
+        assertTrue(machine.isLive)
+
+        // The stale drop is gone: the next foreground does nothing, no retry.
+        assertEquals(ForegroundAction.Nothing, machine.onForegrounded())
+    }
+
+    // T41 rule 3: a resume with a live link leaves the session selection
+    // untouched — no reconnect is requested, so the caller never redirects
+    // or re-claims the pane.
+    @Test
+    fun `a live-link resume leaves the session selection untouched`() {
+        val machine = SupervisionMachine()
+        machine.begin()
+        machine.onLive()
+        machine.onBackgrounded()
+        machine.onDropped("background gap")
+
+        // Never a Retry: the caller must not redirect or re-claim the pane.
+        assertEquals(ForegroundAction.Probe, machine.onForegrounded())
+        machine.onProbeAlive()
+
+        // The same live connection stands: no attempt bump, no state change.
+        assertEquals(SupervisionState.Connected, machine.state)
+        assertTrue(machine.isLive)
     }
 
     @Test
