@@ -11,7 +11,7 @@ class ExtraKeyRowModelTest {
     @Test
     fun `the row is the seven keys in the board's order`() {
         assertEquals(
-            listOf("esc", "tab", "ctrl", "alt", "up", "down", "enter"),
+            listOf("esc", "tab", "ctrl", "alt", "up", "down"),
             ExtraKeyRowModel.chips().map { it.id },
         )
     }
@@ -25,7 +25,7 @@ class ExtraKeyRowModelTest {
     @Test
     fun `no label is a truncated word`() {
         ExtraKeyRowModel.chips().forEach { chip ->
-            val isGlyph = chip.label in setOf("↑", "↓", "↵")
+            val isGlyph = chip.label in setOf("↑", "↓")
             if (!isGlyph) {
                 assertTrue(
                     "label of ${chip.id} must be a word of at least two characters, was '${chip.label}'",
@@ -36,9 +36,8 @@ class ExtraKeyRowModelTest {
     }
 
     @Test
-    fun `enter reads as its return glyph, never the E the old row drew`() {
-        val enter = ExtraKeyRowModel.chips().first { it.id == "enter" }
-        assertEquals("↵", enter.label)
+    fun `enter has no chip, the phone keyboard already has one`() {
+        assertTrue(ExtraKeyRowModel.chips().none { it.id == "enter" })
     }
 
     @Test
