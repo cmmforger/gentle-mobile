@@ -224,6 +224,16 @@ import com.gentlemanprogramming.gentlemobile.ui.settings.AdvancedSettings
 import com.gentlemanprogramming.gentlemobile.ui.settings.AdvancedSettingsStore
 import com.gentlemanprogramming.gentlemobile.ui.settings.ShortcutPadStore
 import com.gentlemanprogramming.gentlemobile.ui.settings.ShortcutsScreen
+import com.gentlemanprogramming.gentlemobile.ui.settings.VozScreen
+import com.gentlemanprogramming.gentlemobile.dictation.DictationEngineChoice
+import com.gentlemanprogramming.gentlemobile.dictation.ModelManager
+import com.gentlemanprogramming.gentlemobile.dictation.ModelRepository
+import com.gentlemanprogramming.gentlemobile.dictation.ModelStatus
+import com.gentlemanprogramming.gentlemobile.dictation.VozSettings
+import com.gentlemanprogramming.gentlemobile.dictation.VozSettingsStore
+import com.gentlemanprogramming.gentlemobile.dictation.WhisperCatalogue
+import com.gentlemanprogramming.gentlemobile.dictation.effectiveEngine
+import com.gentlemanprogramming.gentlemobile.dictation.resolveActiveModel
 import com.gentlemanprogramming.gentlemobile.ui.session.AddResult
 import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutPad
 import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
@@ -352,6 +362,10 @@ class MainActivity : FragmentActivity() {
                 ShortcutPadStore(SharedPreferencesStore(this@MainActivity))
             }
             var shortcutPad by remember { mutableStateOf(shortcutPadStore.load()) }
+            val vozStore = remember {
+                VozSettingsStore(SharedPreferencesStore(this@MainActivity))
+            }
+            var voz by remember { mutableStateOf(vozStore.load()) }
             // S33: Follow the phone — dark renders Cute, light renders Paper;
             // off (the default) the pinned theme stands.
             var followThePhone by remember { mutableStateOf(themeStore.followThePhone()) }
@@ -444,6 +458,7 @@ class MainActivity : FragmentActivity() {
                         language = language,
                         advanced = advanced,
                         shortcutPad = shortcutPad,
+                        voz = voz,
                         openAgentPane = openAgentPane,
                         onSetLanguage = { chosen ->
                             // Applied immediately (the composition provides
@@ -472,6 +487,10 @@ class MainActivity : FragmentActivity() {
                         onSetShortcutPad = { pad ->
                             shortcutPad = pad
                             shortcutPadStore.save(pad)
+                        },
+                        onSetVoz = { settings ->
+                            voz = settings
+                            vozStore.save(settings)
                         },
                     )
                 }
@@ -745,7 +764,7 @@ private class SessionUi {
 }
 
 /** The screens reachable from the Pair flow; the design shows back buttons. */
-private enum class Route { Main, Settings, Themes, Shortcuts, Hooks, Host, Sessions, StartSession, Resumed, Workspaces }
+private enum class Route { Main, Settings, Themes, Shortcuts, Hooks, Voz, Host, Sessions, StartSession, Resumed, Workspaces }
 
 /** The words a resume or a prompt failure shows: typed refusals keep their
  *  exact message (the core's Display carries the reason), anything else
@@ -762,11 +781,13 @@ fun ConnectScreen(
     language: AppLanguage,
     advanced: AdvancedSettings,
     shortcutPad: ShortcutPad,
+    voz: VozSettings,
     onSetLanguage: (AppLanguage) -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     onSetFollowThePhone: (Boolean) -> Unit,
     onSetAdvanced: (AdvancedSettings) -> Unit,
     onSetShortcutPad: (ShortcutPad) -> Unit,
+    onSetVoz: (VozSettings) -> Unit,
     openAgentPane: androidx.compose.runtime.MutableState<String?>,
 ) {
     val screen = remember { ScreenState() }
@@ -791,6 +812,27 @@ fun ConnectScreen(
     }
 
     var route by remember { mutableStateOf(Route.Main) }
+
+    // T54 (Voz): the model manager owns downloads, cancels and deletes, and
+    // reports each model's status; the Voz screen and the terminal composer
+    // both read the resolved active model from the Voz settings.
+    val modelRepository = remember { ModelRepository(File(context.filesDir, "models")) }
+    var modelStatuses by remember { mutableStateOf<Map<String, ModelStatus>>(emptyMap()) }
+    val modelManager = remember {
+        ModelManager(
+            repository = modelRepository,
+            executor = executor,
+            mainHandler = mainHandler,
+            onState = { id, status ->
+                modelStatuses = modelStatuses + (id to status)
+            },
+        )
+    }
+    LaunchedEffect(Unit) { modelManager.refresh() }
+    val installedIds = modelStatuses.filterValues { it is ModelStatus.Installed }.keys
+    val activeModel = resolveActiveModel(voz.activeModelId, installedIds)
+    val activeModelPath = activeModel?.let { modelRepository.fileFor(it).absolutePath }
+    val resolvedEngine = effectiveEngine(voz.engine, activeModel)
 
     // T55 (Hooks): the host's answer about this phone's key, and whether a
     // check is in flight — re-asked on screen entry and on demand.
@@ -1337,6 +1379,7 @@ fun ConnectScreen(
             onOpenThemes = { route = Route.Themes },
             onOpenShortcuts = { route = Route.Shortcuts },
             onOpenHooks = { route = Route.Hooks },
+            onOpenVoz = { route = Route.Voz },
             onToggleBiometric = { enabled ->
                 biometricEnabled = enabled
                 biometricStore.setEnabled(enabled)
@@ -1416,6 +1459,24 @@ fun ConnectScreen(
                     }
                 }
             },
+            onBack = { route = Route.Settings },
+        )
+        return
+    }
+    if (route == Route.Voz) {
+        VozScreen(
+            settings = voz,
+            modelStatuses = modelStatuses,
+            activeModelPath = activeModelPath,
+            onSetEngine = { engine -> onSetVoz(voz.copy(engine = engine)) },
+            onSetAutoSend = { auto -> onSetVoz(voz.copy(autoSend = auto)) },
+            onUseModel = { id ->
+                onSetVoz(voz.copy(engine = DictationEngineChoice.LOCAL_WHISPER, activeModelId = id))
+            },
+            onDownload = { id -> WhisperCatalogue.byId(id)?.let { modelManager.download(it) } },
+            onCancelDownload = { id -> WhisperCatalogue.byId(id)?.let { modelManager.cancel(it) } },
+            onDeleteModel = { id -> WhisperCatalogue.byId(id)?.let { modelManager.delete(it) } },
+            onReplacementsChange = { replacements -> onSetVoz(voz.copy(replacements = replacements)) },
             onBack = { route = Route.Settings },
         )
         return
@@ -2968,6 +3029,10 @@ fun ConnectScreen(
                     useComposer = advanced.useComposer,
                     sendOnEnter = advanced.sendOnEnter,
                     shortcutPad = shortcutPad,
+                    dictationEnabled = resolvedEngine == DictationEngineChoice.LOCAL_WHISPER,
+                    autoSend = voz.autoSend,
+                    activeModelPath = activeModelPath,
+                    replacements = voz.replacements,
                 )
             }
         }
@@ -4734,12 +4799,14 @@ private fun ConnectScreenPreview() {
             language = AppLanguage.ENGLISH,
             advanced = AdvancedSettings(),
             shortcutPad = ShortcutPad.DEFAULT,
+            voz = VozSettings(),
             onSetLanguage = {},
             openAgentPane = androidx.compose.runtime.mutableStateOf<String?>(null),
             onSelectTheme = {},
             onSetFollowThePhone = {},
             onSetAdvanced = {},
             onSetShortcutPad = {},
+            onSetVoz = {},
         )
     }
 }

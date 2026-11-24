@@ -31,6 +31,8 @@ android {
 android {
     namespace = "com.gentlemanprogramming.gentlemobile"
     compileSdk = 34
+    // Same NDK the Rust core is cross-compiled with (scripts/android-env.sh).
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "com.gentlemanprogramming.gentlemobile"
@@ -43,6 +45,23 @@ android {
         // the emulator is x86_64. Everything else only adds bytes.
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+
+        // whisper.cpp (local dictation) is compiled from the vendored C/C++
+        // under src/main/cpp. GGML without optimization is unusably slow, so
+        // the native build is pinned to Release even in the debug APK; the
+        // APK stays debuggable, only the engine is optimized.
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DCMAKE_BUILD_TYPE=Release")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 

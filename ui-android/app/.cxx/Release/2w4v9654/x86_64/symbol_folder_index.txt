@@ -1,1 +1,0 @@
-/mnt/D-SSD/personal/projects/gentle-mobile/ui-android/app/build/intermediates/cxx/Release/2w4v9654/obj/x86_64

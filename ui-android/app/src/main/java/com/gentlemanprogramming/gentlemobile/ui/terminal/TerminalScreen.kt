@@ -1,6 +1,10 @@
 package com.gentlemanprogramming.gentlemobile.ui.terminal
 
 import android.graphics.Paint
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,6 +37,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +56,8 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -60,8 +67,14 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.core.TerminalSession
+import com.gentlemanprogramming.gentlemobile.dictation.LocalDictationState
+import com.gentlemanprogramming.gentlemobile.dictation.LocalWhisperDictation
+import com.gentlemanprogramming.gentlemobile.dictation.WordReplacement
+import com.gentlemanprogramming.gentlemobile.executor
+import com.gentlemanprogramming.gentlemobile.mainHandler
 import com.gentlemanprogramming.gentlemobile.ui.session.Attachment
 import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentState
 import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
@@ -123,6 +136,10 @@ fun TerminalScreen(
     useComposer: Boolean,
     sendOnEnter: Boolean,
     shortcutPad: ShortcutPad,
+    dictationEnabled: Boolean,
+    autoSend: Boolean,
+    activeModelPath: String?,
+    replacements: List<WordReplacement>,
 ) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
@@ -134,6 +151,68 @@ fun TerminalScreen(
     val composer = remember { TerminalComposer() }
     var paneSheet by remember { mutableStateOf(false) }
     var blinkPhase by remember { mutableStateOf(0L) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // T54 (S8): local dictation — record with the microphone, transcribe on
+    // Stop, and land the text in the field (auto-sent only when the setting
+    // says so). The mic is offered only when local Whisper is the resolved
+    // engine; otherwise the phone keyboard's own voice input applies.
+    var dictationState by remember { mutableStateOf<LocalDictationState>(LocalDictationState.Idle) }
+    val whisperDictation = remember(activeModelPath) {
+        LocalWhisperDictation(
+            modelPathProvider = { activeModelPath },
+            replacementsProvider = { replacements },
+            executor = executor,
+            mainHandler = mainHandler,
+        )
+    }
+    DisposableEffect(whisperDictation) {
+        onDispose { whisperDictation.dispose() }
+    }
+    fun submitNow() {
+        val suffixes = attachments.mapNotNull {
+            (it.state as? AttachmentState.Uploaded)?.promptSuffix
+        }
+        val bytes = composer.submit() + TerminalAttachments.suffixBytes(suffixes)
+        if (bytes.isNotEmpty()) session?.write(bytes)
+        input = TextFieldValue("")
+        if (suffixes.isNotEmpty()) onAttachmentsConsumed()
+    }
+    fun dictationListener() = object : LocalWhisperDictation.Listener {
+        override fun onState(state: LocalDictationState) {
+            dictationState = state
+        }
+
+        override fun onFinal(text: String, elapsedMillis: Long) {
+            dictationState = LocalDictationState.Idle
+            if (text.isNotBlank()) {
+                input = TextFieldValue(mergeDictated(input.text, text))
+                if (autoSend) submitNow()
+            }
+        }
+    }
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            whisperDictation.start(dictationListener())
+        } else {
+            dictationState = LocalDictationState.Error(
+                context.getString(R.string.dict_permission_refused),
+            )
+        }
+    }
+    fun startDictation() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            whisperDictation.start(dictationListener())
+        } else {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    fun stopDictation() = whisperDictation.stop(dictationListener())
+    fun cancelDictation() = whisperDictation.cancel(dictationListener())
 
     LaunchedEffect(cursorBlink) {
         while (cursorBlink) {
@@ -238,20 +317,17 @@ fun TerminalScreen(
                 thumbnails = thumbnails,
                 value = input,
                 sendOnEnter = sendOnEnter,
+                dictationEnabled = dictationEnabled,
+                dictationState = dictationState,
                 onValueChange = { new ->
                     val delta = composer.commit(new.text)
                     if (delta.isNotEmpty()) session?.write(delta)
                     input = if (composer.fieldText == new.text) new else TextFieldValue(composer.fieldText)
                 },
-                onSubmit = {
-                    val suffixes = attachments.mapNotNull {
-                        (it.state as? AttachmentState.Uploaded)?.promptSuffix
-                    }
-                    val bytes = composer.submit() + TerminalAttachments.suffixBytes(suffixes)
-                    if (bytes.isNotEmpty()) session?.write(bytes)
-                    input = TextFieldValue("")
-                    if (suffixes.isNotEmpty()) onAttachmentsConsumed()
-                },
+                onSubmit = { submitNow() },
+                onStartDictation = { startDictation() },
+                onStopDictation = { stopDictation() },
+                onCancelDictation = { cancelDictation() },
                 onCamera = onCamera,
                 onPickImage = onPickImage,
                 onRetryUpload = onRetryUpload,
@@ -476,12 +552,20 @@ private fun TerminalKeyChip(
     }
 }
 
+
+
 /**
  * The terminal composer (T49): the app's rounded field with its side
  * margins and the send button beside it, exactly the session composer's
  * shape (defect: it had lost its border and run edge to edge). When the
  * terminal runs an agent, the field carries camera and clip inside; a bare
  * shell keeps a plain field, because nothing would receive an attachment.
+ *
+ * T54 (S8): when local Whisper is the resolved engine, the circle is the
+ * microphone while the field is empty (and Stop while listening), and a
+ * one-line status above the field reports listening, transcribing or the
+ * honest error. Otherwise the circle stays send and the phone keyboard's
+ * own voice input types into the field.
  */
 @Composable
 private fun TerminalComposerRow(
@@ -491,8 +575,13 @@ private fun TerminalComposerRow(
     thumbnails: Map<Long, ImageBitmap>,
     value: TextFieldValue,
     sendOnEnter: Boolean,
+    dictationEnabled: Boolean,
+    dictationState: LocalDictationState,
     onValueChange: (TextFieldValue) -> Unit,
     onSubmit: () -> Unit,
+    onStartDictation: () -> Unit,
+    onStopDictation: () -> Unit,
+    onCancelDictation: () -> Unit,
     onCamera: () -> Unit,
     onPickImage: () -> Unit,
     onRetryUpload: (Long) -> Unit,
@@ -504,6 +593,21 @@ private fun TerminalComposerRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
     ) {
+        when (val state = dictationState) {
+            is LocalDictationState.Listening -> DictationStatusLine(
+                text = stringResource(R.string.comp_listening),
+                onStop = onStopDictation,
+                onCancel = onCancelDictation,
+            )
+            is LocalDictationState.Transcribing -> DictationStatusLine(
+                text = stringResource(R.string.voz_test_transcribing),
+            )
+            is LocalDictationState.Error -> DictationStatusLine(
+                text = state.message,
+                error = true,
+            )
+            else -> {}
+        }
         attachments.forEach { attachment ->
             TerminalAttachmentRow(
                 attachment = attachment,
@@ -568,21 +672,109 @@ private fun TerminalComposerRow(
                 }
             }
             Spacer(Modifier.width(8.dp))
-            Box(
-                contentAlignment = Alignment.Center,
+            ComposerCircle(
+                enabled = enabled,
+                dictationEnabled = dictationEnabled,
+                fieldEmpty = value.text.isBlank(),
+                dictationState = dictationState,
+                onSubmit = onSubmit,
+                onStartDictation = onStartDictation,
+                onStopDictation = onStopDictation,
+            )
+        }
+    }
+}
+
+/** The circle: mic while the field is empty and dictation is live, stop
+ *  while listening, send otherwise. 44 dp, accent, Moshi's one control. */
+@Composable
+private fun ComposerCircle(
+    enabled: Boolean,
+    dictationEnabled: Boolean,
+    fieldEmpty: Boolean,
+    dictationState: LocalDictationState,
+    onSubmit: () -> Unit,
+    onStartDictation: () -> Unit,
+    onStopDictation: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    val listening = dictationState is LocalDictationState.Listening
+    val transcribing = dictationState is LocalDictationState.Transcribing
+    val showMic = dictationEnabled && (listening || (fieldEmpty && !transcribing))
+    val clickable = enabled && if (showMic) !transcribing else true
+    val onClick = when {
+        !showMic -> onSubmit
+        listening -> onStopDictation
+        else -> onStartDictation
+    }
+    val description = when {
+        listening -> stringResource(R.string.cd_mic_stop)
+        showMic -> stringResource(R.string.cd_mic)
+        else -> stringResource(R.string.cd_send)
+    }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(palette.accent)
+            .clickable(enabled = clickable, onClick = onClick)
+            .semantics { contentDescription = description },
+    ) {
+        Icon(
+            painter = painterResource(if (showMic) R.drawable.ic_mic else R.drawable.ic_send),
+            contentDescription = null,
+            tint = palette.bg,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/** The one quiet line above the composer: listening/transcribing/error. */
+@Composable
+private fun DictationStatusLine(
+    text: String,
+    error: Boolean = false,
+    onStop: (() -> Unit)? = null,
+    onCancel: (() -> Unit)? = null,
+) {
+    val palette = LocalPalette.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+    ) {
+        Text(
+            text = text,
+            color = if (error) palette.error else palette.muted,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (onStop != null) {
+            Text(
+                text = stringResource(R.string.comp_stop),
+                color = palette.accentEdge,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(palette.accent)
-                    .clickable(enabled = enabled, onClick = onSubmit),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_send),
-                    contentDescription = stringResource(R.string.cd_send),
-                    tint = palette.bg,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+                    .clickable(onClick = onStop)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+        if (onCancel != null) {
+            Text(
+                text = stringResource(R.string.comp_cancel),
+                color = palette.muted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clickable(onClick = onCancel)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         }
     }
 }
@@ -1135,4 +1327,17 @@ fun TerminalFixtureScreen(theme: AppTheme, onBack: () -> Unit) {
             )
         }
     }
+}
+
+/**
+ * The transcript merge rule (T54, S8): the dictated text is appended to the
+ * typed text with exactly one separating space; a blank field takes the
+ * transcript as-is. Typed text is never dropped or duplicated.
+ */
+private fun mergeDictated(base: String, spoken: String): String {
+    val spokenTrimmed = spoken.trim()
+    if (spokenTrimmed.isEmpty()) return base
+    val baseTrimmed = base.trimEnd()
+    if (baseTrimmed.isEmpty()) return spokenTrimmed
+    return "$baseTrimmed $spokenTrimmed"
 }

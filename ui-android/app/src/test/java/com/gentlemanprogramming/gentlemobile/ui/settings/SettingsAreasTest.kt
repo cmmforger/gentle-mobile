@@ -20,6 +20,7 @@ class SettingsAreasTest {
                 SettingsArea.SECURITY,
                 SettingsArea.APPEARANCE,
                 SettingsArea.LANGUAGE,
+                SettingsArea.VOZ,
                 SettingsArea.TYPEFACE,
                 SettingsArea.TERMINAL_FONT,
                 SettingsArea.SHORTCUTS,

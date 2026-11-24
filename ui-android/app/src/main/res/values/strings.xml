@@ -525,4 +525,42 @@
     <string name="shortcuts_delete_title">Delete this key?</string>
     <string name="shortcuts_delete_body">%1$s leaves the pad for good.</string>
 
+    <!-- Voz (T54): local dictation settings -->
+    <string name="set_voz">Voz</string>
+    <string name="set_voz_sub">Dictation: engine, models and replacements.</string>
+    <string name="voz_title">Voz</string>
+    <string name="voz_engine_label">Dictation engine</string>
+    <string name="voz_engine_keyboard">Phone keyboard</string>
+    <string name="voz_engine_keyboard_sub">Works today — no model needed.</string>
+    <string name="voz_engine_whisper">Local Whisper</string>
+    <string name="voz_engine_whisper_sub">Records and transcribes on this phone.</string>
+    <string name="voz_engine_whisper_no_model">Download a model below — until then, the keyboard is used.</string>
+    <string name="voz_auto_send_label">After dictation</string>
+    <string name="voz_auto_send">Send automatically</string>
+    <string name="voz_auto_send_sub">Send the dictated text without tapping send.</string>
+    <string name="voz_test_label">Test transcription</string>
+    <string name="voz_test_listening">Listening — tap to stop</string>
+    <string name="voz_test_transcribing">Transcribing…</string>
+    <string name="voz_test_empty">Nothing was transcribed.</string>
+    <string name="voz_test_no_model">Download a model first.</string>
+    <string name="voz_test_result">%1$s · %2$d ms</string>
+    <string name="voz_models_label">Local model</string>
+    <string name="voz_download">Download</string>
+    <string name="voz_cancel">Cancel</string>
+    <string name="voz_use">Use</string>
+    <string name="voz_active">In use</string>
+    <string name="voz_delete">Delete</string>
+    <string name="voz_retry">Retry</string>
+    <string name="voz_downloading">%1$s of %2$s</string>
+    <string name="voz_installed_size">%1$s on disk</string>
+    <string name="voz_download_failed">Download failed: %1$s</string>
+    <string name="voz_replacements_label">Word replacements</string>
+    <string name="voz_replacements_sub">Applied to every transcript.</string>
+    <string name="voz_replace_empty">No replacements — the transcript is used as-is.</string>
+    <string name="voz_add_replacement">Add replacement</string>
+    <string name="voz_replace_from_hint">Said</string>
+    <string name="voz_replace_to_hint">Written</string>
+    <string name="voz_delete_confirm_title">Delete this model?</string>
+    <string name="voz_delete_confirm_body">Dictation falls back to the phone keyboard until a model is downloaded again.</string>
+
 </resources>

@@ -110,6 +110,7 @@ fun SettingsScreen(
     onOpenThemes: () -> Unit,
     onOpenShortcuts: () -> Unit,
     onOpenHooks: () -> Unit,
+    onOpenVoz: () -> Unit,
     onToggleBiometric: (Boolean) -> Unit,
     onRevoke: () -> Unit,
     onDisconnect: () -> Unit,
@@ -310,6 +311,20 @@ fun SettingsScreen(
                         if (language == AppLanguage.SPANISH) AppLanguage.ENGLISH else AppLanguage.SPANISH,
                     )
                 },
+                trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        SettingsCard(
+            title = stringResource(R.string.set_voz),
+            sub = stringResource(R.string.set_voz_sub),
+            iconGlyph = "\uD83C\uDF99",
+        ) {
+            SettingRow(
+                name = stringResource(R.string.voz_title),
+                sub = stringResource(R.string.voz_engine_label),
+                onClick = onOpenVoz,
                 trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
             )
         }

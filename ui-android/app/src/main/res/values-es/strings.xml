@@ -525,4 +525,42 @@
     <string name="shortcuts_delete_title">¿Borrar esta tecla?</string>
     <string name="shortcuts_delete_body">%1$s sale del pad para siempre.</string>
 
+    <!-- Voz (T54): dictado local -->
+    <string name="set_voz">Voz</string>
+    <string name="set_voz_sub">Dictado: motor, modelos y reemplazos.</string>
+    <string name="voz_title">Voz</string>
+    <string name="voz_engine_label">Motor de dictado</string>
+    <string name="voz_engine_keyboard">Teclado del teléfono</string>
+    <string name="voz_engine_keyboard_sub">Funciona hoy — no necesita modelo.</string>
+    <string name="voz_engine_whisper">Whisper local</string>
+    <string name="voz_engine_whisper_sub">Graba y transcribe en este teléfono.</string>
+    <string name="voz_engine_whisper_no_model">Descarga un modelo abajo — hasta entonces se usa el teclado.</string>
+    <string name="voz_auto_send_label">Después del dictado</string>
+    <string name="voz_auto_send">Enviar automáticamente</string>
+    <string name="voz_auto_send_sub">Envía el texto dictado sin tocar enviar.</string>
+    <string name="voz_test_label">Probar transcripción</string>
+    <string name="voz_test_listening">Escuchando — toca para detener</string>
+    <string name="voz_test_transcribing">Transcribiendo…</string>
+    <string name="voz_test_empty">No se transcribió nada.</string>
+    <string name="voz_test_no_model">Descarga un modelo primero.</string>
+    <string name="voz_test_result">%1$s · %2$d ms</string>
+    <string name="voz_models_label">Modelo local</string>
+    <string name="voz_download">Descargar</string>
+    <string name="voz_cancel">Cancelar</string>
+    <string name="voz_use">Usar</string>
+    <string name="voz_active">En uso</string>
+    <string name="voz_delete">Borrar</string>
+    <string name="voz_retry">Reintentar</string>
+    <string name="voz_downloading">%1$s de %2$s</string>
+    <string name="voz_installed_size">%1$s en disco</string>
+    <string name="voz_download_failed">Descarga fallida: %1$s</string>
+    <string name="voz_replacements_label">Reemplazos de palabras</string>
+    <string name="voz_replacements_sub">Se aplican a cada transcripción.</string>
+    <string name="voz_replace_empty">Sin reemplazos — la transcripción se usa tal cual.</string>
+    <string name="voz_add_replacement">Agregar reemplazo</string>
+    <string name="voz_replace_from_hint">Dicho</string>
+    <string name="voz_replace_to_hint">Escrito</string>
+    <string name="voz_delete_confirm_title">¿Borrar este modelo?</string>
+    <string name="voz_delete_confirm_body">El dictado vuelve al teclado del teléfono hasta descargar un modelo de nuevo.</string>
+
 </resources>
