@@ -33,6 +33,17 @@ ui-android/app/src/main/res/font/, is JetBrains Mono 2.304 by JetBrains,
 used under the SIL Open Font License 1.1; its license file ships as
 ui-android/JETBRAINS-MONO-OFL.txt.
 
+The bundled terminal typeface, the iosevkaterm_*.ttf files in
+ui-android/app/src/main/res/font/, is IosevkaTerm Nerd Font (Nerd Fonts
+release v3.3.0), based on Iosevka Term by Renzhi Li:
+
+  Iosevka — Copyright (c) 2015-2023, Renzhi Li (aka. Belleve Invis,
+    belleve@typeof.net) (https://typeof.net/Iosevka)
+  Nerd Fonts — https://github.com/ryanoasis/nerd-fonts
+
+Both ship under the SIL Open Font License 1.1; the full licence text
+follows at the end of this notice.
+
 The bundled interface typefaces, the space_grotesk_*.ttf, ibm_plex_sans_*.ttf
 and aldrich_regular.ttf files in ui-android/app/src/main/res/font/, are used
 under the SIL Open Font License 1.1:

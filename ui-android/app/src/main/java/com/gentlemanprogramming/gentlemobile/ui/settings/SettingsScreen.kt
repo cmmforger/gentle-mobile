@@ -62,9 +62,12 @@ import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTypeface
+import com.gentlemanprogramming.gentlemobile.ui.theme.TerminalFont
 import com.gentlemanprogramming.gentlemobile.ui.theme.fontFamilyFor
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalAppTypeface
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalOnSetTypeface
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalTerminalFont
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalOnSetTerminalFont
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import java.security.MessageDigest
@@ -113,10 +116,13 @@ fun SettingsScreen(
     val p = LocalPalette.current
     val typeface = LocalAppTypeface.current
     val onSetTypeface = LocalOnSetTypeface.current
+    val terminalFont = LocalTerminalFont.current
+    val onSetTerminalFont = LocalOnSetTerminalFont.current
     var confirmRegenerate by remember { mutableStateOf(false) }
     var confirmRevoke by remember { mutableStateOf(false) }
     var hostsOpen by remember { mutableStateOf(false) }
     var typefacePickerOpen by remember { mutableStateOf(false) }
+    var terminalFontPickerOpen by remember { mutableStateOf(false) }
     // Sessions directory (T17a): the override lives across screens, so the
     // edit state belongs to the function, not to a card slot.
     val context = LocalContext.current
@@ -411,12 +417,15 @@ fun SettingsScreen(
             sub = stringResource(R.string.set_area_terminal_font_sub),
             iconGlyph = "T",
         ) {
-            // Read-only by design (L31): the bundled JetBrainsMono Nerd Font
-            // Mono keeps the icons and cell widths exact.
+            // The terminal's face is a real choice (T44): IosevkaTerm Nerd
+            // Font by default, JetBrains Mono as the alternative. It governs
+            // the grid, not the chrome.
             SettingRow(
                 name = stringResource(R.string.set_typeface_family),
-                sub = stringResource(R.string.set_terminal_font_value),
+                sub = terminalFont.label,
                 isMono = true,
+                onClick = { terminalFontPickerOpen = true },
+                trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
             )
             Footnote(stringResource(R.string.set_terminal_font_foot))
         }
@@ -579,6 +588,51 @@ fun SettingsScreen(
                             fontSize = 15.sp,
                             fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
                             fontFamily = fontFamilyFor(choice),
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (current) {
+                            Text("✓", color = p.accent, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (terminalFontPickerOpen) {
+        ModalBottomSheet(
+            onDismissRequest = { terminalFontPickerOpen = false },
+            containerColor = p.surface,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Air.CARD_PADDING_DP.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.set_area_terminal_font),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(8.dp))
+                for (choice in TerminalFont.entries) {
+                    val current = choice == terminalFont
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = Air.TOUCH_DP.dp)
+                            .clickable {
+                                terminalFontPickerOpen = false
+                                onSetTerminalFont(choice)
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = choice.label,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 15.sp,
+                            fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
                         )
                         Spacer(Modifier.weight(1f))
                         if (current) {

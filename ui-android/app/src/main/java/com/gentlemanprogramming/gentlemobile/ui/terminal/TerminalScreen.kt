@@ -54,6 +54,7 @@ import com.gentlemanprogramming.gentlemobile.core.TerminalSession
 import com.gentlemanprogramming.gentlemobile.ui.session.ExtraKeyRowModel
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalTerminalFont
 import kotlinx.coroutines.delay
 
 private val TERMINAL_FONT_SP = 14.sp
@@ -77,6 +78,7 @@ fun TerminalScreen(
 ) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
+    val terminalTypefaces = rememberTerminalTypefaces(LocalTerminalFont.current)
     var emulator by remember { mutableStateOf<TerminalEmulator?>(null) }
     var frameVersion by remember { mutableStateOf(0) }
     var closed by remember { mutableStateOf(false) }
@@ -104,7 +106,7 @@ fun TerminalScreen(
                 .weight(1f),
         ) {
             val density = LocalDensity.current
-            val metrics = rememberTerminalCellMetrics()
+            val metrics = rememberTerminalCellMetrics(terminalTypefaces)
             val fontSizePx = with(density) { TERMINAL_FONT_SP.toPx() }
             val cellW = fontSizePx * metrics.advanceRatio
             val cellH = fontSizePx * metrics.lineHeightRatio
@@ -157,6 +159,7 @@ fun TerminalScreen(
             TerminalCanvas(
                 emulator = emulator,
                 colors = terminalColors,
+                typefaces = terminalTypefaces,
                 fontSizePx = fontSizePx,
                 closed = closed,
                 starting = starting && emulator == null,
@@ -346,6 +349,7 @@ private fun TerminalInputField(
 private fun TerminalCanvas(
     emulator: TerminalEmulator?,
     colors: TermColors,
+    typefaces: TerminalTypefaces,
     fontSizePx: Float,
     closed: Boolean,
     starting: Boolean,
@@ -353,7 +357,6 @@ private fun TerminalCanvas(
     frameVersion: Int,
     modifier: Modifier,
 ) {
-    val typefaces = rememberTypefaces()
     Canvas(modifier = modifier) {
         @Suppress("UNUSED_EXPRESSION")
         frameVersion
@@ -486,6 +489,7 @@ fun fixtureTerminalBytes(): ByteArray = buildString {
 fun TerminalFixtureScreen(theme: AppTheme, onBack: () -> Unit) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
+    val terminalTypefaces = rememberTerminalTypefaces(LocalTerminalFont.current)
     val emulator = remember(theme) {
         TerminalEmulator(64, 24, terminalColors).apply { feed(fixtureTerminalBytes()) }
     }
@@ -534,6 +538,7 @@ fun TerminalFixtureScreen(theme: AppTheme, onBack: () -> Unit) {
             TerminalCanvas(
                 emulator = emulator,
                 colors = terminalColors,
+                typefaces = terminalTypefaces,
                 fontSizePx = fontSizePx,
                 closed = false,
                 starting = false,

@@ -18,6 +18,8 @@ import androidx.core.content.res.ResourcesCompat
 import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.core.CellDto
 import com.gentlemanprogramming.gentlemobile.core.SurfaceDto
+import com.gentlemanprogramming.gentlemobile.ui.theme.TerminalFont
+import com.gentlemanprogramming.gentlemobile.ui.theme.bundledTerminalFace
 
 /**
  * The terminal grid: a real cell renderer over the core's decoded surface
@@ -90,9 +92,8 @@ class TerminalCellMetrics(val advanceRatio: Float, val lineHeightRatio: Float)
 
 /** Measure the bundled font once. */
 @Composable
-fun rememberTerminalCellMetrics(): TerminalCellMetrics {
-    val typefaces = rememberTypefaces()
-    return remember {
+fun rememberTerminalCellMetrics(typefaces: TerminalTypefaces): TerminalCellMetrics {
+    return remember(typefaces) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         paint.typeface = typefaces.regular ?: paint.typeface
         paint.textSize = 100f
@@ -131,6 +132,24 @@ fun rememberTypefaces(): TerminalTypefaces {
             bold = font(R.font.jetbrainsmono_bold),
             italic = font(R.font.jetbrainsmono_italic),
             boldItalic = font(R.font.jetbrainsmono_bolditalic),
+        )
+    }
+}
+
+/** The terminal's own face (T44): the selected [TerminalFont]'s bundled
+ *  weights, resolved once per choice. The herdr surface keeps
+ *  [rememberTypefaces] (JetBrains Mono); this is the PTY terminal's grid. */
+@Composable
+fun rememberTerminalTypefaces(choice: TerminalFont): TerminalTypefaces {
+    val context = LocalContext.current
+    return remember(choice) {
+        fun font(id: Int): Typeface? = runCatching { ResourcesCompat.getFont(context, id) }.getOrNull()
+        val face = bundledTerminalFace(choice)
+        TerminalTypefaces(
+            regular = font(face.regular),
+            bold = face.bold?.let { font(it) },
+            italic = face.italic?.let { font(it) },
+            boldItalic = face.boldItalic?.let { font(it) },
         )
     }
 }
