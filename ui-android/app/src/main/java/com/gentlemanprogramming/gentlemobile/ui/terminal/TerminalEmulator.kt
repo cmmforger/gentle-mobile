@@ -148,6 +148,7 @@ class TerminalEmulator(
     private val saved = IntArray(2)
 
     private val decoder = Utf8Decoder()
+    private val replies = mutableListOf<Byte>()
 
     // Parser state.
     private enum class State { GROUND, ESC, CSI, OSC, OSC_ESC, IGNORE_ONE }
@@ -179,6 +180,19 @@ class TerminalEmulator(
         for (byte in data) {
             decoder.push(byte) { cp -> handleCodePoint(cp) }
         }
+    }
+
+    /** Bytes the emulator must send back to the host (DA/DSR answers), drained
+     *  by the caller so the shell's capability queries never stall it. */
+    fun drainReplies(): ByteArray {
+        if (replies.isEmpty()) return ByteArray(0)
+        val out = replies.toByteArray()
+        replies.clear()
+        return out
+    }
+
+    private fun reply(bytes: ByteArray) {
+        for (byte in bytes) replies.add(byte)
     }
 
     private fun handleCodePoint(cp: Int) {
@@ -300,8 +314,16 @@ class TerminalEmulator(
             'S'.code -> scrollUp(p(0, 1))
             'T'.code -> scrollDown(p(0, 1))
             'r'.code -> setScrollRegion(p(0, 1), p(1, rows))
+            'c'.code -> {
+                val answer = if (marker == '>') "\u001B[>0;0;0c" else "\u001B[?1;2c"
+                reply(answer.toByteArray(Charsets.UTF_8))
+            }
             'm'.code -> sgr(body)
-            'n'.code -> Unit // DSR — no cursor-position reply needed for a shell
+            'n'.code -> when (p(0, 0)) {
+                5 -> reply("\u001B[0n".toByteArray(Charsets.UTF_8))
+                6 -> reply("\u001B[${cursorY + 1};${cursorX + 1}R".toByteArray(Charsets.UTF_8))
+                else -> Unit
+            }
             'h'.code -> setMode(body, true)
             'l'.code -> setMode(body, false)
             's'.code -> { saved[0] = cursorX; saved[1] = cursorY }

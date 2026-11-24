@@ -11,6 +11,7 @@ object TerminalKeys {
     fun bytesFor(key: String, ctrl: Boolean, alt: Boolean): ByteArray = when (key) {
         "esc" -> byteArrayOf(0x1B)
         "tab" -> byteArrayOf(0x09)
+        "c" -> if (ctrl) byteArrayOf(0x03) else byteArrayOf(0x63)
         "up" -> arrow('A', ctrl, alt)
         "down" -> arrow('B', ctrl, alt)
         else -> byteArrayOf()
@@ -41,4 +42,20 @@ object TerminalKeys {
 
     private fun encode(text: String): ByteArray =
         text.replace("\n", "\r").toByteArray(Charsets.UTF_8)
+}
+
+/**
+ * The composer's commit tracking (T42): each IME commit is a cumulative
+ * value, so only the delta since the last commit may reach the PTY — never
+ * the whole string again. Enter (a newline) sends CR and clears, so the next
+ * command starts fresh.
+ */
+class TerminalComposer {
+    private var last = ""
+
+    fun commit(new: String): ByteArray {
+        val delta = TerminalKeys.forwardInput(last, new)
+        last = if (new.contains('\n')) "" else new
+        return delta
+    }
 }

@@ -155,7 +155,10 @@ impl<C: PtyLike> PtySession<C> {
     /// Open one terminal whose shell starts in `cwd`: a PTY of exactly the
     /// asked size (`echo` on) and the login shell executed with that working
     /// directory — `cd` first, then `exec` the shell, so the PTY never runs
-    /// anything but the shell.
+    /// anything but the shell. The `exec` channel parses the command through
+    /// the host's login shell (fish here), which does not understand POSIX
+    /// `${…}` syntax, so the `cd` + `exec` live inside one `/bin/sh`
+    /// invocation and the directory travels as a positional argument.
     pub async fn open_in(
         mut channel: C,
         cols: u32,
@@ -163,8 +166,10 @@ impl<C: PtyLike> PtySession<C> {
         cwd: &str,
     ) -> Result<Self, PtyError> {
         channel.request_pty(TERMINAL_TYPE, cols, rows, true).await?;
+        const LAUNCH: &str = "cd -- \"$1\" && exec \"${SHELL:-/bin/bash}\" -l";
         let command = format!(
-            "cd -- {} && exec \"${{SHELL:-/bin/bash}}\" -l",
+            "exec /bin/sh -c {} sh {}",
+            shell_quote(LAUNCH),
             shell_quote(cwd)
         );
         channel.request_exec(&command).await?;
@@ -936,8 +941,8 @@ mod tests {
         );
         assert_eq!(
             fake.exec_request_records(),
-            vec!["cd -- '/srv/a' && exec \"${SHELL:-/bin/bash}\" -l".to_owned()],
-            "the exec starts a login shell in the asked cwd, never a shell in home"
+            vec!["exec /bin/sh -c 'cd -- \"$1\" && exec \"${SHELL:-/bin/bash}\" -l' sh '/srv/a'".to_owned()],
+            "the exec is one POSIX sh invocation so the host's login shell never parses our syntax"
         );
         assert_eq!(fake.shell_request_count(), 0, "no default-home shell is started first");
     }
@@ -951,7 +956,7 @@ mod tests {
         let fake = fake_of(session);
         assert_eq!(
             fake.exec_request_records(),
-            vec!["cd -- '/srv/o'\\''reilly' && exec \"${SHELL:-/bin/bash}\" -l".to_owned()]
+            vec!["exec /bin/sh -c 'cd -- \"$1\" && exec \"${SHELL:-/bin/bash}\" -l' sh '/srv/o'\\''reilly'".to_owned()]
         );
     }
 

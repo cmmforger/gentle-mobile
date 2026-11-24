@@ -26,5 +26,6 @@ object ExtraKeyRowModel {
         Chip("alt", "Alt", Kind.STICKY),
         Chip("up", "↑", Kind.MOMENTARY),
         Chip("down", "↓", Kind.MOMENTARY),
+        Chip("c", "C", Kind.MOMENTARY),
     )
 }

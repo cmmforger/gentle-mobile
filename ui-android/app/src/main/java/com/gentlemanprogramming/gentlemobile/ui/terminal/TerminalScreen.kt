@@ -43,7 +43,6 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -82,6 +81,7 @@ fun TerminalScreen(
     var frameVersion by remember { mutableStateOf(0) }
     var closed by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf(TextFieldValue("")) }
+    val composer = remember { TerminalComposer() }
 
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
@@ -143,6 +143,8 @@ fun TerminalScreen(
                     if (bytes.isNotEmpty() && e != null) {
                         e.feed(bytes)
                         frameVersion++
+                        val replies = e.drainReplies()
+                        if (replies.isNotEmpty()) runCatching { s.write(replies) }
                     }
                     if (s.isClosed()) {
                         closed = true
@@ -167,9 +169,9 @@ fun TerminalScreen(
             enabled = session != null && !closed,
             value = input,
             onValueChange = { new ->
-                val delta = TerminalKeys.forwardInput(input.text, new.text)
+                val delta = composer.commit(new.text)
                 if (delta.isNotEmpty()) session?.write(delta)
-                input = TextFieldValue("", TextRange(0))
+                input = if (new.text.contains('\n')) TextFieldValue("") else new
             },
         )
     }
@@ -328,7 +330,7 @@ private fun TerminalInputField(
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,
-            singleLine = true,
+            singleLine = false,
             textStyle = TextStyle(
                 color = if (enabled) MaterialTheme.colorScheme.onBackground else palette.textDisabled,
                 fontSize = 14.sp,

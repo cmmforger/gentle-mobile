@@ -1,5 +1,6 @@
 package com.gentlemanprogramming.gentlemobile.ui.terminal
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -128,6 +129,27 @@ class TerminalEmulatorTest {
         assertFalse(e.cursorVisible)
         e.feed("\u001B[?25h".toByteArray())
         assertTrue(e.cursorVisible)
+    }
+
+    @Test
+    fun a_primary_device_attribute_query_is_answered() {
+        val e = emulator()
+        e.feed("\u001B[c".toByteArray())
+        assertArrayEquals("\u001B[?1;2c".toByteArray(), e.drainReplies())
+    }
+
+    @Test
+    fun a_secondary_device_attribute_query_is_answered() {
+        val e = emulator()
+        e.feed("\u001B[>c".toByteArray())
+        assertArrayEquals("\u001B[>0;0;0c".toByteArray(), e.drainReplies())
+    }
+
+    @Test
+    fun a_cursor_position_report_answers_with_the_position() {
+        val e = emulator()
+        e.feed("abc\u001B[6n".toByteArray())
+        assertArrayEquals("\u001B[1;4R".toByteArray(), e.drainReplies())
     }
 
     @Test
