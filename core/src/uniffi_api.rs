@@ -1360,6 +1360,20 @@ impl CompanionConnection {
             .map_err(CompanionError::from)
     }
 
+    /// Close one tab of the current workspace (`tab.close {tab_id}`, T51):
+    /// the daemon's own close on the request lane — closing a tab ends its
+    /// panes' processes. `Ok(())` means the daemon confirmed (`tab_closed`);
+    /// a refusal names why, so the UI never claims a close that did not land.
+    pub fn close_tab(&self, tab_id: String) -> Result<(), CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        connection.tab_close(&tab_id).map_err(CompanionError::from)
+    }
+
     /// Focus one pane of the current workspace (the pane switcher, T36):
     /// the daemon's own `pane.focus {pane_id}`, the same switch tapping a
     /// pane in the herdr TUI does. Verified live on protocol 22: a shell
@@ -1935,6 +1949,44 @@ mod tests {
         }
         println!("frames={frames} last_size={last_size:?}");
         let _ = connection.set_surface_active(false);
+        connection.disconnect();
+    }
+
+    /// T51 live probe (env-gated, `--ignored`): close the tab named by
+    /// `GENTLE_TAB` with the new `tab.close` request lane and report the
+    /// daemon's reply. Setup (a throwaway workspace and its second tab) is
+    /// done with the herdr CLI beforehand, so the probe itself never touches
+    /// an existing workspace or tab.
+    #[test]
+    #[ignore = "live probe: needs GENTLE_SSH_HOST and a real daemon; closes the tab GENTLE_TAB"]
+    fn t51_tab_close_probe() {
+        use std::{env, path::PathBuf, time::{Duration, Instant}};
+        let profile = HostProfile {
+            host: env::var("GENTLE_SSH_HOST").unwrap_or_else(|_| "127.0.0.1".to_owned()),
+            port: 22,
+            user: env::var("GENTLE_SSH_USER").unwrap_or_else(|_| "erickfm".to_owned()),
+            identity_path: PathBuf::from(
+                env::var("GENTLE_SSH_KEY")
+                    .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gm-t51/t51-probe-key".to_owned()),
+            ),
+            known_hosts_path: PathBuf::from(
+                env::var("GENTLE_KNOWN_HOSTS")
+                    .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gm-t51/t51-known-hosts".to_owned()),
+            ),
+        };
+        let session = env::var("GENTLE_SESSION").unwrap_or_else(|_| "t51-probe".to_owned());
+        let target = env::var("GENTLE_TAB").expect("GENTLE_TAB: the tab to close");
+        let connection = Connection::connect(&profile, &session, ConnectOptions::default())
+            .expect("connect");
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while connection.snapshot().is_none() {
+            assert!(Instant::now() < deadline, "no snapshot");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        match connection.tab_close(&target) {
+            Ok(()) => println!("tab_close ok for {target}"),
+            Err(error) => println!("tab_close failed for {target}: {error}"),
+        }
         connection.disconnect();
     }
 

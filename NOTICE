@@ -28,22 +28,34 @@ the Iconoir "send" icon (solid variant), used under the MIT license:
   Licensed under the MIT License
   (https://github.com/iconoir-icons/iconoir/blob/main/LICENSE)
 
-The bundled terminal typeface, the jetbrainsmono_*.ttf files in
-ui-android/app/src/main/res/font/, is JetBrains Mono 2.304 by JetBrains,
-used under the SIL Open Font License 1.1; its license file ships as
-ui-android/JETBRAINS-MONO-OFL.txt.
+The terminal is drawn with one of four bundled monospaced Nerd Fonts
+(Nerd Fonts release v3.3.0), selectable in Settings. Each ships regular and
+bold, subset with fonttools to Latin + box drawing + powerline + the Nerd
+icon ranges, in ui-android/app/src/main/res/font/:
 
-The bundled typeface, the iosevkaterm_*.ttf files in
-ui-android/app/src/main/res/font/, is IosevkaTerm Nerd Font (Nerd Fonts
-release v3.3.0), based on Iosevka Term by Renzhi Li. It is one of the app's
-interface typeface choices and, being monospaced, also drives the terminal:
+  IosevkaTerm Nerd Font — the iosevkaterm_*.ttf files, based on Iosevka Term:
+    Iosevka — Copyright (c) 2015-2023, Renzhi Li (aka. Belleve Invis,
+      belleve@typeof.net) (https://typeof.net/Iosevka)
+  JetBrainsMono Nerd Font — the jetbrainsmono_nf_*.ttf files:
+    JetBrains Mono — Copyright 2020 The JetBrains Mono Project Authors
+      (https://github.com/JetBrains/JetBrainsMono), SIL OFL 1.1
+  FiraCode Nerd Font — the firacode_nf_*.ttf files:
+    Fira Code — Copyright 2014 The Fira Code Project Authors
+      (https://github.com/tonsky/FiraCode), SIL OFL 1.1
+  Hack Nerd Font — the hack_nf_*.ttf files:
+    Hack — Copyright 2015 The Hack Project Authors
+      (https://github.com/source-foundry/Hack), MIT License
 
-  Iosevka — Copyright (c) 2015-2023, Renzhi Li (aka. Belleve Invis,
-    belleve@typeof.net) (https://typeof.net/Iosevka)
-  Nerd Fonts — https://github.com/ryanoasis/nerd-fonts
+  Nerd Fonts — https://github.com/ryanoasis/nerd-fonts (the patched,
+  icon-carrying releases of each face, under MIT plus each face's own
+  licence).
 
-Both ship under the SIL Open Font License 1.1; the full licence text
-follows at the end of this notice.
+The older jetbrainsmono_*.ttf files (unpatched JetBrains Mono 2.304) are no
+longer referenced by the app and ship only for compatibility; their licence
+ships as ui-android/JETBRAINS-MONO-OFL.txt.
+
+The four terminal faces ship under their upstream licences; the SIL Open
+Font License text follows at the end of this notice.
 
 The bundled interface typefaces, the space_grotesk_*.ttf, ibm_plex_sans_*.ttf
 and aldrich_regular.ttf files in ui-android/app/src/main/res/font/, are used

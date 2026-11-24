@@ -76,4 +76,26 @@ object PaneSwitcherModel {
         pane.cwd?.trim()?.trimEnd('/')?.substringAfterLast('/')?.takeIf { it.isNotEmpty() }?.let { return it }
         return tab?.label?.trim()?.takeIf { it.isNotEmpty() } ?: pane.id
     }
+
+    /** One tab row of the pane sheet (T51): the workspace's own tabs, with
+     *  the delete rule — never the workspace's last tab. */
+    data class TabRow(
+        val tabId: String,
+        val label: String,
+        val deletable: Boolean,
+    )
+
+    /** The workspace's tabs as sheet rows, in the daemon's tab order. A tab
+     *  is deletable only while the workspace has more than one — the last
+     *  tab is never deleted, because a workspace always keeps one. */
+    fun tabRows(tabs: List<TabDto>, workspaceId: String): List<TabRow> {
+        val ordered = tabs.filter { it.workspaceId == workspaceId }.sortedBy { it.number.toLong() }
+        return ordered.map { tab ->
+            TabRow(
+                tabId = tab.id,
+                label = tab.label.trim().takeIf { it.isNotEmpty() } ?: tab.number.toString(),
+                deletable = ordered.size > 1,
+            )
+        }
+    }
 }

@@ -261,9 +261,11 @@ pub fn parse_tab_focus(response: &Value) -> std::result::Result<(), RequestError
         .and_then(|result| result.get("type"))
         .and_then(Value::as_str);
     match result_type {
-        Some("tab_info") => Ok(()),
+        // Measured against herdr 0.9.5: `tab.focus` answers `tab_focused`;
+        // `tab_info` stays accepted for the same schema on other builds.
+        Some("tab_focused") | Some("tab_info") => Ok(()),
         Some(other) => Err(RequestError::BadResponse {
-            detail: format!("the tab focus reply was `{other}`, not `tab_info`"),
+            detail: format!("the tab focus reply was `{other}`, not `tab_focused`"),
         }),
         None => Err(RequestError::BadResponse {
             detail: "the tab focus reply has no result type".to_owned(),
@@ -278,6 +280,35 @@ pub fn tab_create_params(workspace_id: &str, focus: bool) -> Value {
     json!({ "workspace_id": workspace_id, "focus": focus })
 }
 
+/// `tab.close` parameters: the tab id (the daemon's `TabTarget`, the same
+/// shape `tab.focus` takes, measured from `herdr api schema --json`,
+/// protocol 22).
+pub fn tab_close_params(tab_id: &str) -> Value {
+    json!({ "tab_id": tab_id })
+}
+
+/// Map a `tab.close` reply: measured live, the daemon answers the generic
+/// `ok` once the tab is closed — not the `tab_closed` result the schema
+/// also defines (that one is the broadcast event).
+pub fn parse_tab_close(response: &Value) -> std::result::Result<(), RequestError> {
+    if let Some(refused) = RequestError::refused_from(response) {
+        return Err(refused);
+    }
+    let result_type = response
+        .get("result")
+        .and_then(|result| result.get("type"))
+        .and_then(Value::as_str);
+    match result_type {
+        Some("ok") => Ok(()),
+        Some(other) => Err(RequestError::BadResponse {
+            detail: format!("the tab close reply was `{other}`, not `ok`"),
+        }),
+        None => Err(RequestError::BadResponse {
+            detail: "the tab close reply has no result type".to_owned(),
+        }),
+    }
+}
+
 /// Map a `tab.create` reply: the daemon answers `tab_info`, the created
 /// tab's own row — the same shape `tab.focus` returns.
 pub fn parse_tab_create(response: &Value) -> std::result::Result<(), RequestError> {
@@ -289,9 +320,12 @@ pub fn parse_tab_create(response: &Value) -> std::result::Result<(), RequestErro
         .and_then(|result| result.get("type"))
         .and_then(Value::as_str);
     match result_type {
-        Some("tab_info") => Ok(()),
+        // Measured against herdr 0.9.5: `tab.create` answers `tab_created`
+        // (the snapshot's tab row). `tab_info` is accepted too because the
+        // focus lane answers with it on the same schema.
+        Some("tab_created") | Some("tab_info") => Ok(()),
         Some(other) => Err(RequestError::BadResponse {
-            detail: format!("the tab create reply was `{other}`, not `tab_info`"),
+            detail: format!("the tab create reply was `{other}`, not `tab_created`"),
         }),
         None => Err(RequestError::BadResponse {
             detail: "the tab create reply has no result type".to_owned(),
@@ -402,6 +436,7 @@ pub const METHOD_WORKSPACE_CREATE: &str = "workspace.create";
 pub const METHOD_WORKSPACE_FOCUS: &str = "workspace.focus";
 pub const METHOD_TAB_FOCUS: &str = "tab.focus";
 pub const METHOD_TAB_CREATE: &str = "tab.create";
+pub const METHOD_TAB_CLOSE: &str = "tab.close";
 pub const METHOD_PANE_FOCUS: &str = "pane.focus";
 pub const METHOD_WORKTREE_LIST: &str = "worktree.list";
 
@@ -1333,6 +1368,20 @@ fn tab_create_params_carry_the_workspace_and_focus() {
 }
 
 #[test]
+fn tab_create_accepts_the_tab_created_result() {
+    // Measured on herdr 0.9.5: `tab.create` answers `tab_created`.
+    let reply = json!({"id": "companion-1", "result": {"type": "tab_created"}});
+    assert!(parse_tab_create(&reply).is_ok());
+}
+
+#[test]
+fn tab_focus_accepts_the_tab_focused_result() {
+    // Measured on herdr 0.9.5: `tab.focus` answers `tab_focused`.
+    let reply = json!({"id": "companion-1", "result": {"type": "tab_focused"}});
+    assert!(parse_tab_focus(&reply).is_ok());
+}
+
+#[test]
 fn tab_create_accepts_the_tab_info_result() {
     // `tab.create` answers `tab_info` with the created tab's row.
     let reply = json!({
@@ -1361,6 +1410,39 @@ fn tab_create_refusal_names_the_tab_code() {
     .expect_err("a refusal is an error");
     match error {
         RequestError::Refused { code, .. } => assert_eq!(code, "tab_create_failed"),
+        other => panic!("expected RequestError::Refused, got {other:?}"),
+    }
+}
+
+#[test]
+fn tab_close_params_carry_the_tab_id() {
+    let params = tab_close_params("w1F:t2");
+    assert_eq!(params, json!({"tab_id": "w1F:t2"}));
+}
+
+#[test]
+fn tab_close_accepts_the_ok_result() {
+    // Measured live (`t51_tab_close_probe`): `tab.close` answers the generic
+    // `ok` once the tab is closed.
+    let reply = json!({
+        "id": "companion-1",
+        "result": {"type": "ok"}
+    });
+    assert!(parse_tab_close(&reply).is_ok(), "ok is a close");
+    let error = parse_tab_close(&json!({"id": "x", "result": {"type": "tab_closed"}}))
+        .expect_err("an unexpected result shape is not the measured close proof");
+    assert!(matches!(error, RequestError::BadResponse { .. }), "{error:?}");
+}
+
+#[test]
+fn tab_close_refusal_names_the_tab_code() {
+    let error = parse_tab_close(&refused_response(
+        "tab_not_found",
+        "tab wZZZ:tX not found",
+    ))
+    .expect_err("a refusal is an error");
+    match error {
+        RequestError::Refused { code, .. } => assert_eq!(code, "tab_not_found"),
         other => panic!("expected RequestError::Refused, got {other:?}"),
     }
 }

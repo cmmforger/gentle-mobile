@@ -691,6 +691,24 @@ impl Connection {
         })
     }
 
+    /// Close one tab (`tab.close {tab_id}`, T51): the daemon's own close on
+    /// the request lane, the same switch the herdr TUI does — closing a tab
+    /// ends its panes' processes. The reply is the daemon's `tab_closed`.
+    pub fn tab_close(&self, tab_id: &str) -> std::result::Result<(), crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_TAB_CLOSE,
+            crate::requests::tab_close_params(tab_id),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_tab_close(&value).map_err(crate::requests::HubError::Request)
+        })
+    }
+
     /// Focus one pane (`pane.focus {pane_id}`, the pane switcher's own
     /// switch, T36): the daemon's `PaneTarget` on the same request lane —
     /// measured from `herdr api schema --json`, protocol 22, and verified

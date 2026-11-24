@@ -5,9 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.res.ResourcesCompat
-import com.gentlemanprogramming.gentlemobile.R
-import com.gentlemanprogramming.gentlemobile.ui.theme.AppTypeface
-import com.gentlemanprogramming.gentlemobile.ui.theme.terminalFaceFor
+import com.gentlemanprogramming.gentlemobile.ui.theme.TerminalFace
 
 /** The four bundled typefaces, resolved once (null → system fallback). */
 class TerminalTypefaces(
@@ -17,20 +15,20 @@ class TerminalTypefaces(
     val boldItalic: Typeface?,
 )
 
-/** The terminal's own face (T44/T47): always the bundled IosevkaTerm Nerd
- *  Font, resolved through [terminalFaceFor] so the app typeface never leaks
- *  a proportional face (or a mono face without Nerd glyphs) into the grid. */
+/** The terminal's own face (T44/T47/T51): the chosen [TerminalFace], always
+ *  a monospaced Nerd Font, resolved so a proportional app face never leaks
+ *  into the grid. The grid re-derives from this face's cell size, so a
+ *  change re-measures the grid and the PTY gets a window-change. */
 @Composable
-fun rememberTerminalTypefaces(choice: AppTypeface): TerminalTypefaces {
+fun rememberTerminalTypefaces(face: TerminalFace): TerminalTypefaces {
     val context = LocalContext.current
-    return remember(choice) {
+    return remember(face) {
         fun font(id: Int): Typeface? = runCatching { ResourcesCompat.getFont(context, id) }.getOrNull()
-        val face = terminalFaceFor(choice)
         TerminalTypefaces(
             regular = font(face.regular),
-            bold = face.bold?.let { font(it) },
-            italic = face.italic?.let { font(it) },
-            boldItalic = face.boldItalic?.let { font(it) },
+            bold = font(face.bold),
+            italic = null,
+            boldItalic = null,
         )
     }
 }

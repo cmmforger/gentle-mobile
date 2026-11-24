@@ -184,6 +184,10 @@
     <string name="session_panes">Panes</string>
     <string name="session_pane_shell">shell</string>
     <string name="terminal_new_tab">New tab</string>
+    <string name="cd_delete_tab">Delete tab</string>
+    <string name="set_tab_delete_title">Delete this tab?</string>
+    <string name="set_tab_delete_body">Closing %1$s ends the processes running in it.</string>
+    <string name="set_tab_delete_last">This is the workspace\u2019s only tab — it cannot be deleted.</string>
     <string name="session_bare_pane">This pane runs a shell — the keys below reach it. The phone prompts agents only.</string>
     <string name="session_pane_truncated">The host left out older rows.</string>
     <string name="session_no_camera_app">no camera app is available on this device</string>
@@ -322,9 +326,6 @@
     <string name="set_typeface_foot">Applies to every screen, and survives a restart.</string>
     <string name="set_area_terminal_font">Terminal font</string>
     <string name="set_area_terminal_font_sub">The terminal and the draft field, on this device.</string>
-    <string name="set_terminal_font_mono">%1$s · monospaced — it drives the terminal.</string>
-    <string name="set_terminal_font_fallback">IosevkaTerm Nerd Font · the chosen face is proportional.</string>
-    <string name="set_terminal_font_foot">The terminal always paints in IosevkaTerm Nerd Font — icons and columns survive any face.</string>
     <string name="set_area_advanced">Advanced</string>
     <string name="set_area_advanced_sub">Terminal behaviour that is real and wired.</string>
     <string name="set_advanced_group_cursor">Cursor</string>
@@ -395,7 +396,6 @@
     <string name="set_whats_new">What\u2019s new</string>
     <string name="set_no_release_notes">No release notes yet — this is %1$s.</string>
     <string name="set_disconnect">Disconnect</string>
-    <string name="set_disconnect_note">Not connected — the disconnect action belongs to a live session.</string>
     <string name="set_revoke">Revoke on this device</string>
     <string name="set_revoke_note">Wipes this phone\u2019s key and its saved hosts — the host side still needs gentle-mobile-pair --revoke.</string>
     <string name="set_confirm_regenerate_title">Regenerate the device key?</string>

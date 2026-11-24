@@ -1,5 +1,6 @@
 package com.gentlemanprogramming.gentlemobile.ui.settings
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,7 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
@@ -56,15 +61,21 @@ import com.gentlemanprogramming.gentlemobile.security.BiometricDecision
 import com.gentlemanprogramming.gentlemobile.ui.locale.AppLanguage
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
 import com.gentlemanprogramming.gentlemobile.ui.terminal.CursorMode
+import com.gentlemanprogramming.gentlemobile.ui.terminal.CursorPreview
+import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalCursor
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTypeface
 import com.gentlemanprogramming.gentlemobile.ui.theme.fontFamilyFor
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalAppTypeface
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalOnSetTypeface
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalOnSetTerminalFace
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalTerminalFace
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
-import com.gentlemanprogramming.gentlemobile.ui.theme.terminalFaceFor
+import com.gentlemanprogramming.gentlemobile.ui.theme.TerminalFace
+import com.gentlemanprogramming.gentlemobile.ui.theme.isMonospaced
+import com.gentlemanprogramming.gentlemobile.ui.theme.terminalFontFamily
 
 /**
  * The Settings screen (S21/S33, board `07-settings.html`): one card per
@@ -105,9 +116,13 @@ fun SettingsScreen(
     val p = LocalPalette.current
     val typeface = LocalAppTypeface.current
     val onSetTypeface = LocalOnSetTypeface.current
+    val terminalFace = LocalTerminalFace.current
+    val onSetTerminalFace = LocalOnSetTerminalFace.current
     var confirmRevoke by remember { mutableStateOf(false) }
     var typefacePickerOpen by remember { mutableStateOf(false) }
+    var terminalFontPickerOpen by remember { mutableStateOf(false) }
     var cursorModePickerOpen by remember { mutableStateOf(false) }
+    var advancedOpen by remember { mutableStateOf(false) }
     // Sessions directory (T17a): the override lives across screens, so the
     // edit state belongs to the function, not to a card slot.
     val context = LocalContext.current
@@ -308,20 +323,13 @@ fun SettingsScreen(
             sub = stringResource(R.string.set_area_terminal_font_sub),
             iconGlyph = "T",
         ) {
-            // The terminal always paints with the bundled IosevkaTerm Nerd
-            // Font; a proportional app face never leaks into it. The row
-            // states the truth — never a silent fallback.
-            val terminalResolution = terminalFaceFor(typeface)
             SettingRow(
                 name = stringResource(R.string.set_typeface_family),
-                sub = if (terminalResolution.fallback) {
-                    stringResource(R.string.set_terminal_font_fallback)
-                } else {
-                    stringResource(R.string.set_terminal_font_mono, typeface.label)
-                },
+                sub = terminalFace.label,
                 isMono = true,
+                onClick = { terminalFontPickerOpen = true },
+                trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
             )
-            Footnote(stringResource(R.string.set_terminal_font_foot))
         }
 
         Spacer(Modifier.height(12.dp))
@@ -329,6 +337,8 @@ fun SettingsScreen(
             title = stringResource(R.string.set_area_advanced),
             sub = stringResource(R.string.set_area_advanced_sub),
             iconGlyph = "≡",
+            expanded = advancedOpen,
+            onToggle = { advancedOpen = !advancedOpen },
         ) {
             GroupHeading(stringResource(R.string.set_advanced_group_cursor))
             SettingRow(
@@ -440,9 +450,6 @@ fun SettingsScreen(
         ) {
             Text(text = stringResource(R.string.set_disconnect), fontWeight = FontWeight.SemiBold)
         }
-        if (!connected) {
-            UnavailableNote(stringResource(R.string.set_disconnect_note))
-        }
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = { confirmRevoke = true },
@@ -550,7 +557,7 @@ fun SettingsScreen(
                             fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
                             fontFamily = fontFamilyFor(choice),
                         )
-                        if (!terminalFaceFor(choice).fallback) {
+                        if (isMonospaced(choice)) {
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 text = stringResource(R.string.set_typeface_mono),
@@ -568,6 +575,13 @@ fun SettingsScreen(
         }
     }
     if (cursorModePickerOpen) {
+        var blinkPhase by remember { mutableStateOf(0L) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                kotlinx.coroutines.delay(CursorPreview.PERIOD_MS)
+                blinkPhase++
+            }
+        }
         ModalBottomSheet(
             onDismissRequest = { cursorModePickerOpen = false },
             containerColor = p.surface,
@@ -597,11 +611,65 @@ fun SettingsScreen(
                             },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // Each option is a preview of the shape itself,
+                        // blinking so the motion is seen before choosing.
+                        CursorPreviewCell(
+                            mode = mode,
+                            visible = CursorPreview.blink(blinkPhase * CursorPreview.PERIOD_MS),
+                        )
+                        Spacer(Modifier.width(12.dp))
                         Text(
                             text = cursorModeLabel(mode),
                             color = MaterialTheme.colorScheme.onBackground,
                             fontSize = 15.sp,
                             fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (current) {
+                            Text("✓", color = p.accent, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (terminalFontPickerOpen) {
+        ModalBottomSheet(
+            onDismissRequest = { terminalFontPickerOpen = false },
+            containerColor = p.surface,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Air.CARD_PADDING_DP.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.set_area_terminal_font),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(8.dp))
+                for (face in TerminalFace.entries) {
+                    val current = face == terminalFace
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = Air.TOUCH_DP.dp)
+                            .clickable {
+                                terminalFontPickerOpen = false
+                                onSetTerminalFace(face)
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // The row is its own preview: it draws in the face it names.
+                        Text(
+                            text = face.label,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 15.sp,
+                            fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                            fontFamily = terminalFontFamily(face),
                         )
                         Spacer(Modifier.weight(1f))
                         if (current) {
@@ -619,6 +687,33 @@ private fun cursorModeLabel(mode: CursorMode): String = when (mode) {
     CursorMode.BLOCK -> stringResource(R.string.set_cursor_mode_block)
     CursorMode.UNDERLINE -> stringResource(R.string.set_cursor_mode_underline)
     CursorMode.BAR -> stringResource(R.string.set_cursor_mode_bar)
+}
+
+/** One cursor preview in the picker: a single character cell with the
+ *  cursor's shape drawn over it, blinking on the cursor duty cycle. */
+@Composable
+private fun CursorPreviewCell(mode: CursorMode, visible: Boolean) {
+    val p = LocalPalette.current
+    Canvas(modifier = Modifier.size(width = 20.dp, height = 26.dp)) {
+        val stroke = 1.dp.toPx()
+        drawRect(color = p.line)
+        drawRect(
+            color = p.surfaceRaised,
+            topLeft = Offset(stroke, stroke),
+            size = Size(size.width - stroke * 2, size.height - stroke * 2),
+        )
+        if (visible) {
+            val rect = TerminalCursor.rect(mode)
+            drawRect(
+                color = p.accent,
+                topLeft = Offset(rect.left * size.width, rect.top * size.height),
+                size = Size(
+                    (rect.right - rect.left) * size.width,
+                    (rect.bottom - rect.top) * size.height,
+                ),
+            )
+        }
+    }
 }
 
 /** The quiet group label inside the Advanced card (Moshi's grouped shape). */
@@ -678,6 +773,8 @@ private fun SettingsCard(
     sub: String,
     icon: Painter? = null,
     iconGlyph: String? = null,
+    expanded: Boolean = true,
+    onToggle: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val p = LocalPalette.current
@@ -700,12 +797,15 @@ private fun SettingsCard(
             .padding(horizontal = Air.CARD_PADDING_DP.dp),
     ) {
         Row(
-            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+            modifier = Modifier
+                .padding(top = 12.dp, bottom = 4.dp)
+                .then(if (onToggle != null) Modifier.clickable(onClick = onToggle) else Modifier)
+                .heightIn(min = Air.TOUCH_DP.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CardIcon(icon = icon, glyph = iconGlyph)
             Spacer(Modifier.width(10.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(
                     text = title,
                     color = p.accent,
@@ -720,10 +820,20 @@ private fun SettingsCard(
                     lineHeight = (13 * Air.ROW_NAME_LINE_HEIGHT).sp,
                 )
             }
+            if (onToggle != null) {
+                Text(
+                    text = "›",
+                    color = p.muted,
+                    fontSize = 18.sp,
+                    modifier = Modifier.rotate(if (expanded) 90f else 0f),
+                )
+            }
         }
-        Spacer(Modifier.height(4.dp))
-        content()
-        Spacer(Modifier.height(8.dp))
+        if (expanded) {
+            Spacer(Modifier.height(4.dp))
+            content()
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }
 

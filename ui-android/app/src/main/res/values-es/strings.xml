@@ -186,6 +186,10 @@
     <string name="session_panes">Paneles</string>
     <string name="session_pane_shell">shell</string>
     <string name="terminal_new_tab">Nueva pestaña</string>
+    <string name="cd_delete_tab">Eliminar pestaña</string>
+    <string name="set_tab_delete_title">¿Eliminar esta pestaña?</string>
+    <string name="set_tab_delete_body">Cerrar %1$s termina los procesos que corren dentro.</string>
+    <string name="set_tab_delete_last">Es la única pestaña del workspace — no se puede eliminar.</string>
     <string name="session_bare_pane">Este panel corre una shell — las teclas de abajo le llegan. El teléfono escribe a agentes solamente.</string>
     <string name="session_pane_truncated">El host dejó fuera las filas más viejas.</string>
     <string name="session_no_camera_app">no hay una app de cámara en este dispositivo</string>
@@ -323,9 +327,6 @@
     <string name="set_typeface_foot">Se aplica a todas las pantallas y sobrevive un reinicio.</string>
     <string name="set_area_terminal_font">Fuente de terminal</string>
     <string name="set_area_terminal_font_sub">La terminal y el campo de escritura, en este dispositivo.</string>
-    <string name="set_terminal_font_mono">%1$s · monoespaciada — es la que dibuja la terminal.</string>
-    <string name="set_terminal_font_fallback">IosevkaTerm Nerd Font · la cara elegida es proporcional.</string>
-    <string name="set_terminal_font_foot">La terminal siempre pinta en IosevkaTerm Nerd Font — íconos y columnas sobreviven a cualquier cara.</string>
     <string name="set_area_advanced">Avanzado</string>
     <string name="set_area_advanced_sub">Comportamiento de la terminal que es real y está conectado.</string>
     <string name="set_advanced_group_cursor">Cursor</string>
@@ -396,7 +397,6 @@
     <string name="set_whats_new">Novedades</string>
     <string name="set_no_release_notes">Todavía no hay notas de versión — esta es %1$s.</string>
     <string name="set_disconnect">Desconectar</string>
-    <string name="set_disconnect_note">Sin conexión — la acción de desconectar pertenece a una sesión viva.</string>
     <string name="set_revoke">Revocar en este dispositivo</string>
     <string name="set_revoke_note">Borra la clave de este teléfono y sus hosts guardados — del lado del host todavía hace falta gentle-mobile-pair --revoke.</string>
     <string name="set_confirm_regenerate_title">¿Regenerar la clave del dispositivo?</string>

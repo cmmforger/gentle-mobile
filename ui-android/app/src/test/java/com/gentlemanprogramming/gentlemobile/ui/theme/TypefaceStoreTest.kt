@@ -113,35 +113,10 @@ class TypefaceStoreTest {
     }
 
     @Test
-    fun `the monospaced choice drives the terminal with its own face`() {
-        val resolution = terminalFaceFor(AppTypeface.IOSEVKA_TERM)
-        assertEquals(R.font.iosevkaterm_regular, resolution.regular)
-        assertEquals(R.font.iosevkaterm_bold, resolution.bold)
-        assertNull("IosevkaTerm ships no italic", resolution.italic)
-        assertNull("IosevkaTerm ships no bold-italic", resolution.boldItalic)
-        assertFalse("a monospaced choice must not fall back", resolution.fallback)
-    }
-
-    @Test
-    fun `every proportional choice falls back to the nerd-font monospace`() {
+    fun `only the bundled iosevka term is a monospaced app face`() {
+        assertTrue(isMonospaced(AppTypeface.IOSEVKA_TERM))
         for (choice in AppTypeface.entries.filter { it != AppTypeface.IOSEVKA_TERM }) {
-            val resolution = terminalFaceFor(choice)
-            assertEquals("$choice falls back to IosevkaTerm regular", R.font.iosevkaterm_regular, resolution.regular)
-            assertEquals(R.font.iosevkaterm_bold, resolution.bold)
-            assertNull("$choice falls back to a face with no italic", resolution.italic)
-            assertNull("$choice falls back to a face with no bold-italic", resolution.boldItalic)
-            assertTrue("$choice is proportional and must fall back", resolution.fallback)
-        }
-    }
-
-    @Test
-    fun `fallback marks exactly the proportional choices`() {
-        for (choice in AppTypeface.entries) {
-            assertEquals(
-                "fallback must be true exactly for non-monospaced choices",
-                choice != AppTypeface.IOSEVKA_TERM,
-                terminalFaceFor(choice).fallback,
-            )
+            assertFalse("$choice is proportional", isMonospaced(choice))
         }
     }
 }

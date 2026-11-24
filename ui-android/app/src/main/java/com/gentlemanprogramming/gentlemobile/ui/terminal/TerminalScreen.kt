@@ -25,11 +25,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,7 +69,7 @@ import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
 import com.gentlemanprogramming.gentlemobile.ui.session.formatBytes
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
-import com.gentlemanprogramming.gentlemobile.ui.theme.LocalAppTypeface
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalTerminalFace
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel
 import kotlinx.coroutines.delay
@@ -101,9 +103,12 @@ fun TerminalScreen(
     attachments: List<Attachment>,
     thumbnails: Map<Long, ImageBitmap>,
     paneRows: List<PaneSwitcherModel.Row>,
+    tabRows: List<PaneSwitcherModel.TabRow>,
+    tabError: String?,
     onStart: (cols: Int, rows: Int) -> Unit,
     onBack: () -> Unit,
     onCreateTab: () -> Unit,
+    onDeleteTab: (PaneSwitcherModel.TabRow) -> Unit,
     onPaneSelected: (PaneSwitcherModel.Row) -> Unit,
     onCamera: () -> Unit,
     onPickImage: () -> Unit,
@@ -117,7 +122,7 @@ fun TerminalScreen(
 ) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
-    val terminalTypefaces = rememberTerminalTypefaces(LocalAppTypeface.current)
+    val terminalTypefaces = rememberTerminalTypefaces(LocalTerminalFace.current)
     var emulator by remember { mutableStateOf<TerminalEmulator?>(null) }
     var frameVersion by remember { mutableStateOf(0) }
     var closed by remember { mutableStateOf(false) }
@@ -258,6 +263,8 @@ fun TerminalScreen(
     if (paneSheet) {
         TerminalPaneSheet(
             rows = paneRows,
+            tabRows = tabRows,
+            tabError = tabError,
             onDismiss = { paneSheet = false },
             onPick = { row ->
                 paneSheet = false
@@ -267,6 +274,7 @@ fun TerminalScreen(
                 paneSheet = false
                 onCreateTab()
             },
+            onDeleteTab = onDeleteTab,
         )
     }
 }
@@ -660,17 +668,24 @@ private fun TerminalAttachmentRow(
     }
 }
 
-/** The workspace's pane/tab list (T47): every pane of the workspace, with
- *  a `+` that creates a tab. Picking a row focuses the pane on the host. */
+/** The workspace's pane/tab list (T47/T51): tabs, each with a delete
+ *  action, the panes under each, and a `+` that creates a tab. Picking a
+ *  pane focuses it on the host; deleting a tab kills its processes, so it
+ *  asks first — and the workspace's last tab is refused, never deleted. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TerminalPaneSheet(
     rows: List<PaneSwitcherModel.Row>,
+    tabRows: List<PaneSwitcherModel.TabRow>,
+    tabError: String?,
     onDismiss: () -> Unit,
     onPick: (PaneSwitcherModel.Row) -> Unit,
     onCreateTab: () -> Unit,
+    onDeleteTab: (PaneSwitcherModel.TabRow) -> Unit,
 ) {
     val p = LocalPalette.current
+    var pendingDelete by remember { mutableStateOf<PaneSwitcherModel.TabRow?>(null) }
+    var refusedLast by remember { mutableStateOf(false) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = p.surface,
@@ -683,31 +698,62 @@ private fun TerminalPaneSheet(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
-            rows.forEach { row ->
+            tabRows.forEach { tabRow ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .clickable { onPick(row) },
+                        .heightIn(min = 44.dp),
                 ) {
-                    Column(Modifier.weight(1f)) {
+                    Text(
+                        text = tabRow.label,
+                        color = p.muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clickable {
+                                if (tabRow.deletable) pendingDelete = tabRow else refusedLast = true
+                            },
+                    ) {
                         Text(
-                            text = row.title,
-                            color = if (row.agentPane) p.accent else MaterialTheme.colorScheme.onBackground,
+                            text = "✕",
+                            color = if (tabRow.deletable) p.error else p.textDisabled,
                             fontSize = 15.sp,
-                            fontWeight = if (row.current) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = paneStateWord(row),
-                            color = p.muted,
-                            fontSize = 11.sp,
                         )
                     }
-                    if (row.current) {
-                        Text(text = "‹", color = p.accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+                rows.filter { it.tabId == tabRow.tabId }.forEach { row ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 44.dp)
+                            .padding(start = 16.dp)
+                            .clickable { onPick(row) },
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = row.title,
+                                color = if (row.agentPane) p.accent else MaterialTheme.colorScheme.onBackground,
+                                fontSize = 15.sp,
+                                fontWeight = if (row.current) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = paneStateWord(row),
+                                color = p.muted,
+                                fontSize = 11.sp,
+                            )
+                        }
+                        if (row.current) {
+                            Text(text = "‹", color = p.accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -727,8 +773,55 @@ private fun TerminalPaneSheet(
                     fontWeight = FontWeight.SemiBold,
                 )
             }
+            if (tabError != null) {
+                Text(
+                    text = tabError,
+                    color = p.error,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
+                )
+            }
             Spacer(Modifier.height(12.dp))
         }
+    }
+    pendingDelete?.let { tab ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(R.string.set_tab_delete_title), fontWeight = FontWeight.SemiBold) },
+            text = { Text(stringResource(R.string.set_tab_delete_body, tab.label), fontSize = 13.sp, lineHeight = 18.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete = null
+                    onDeleteTab(tab)
+                }) {
+                    Text(stringResource(R.string.hosts_delete), color = p.error, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.set_cancel), color = p.muted)
+                }
+            },
+            containerColor = p.surfaceRaised,
+            titleContentColor = MaterialTheme.colorScheme.onBackground,
+            textContentColor = p.muted,
+        )
+    }
+    if (refusedLast) {
+        AlertDialog(
+            onDismissRequest = { refusedLast = false },
+            title = { Text(stringResource(R.string.set_tab_delete_title), fontWeight = FontWeight.SemiBold) },
+            text = { Text(stringResource(R.string.set_tab_delete_last), fontSize = 13.sp, lineHeight = 18.sp) },
+            confirmButton = {
+                TextButton(onClick = { refusedLast = false }) {
+                    Text(stringResource(R.string.set_cancel), color = p.accentEdge)
+                }
+            },
+            containerColor = p.surfaceRaised,
+            titleContentColor = MaterialTheme.colorScheme.onBackground,
+            textContentColor = p.muted,
+        )
     }
 }
 
@@ -915,7 +1008,7 @@ fun fixtureTerminalBytes(): ByteArray = buildString {
 fun TerminalFixtureScreen(theme: AppTheme, onBack: () -> Unit) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
-    val terminalTypefaces = rememberTerminalTypefaces(LocalAppTypeface.current)
+    val terminalTypefaces = rememberTerminalTypefaces(LocalTerminalFace.current)
     val emulator = remember(theme) {
         TerminalEmulator(64, 24, terminalColors).apply { feed(fixtureTerminalBytes()) }
     }

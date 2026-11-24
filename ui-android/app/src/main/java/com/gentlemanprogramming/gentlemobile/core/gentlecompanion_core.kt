@@ -727,6 +727,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_start_terminal(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_close_tab(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_create_tab(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_create_workspace(
@@ -829,6 +831,8 @@ internal object UniffiLib {
     external fun uniffi_gentlecompanion_core_fn_clone_companionconnection(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
     external fun uniffi_gentlecompanion_core_fn_free_companionconnection(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_close_tab(`ptr`: Long,`tabId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_create_tab(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`focus`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1108,6 +1112,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_start_terminal() and 0xFFFF) != 9090) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_close_tab() and 0xFFFF) != 60183) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_create_tab() and 0xFFFF) != 11436) {
@@ -1716,6 +1723,14 @@ public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
 public interface CompanionConnectionInterface {
     
     /**
+     * Close one tab of the current workspace (`tab.close {tab_id}`, T51):
+     * the daemon's own close on the request lane — closing a tab ends its
+     * panes' processes. `Ok(())` means the daemon confirmed (`tab_closed`);
+     * a refusal names why, so the UI never claims a close that did not land.
+     */
+    fun `closeTab`(`tabId`: kotlin.String)
+    
+    /**
      * Create a tab in one workspace (`tab.create {workspace_id, focus}`,
      * T47): the daemon's own creation on the request lane, focused so the
      * new tab is where the human lands. `Ok` carries nothing — the tab is
@@ -1977,6 +1992,26 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             UniffiLib.uniffi_gentlecompanion_core_fn_clone_companionconnection(handle, status)
         }
     }
+
+    
+    /**
+     * Close one tab of the current workspace (`tab.close {tab_id}`, T51):
+     * the daemon's own close on the request lane — closing a tab ends its
+     * panes' processes. `Ok(())` means the daemon confirmed (`tab_closed`);
+     * a refusal names why, so the UI never claims a close that did not land.
+     */
+    @Throws(CompanionException::class)override fun `closeTab`(`tabId`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_close_tab(
+        it,
+        
+        FfiConverterString.lower(`tabId`),_status)
+}
+    }
+    
+    
 
     
     /**

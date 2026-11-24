@@ -98,4 +98,33 @@ class PaneSwitcherModelTest {
         assertTrue(rows[0].agentPane)
         assertFalse(rows[1].agentPane)
     }
+
+    @Test
+    fun `tab rows come in the daemon's tab order with the tab's own label`() {
+        val rows = PaneSwitcherModel.tabRows(
+            tabs = listOf(tab("t2", 2, label = "logs"), tab("t1", 1)),
+            workspaceId = "w1",
+        )
+        assertEquals(listOf("t1", "t2"), rows.map { it.tabId })
+        assertEquals("1", rows[0].label)
+        assertEquals("logs", rows[1].label)
+    }
+
+    @Test
+    fun `the workspace's last tab is never deletable`() {
+        val single = PaneSwitcherModel.tabRows(
+            tabs = listOf(tab("t1", 1)),
+            workspaceId = "w1",
+        )
+        assertFalse("one tab is the last, refused", single.single().deletable)
+    }
+
+    @Test
+    fun `a tab is deletable while the workspace has more than one`() {
+        val rows = PaneSwitcherModel.tabRows(
+            tabs = listOf(tab("t1", 1), tab("t2", 2)),
+            workspaceId = "w1",
+        )
+        assertTrue(rows.all { it.deletable })
+    }
 }

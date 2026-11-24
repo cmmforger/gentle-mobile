@@ -11,12 +11,14 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
@@ -35,6 +37,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -65,8 +68,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -173,9 +179,13 @@ import com.gentlemanprogramming.gentlemobile.ui.locale.AppLocale
 import com.gentlemanprogramming.gentlemobile.ui.locale.LocaleStore
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
 import com.gentlemanprogramming.gentlemobile.ui.sessions.ResumedSessionScreen
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesScreen
+import com.gentlemanprogramming.gentlemobile.ui.hosts.HostRowSwipe
+import com.gentlemanprogramming.gentlemobile.ui.hosts.SwipeReveal
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostsModel
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostDeletion
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostRowModel
@@ -222,6 +232,7 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTypeface
 import com.gentlemanprogramming.gentlemobile.ui.theme.GentleMobileTheme
+import com.gentlemanprogramming.gentlemobile.ui.theme.TerminalFaceStore
 import com.gentlemanprogramming.gentlemobile.ui.theme.TypefaceStore
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
@@ -323,6 +334,10 @@ class MainActivity : FragmentActivity() {
                 TypefaceStore(SharedPreferencesStore(this@MainActivity))
             }
             var typeface by remember { mutableStateOf(typefaceStore.selected()) }
+            val terminalFaceStore = remember {
+                TerminalFaceStore(SharedPreferencesStore(this@MainActivity))
+            }
+            var terminalFace by remember { mutableStateOf(terminalFaceStore.selected()) }
             val advancedStore = remember {
                 AdvancedSettingsStore(SharedPreferencesStore(this@MainActivity))
             }
@@ -361,6 +376,11 @@ class MainActivity : FragmentActivity() {
                         // typography) and persisted for the next launch.
                         typefaceStore.select(chosen)
                         typeface = chosen
+                    },
+                    terminalFace = terminalFace,
+                    onSetTerminalFace = { chosen ->
+                        terminalFaceStore.select(chosen)
+                        terminalFace = chosen
                     },
                 ) {
                 // The chrome follows the theme it renders: Paper's light page
@@ -2785,6 +2805,10 @@ fun ConnectScreen(
                     workspaceId = current.agent.workspaceId,
                     currentPaneId = current.agent.paneId,
                 )
+                val tabRows = PaneSwitcherModel.tabRows(
+                    tabs = sessionUi.tabs,
+                    workspaceId = current.agent.workspaceId,
+                )
                 TerminalScreen(
                     title = AgentRowModel.sessionTitle(current.agent.cwd, current.agent.name),
                     theme = appTheme,
@@ -2795,6 +2819,8 @@ fun ConnectScreen(
                     attachments = sessionUi.attachments,
                     thumbnails = sessionUi.thumbnails,
                     paneRows = paneRows,
+                    tabRows = tabRows,
+                    tabError = sessionUi.tabError,
                     onStart = { cols, rows ->
                         if (profile != null && screen.terminalSession == null && !screen.terminalStarting) {
                             screen.terminalStarting = true
@@ -2832,6 +2858,23 @@ fun ConnectScreen(
                         executor.execute {
                             val failure = try {
                                 connection.createTab(current.agent.workspaceId, true)
+                                null
+                            } catch (error: Exception) {
+                                describe(context, error)
+                            }
+                            mainHandler.post {
+                                if (screen.generation == generation) {
+                                    sessionUi.tabError = failure
+                                }
+                            }
+                        }
+                    },
+                    onDeleteTab = { tabRow ->
+                        val connection = current.connection
+                        val generation = screen.generation
+                        executor.execute {
+                            val failure = try {
+                                connection.closeTab(tabRow.tabId)
                                 null
                             } catch (error: Exception) {
                                 describe(context, error)
@@ -4289,11 +4332,11 @@ private fun RowHairline() {
     )
 }
 
-/** The hosts list's rows (S34, T50): one row per host, a hairline between
- *  rows (board 02), the state as one word — connected and interrupted in
- *  the accent, saved quiet. Swiping a row reveals Eliminar; completing the
- *  swipe opens the confirmation (it never deletes on the swipe alone). */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+/** The hosts list's rows (S34, T50/T51): one row per host, a hairline
+ *  between rows (board 02), the state as one word — connected and
+ *  interrupted in the accent, saved quiet. Swiping a row slides it to reveal
+ *  a delete icon at the trailing edge (Outlook's shape, never a full-width
+ *  block); tapping the icon opens the confirmation. One row open at a time. */
 @Composable
 private fun HostRows(
     rows: List<HostRowModel>,
@@ -4301,35 +4344,16 @@ private fun HostRows(
     onRename: (SavedHostEntry) -> Unit,
     onDelete: (SavedHostEntry) -> Unit,
 ) {
+    var openRowId by remember { mutableStateOf<String?>(null) }
     rows.forEachIndexed { index, row ->
+        val rowId = "${row.entry.host}:${row.entry.port}"
         key(row.entry.host, row.entry.port) {
-            val dismissState = rememberSwipeToDismissBoxState(
-                confirmValueChange = { value ->
-                    if (value == SwipeToDismissBoxValue.EndToStart) {
-                        onDelete(row.entry)
-                    }
-                    false
-                },
-            )
-            SwipeToDismissBox(
-                state = dismissState,
-                enableDismissFromStartToEnd = false,
-                backgroundContent = {
-                    val p = LocalPalette.current
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(p.error, RoundedCornerShape(Air.RADIUS_FIELD_DP.dp))
-                            .padding(horizontal = 16.dp),
-                        contentAlignment = androidx.compose.ui.Alignment.CenterEnd,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.hosts_delete),
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
+            SwipeRevealRow(
+                open = openRowId == rowId,
+                onOpenChanged = { isOpen -> openRowId = if (isOpen) rowId else null },
+                onDelete = {
+                    openRowId = null
+                    onDelete(row.entry)
                 },
             ) {
                 NodeRow(
@@ -4349,6 +4373,83 @@ private fun HostRows(
         }
         if (index < rows.size - 1) {
             RowHairline()
+        }
+    }
+}
+
+/** T51: the swipe reveal behind one host row. The row slides left to expose
+ *  a delete icon at the trailing edge; the icon is the affordance and asks
+ *  for confirmation on tap. A drag past the half-way point settles open, a
+ *  small drag or the opposite swipe settles back closed. */
+@Composable
+private fun SwipeRevealRow(
+    open: Boolean,
+    onOpenChanged: (Boolean) -> Unit,
+    onDelete: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val p = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    val revealPx = with(LocalDensity.current) { 72.dp.toPx() }
+    val thresholdPx = revealPx / 2f
+    val offsetX = remember { Animatable(0f) }
+    val deleteCd = stringResource(R.string.hosts_delete)
+
+    // An external open/close (tapping the icon closes, opening another row
+    // closes this one) animates the row back to rest; the drag's own settle
+    // below covers the small-drag snap-back where `open` did not change.
+    LaunchedEffect(open) {
+        offsetX.animateTo(
+            HostRowSwipe.offset(if (open) SwipeReveal.OPEN else SwipeReveal.CLOSED, revealPx),
+        )
+    }
+
+    fun settle(target: SwipeReveal) {
+        scope.launch { offsetX.animateTo(HostRowSwipe.offset(target, revealPx)) }
+        onOpenChanged(target == SwipeReveal.OPEN)
+    }
+
+    Box {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(p.error)
+                .padding(end = 24.dp),
+            contentAlignment = androidx.compose.ui.Alignment.CenterEnd,
+        ) {
+            Box(
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+                modifier = Modifier
+                    .size(44.dp)
+                    .semantics { contentDescription = deleteCd }
+                    .clickable(onClick = onDelete),
+            ) {
+                Text(
+                    text = "✕",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .background(p.bg)
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .pointerInput(open) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = { settle(HostRowSwipe.settle(offsetX.value, thresholdPx)) },
+                        onDragCancel = { settle(if (open) SwipeReveal.OPEN else SwipeReveal.CLOSED) },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            scope.launch {
+                                offsetX.snapTo((offsetX.value + dragAmount).coerceIn(-revealPx, 0f))
+                            }
+                        },
+                    )
+                },
+        ) {
+            content()
         }
     }
 }

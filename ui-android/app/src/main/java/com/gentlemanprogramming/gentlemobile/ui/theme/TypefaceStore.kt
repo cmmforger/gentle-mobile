@@ -8,9 +8,8 @@ import com.gentlemanprogramming.gentlemobile.R
  * The interface typeface the app draws with: the platform face by default,
  * or one of the bundled OFL faces. Applied through the `MaterialTheme`
  * typography in Theme.kt, so every screen follows without touching each
- * composable. The terminal follows this choice too: a monospaced face
- * drives it, a proportional one falls back to the bundled JetBrains Mono
- * ([terminalFaceFor]).
+ * composable. The terminal's own face is a separate choice (see
+ * [TerminalFace]) and never follows this one.
  */
 enum class AppTypeface(val label: String) {
     SYSTEM("System"),
@@ -65,34 +64,11 @@ fun bundledFace(choice: AppTypeface): BundledFace? = when (choice) {
 }
 
 /**
- * The terminal's resolved face for an app typeface: the chosen bundled face
- * itself when it is monospaced, otherwise the bundled JetBrains Mono.
- * [fallback] marks the second case so the UI can state it, never silently.
+ * The app typeface's own monospaced property: only the bundled IosevkaTerm
+ * is monospaced. The terminal never follows this — its face is the
+ * independent [TerminalFace] choice.
  */
-data class TerminalFaceResolution(
-    val regular: Int,
-    val bold: Int?,
-    val italic: Int?,
-    val boldItalic: Int?,
-    val fallback: Boolean,
-)
-
-/** One pure decision: the terminal always paints with a monospaced face
- *  that carries Nerd glyphs — IosevkaTerm Nerd Font. The app typeface only
- *  decides whether its own face drives the chrome; a proportional choice
- *  (and System) falls back to the same bundled Nerd mono so the grid keeps
- *  lining up and the icons survive. JetBrains Mono is never the terminal
- *  face: it has no Nerd glyphs, so a proportional choice would lose them. */
-fun terminalFaceFor(choice: AppTypeface): TerminalFaceResolution {
-    val proportional = choice != AppTypeface.IOSEVKA_TERM
-    return TerminalFaceResolution(
-        regular = R.font.iosevkaterm_regular,
-        bold = R.font.iosevkaterm_bold,
-        italic = null,
-        boldItalic = null,
-        fallback = proportional,
-    )
-}
+fun isMonospaced(choice: AppTypeface): Boolean = choice == AppTypeface.IOSEVKA_TERM
 
 /** The choice and the way to change it, provided beside [LocalPalette] so
  *  the settings screen reads it without threading a parameter through the
