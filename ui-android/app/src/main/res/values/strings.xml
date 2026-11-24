@@ -175,6 +175,7 @@
     <!-- T36: the pane switcher — the strip on the card opens the workspace's pane sheet -->
     <string name="session_panes">Panes</string>
     <string name="session_pane_shell">shell</string>
+    <string name="terminal_new_tab">New tab</string>
     <string name="session_bare_pane">This pane runs a shell — the keys below reach it. The phone prompts agents only.</string>
     <string name="session_pane_truncated">The host left out older rows.</string>
     <string name="session_no_camera_app">no camera app is available on this device</string>
@@ -314,8 +315,8 @@
     <string name="set_area_terminal_font">Terminal font</string>
     <string name="set_area_terminal_font_sub">The terminal and the draft field, on this device.</string>
     <string name="set_terminal_font_mono">%1$s · monospaced — it drives the terminal.</string>
-    <string name="set_terminal_font_fallback">JetBrains Mono (bundled) · the chosen face is proportional.</string>
-    <string name="set_terminal_font_foot">The terminal follows the app typeface when it is monospaced; a proportional face falls back to the bundled JetBrains Mono so columns keep lining up.</string>
+    <string name="set_terminal_font_fallback">IosevkaTerm Nerd Font · the chosen face is proportional.</string>
+    <string name="set_terminal_font_foot">The terminal always paints with the bundled IosevkaTerm Nerd Font, so the Nerd icons survive any typeface choice and the columns keep lining up.</string>
     <string name="set_area_about">About</string>
     <string name="set_area_about_sub">Version and what\u2019s new.</string>
 
@@ -443,7 +444,5 @@
     <string name="err_transport">The connection to the host failed: %1$s</string>
     <string name="err_timeout">The host took too long to answer: %1$s</string>
 
-    <!-- T42: the real terminal -->
-    <string name="terminal_title">Terminal</string>
-    <string name="terminal_open">Open terminal</string>
+
 </resources>

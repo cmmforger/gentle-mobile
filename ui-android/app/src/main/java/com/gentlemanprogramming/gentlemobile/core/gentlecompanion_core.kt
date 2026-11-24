@@ -727,6 +727,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_start_terminal(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_create_tab(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_create_workspace(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect(
@@ -827,6 +829,8 @@ internal object UniffiLib {
     external fun uniffi_gentlecompanion_core_fn_clone_companionconnection(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
     external fun uniffi_gentlecompanion_core_fn_free_companionconnection(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_create_tab(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`focus`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_method_companionconnection_create_workspace(`ptr`: Long,`cwd`: RustBuffer.ByValue,`label`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1104,6 +1108,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_start_terminal() and 0xFFFF) != 9090) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_create_tab() and 0xFFFF) != 11436) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_create_workspace() and 0xFFFF) != 39001) {
@@ -1709,6 +1716,14 @@ public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
 public interface CompanionConnectionInterface {
     
     /**
+     * Create a tab in one workspace (`tab.create {workspace_id, focus}`,
+     * T47): the daemon's own creation on the request lane, focused so the
+     * new tab is where the human lands. `Ok` carries nothing — the tab is
+     * visible in the next snapshot.
+     */
+    fun `createTab`(`workspaceId`: kotlin.String, `focus`: kotlin.Boolean)
+    
+    /**
      * Create a workspace on the host in `cwd` (S26-3). The path must have
      * been validated first (`checkHostDir`): measured live, the daemon
      * does **not** refuse a missing directory — it silently falls back to
@@ -1962,6 +1977,27 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             UniffiLib.uniffi_gentlecompanion_core_fn_clone_companionconnection(handle, status)
         }
     }
+
+    
+    /**
+     * Create a tab in one workspace (`tab.create {workspace_id, focus}`,
+     * T47): the daemon's own creation on the request lane, focused so the
+     * new tab is where the human lands. `Ok` carries nothing — the tab is
+     * visible in the next snapshot.
+     */
+    @Throws(CompanionException::class)override fun `createTab`(`workspaceId`: kotlin.String, `focus`: kotlin.Boolean)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_create_tab(
+        it,
+        
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterBoolean.lower(`focus`),_status)
+}
+    }
+    
+    
 
     
     /**

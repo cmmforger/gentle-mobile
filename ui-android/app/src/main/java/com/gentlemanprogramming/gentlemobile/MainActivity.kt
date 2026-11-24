@@ -205,15 +205,10 @@ import com.gentlemanprogramming.gentlemobile.ui.session.AddResult
 import com.gentlemanprogramming.gentlemobile.ui.session.ExtraKeyRowModel
 import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
 import com.gentlemanprogramming.gentlemobile.ui.session.formatBytes
-import com.gentlemanprogramming.gentlemobile.ui.session.AndroidDictationEngine
 import com.gentlemanprogramming.gentlemobile.ui.session.Attachment
 import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentQueue
 import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentState
-import com.gentlemanprogramming.gentlemobile.ui.session.DictationController
-import com.gentlemanprogramming.gentlemobile.ui.session.DictationState
-import com.gentlemanprogramming.gentlemobile.ui.session.SessionComposer
 import com.gentlemanprogramming.gentlemobile.ui.session.WorkspaceTabsModel
-import com.gentlemanprogramming.gentlemobile.ui.session.rememberDictationSession
 import com.gentlemanprogramming.gentlemobile.ui.settings.ThemePickerScreen
 import com.gentlemanprogramming.gentlemobile.ui.splash.SplashScreen
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
@@ -225,20 +220,6 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import com.gentlemanprogramming.gentlemobile.ui.theme.resolvedTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.ThemeStore
-import com.gentlemanprogramming.gentlemobile.ui.terminal.CardSurface
-import com.gentlemanprogramming.gentlemobile.ui.terminal.ClaimFlight
-import com.gentlemanprogramming.gentlemobile.ui.terminal.CropGuard
-import com.gentlemanprogramming.gentlemobile.ui.terminal.CropVoice
-import com.gentlemanprogramming.gentlemobile.ui.terminal.LineGuard
-import com.gentlemanprogramming.gentlemobile.ui.terminal.WrapGuard
-import com.gentlemanprogramming.gentlemobile.ui.terminal.PanePresentation
-import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFit
-import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMaxSp
-import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFontMinSp
-import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalDefaultBackground
-import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalSurface
-import com.gentlemanprogramming.gentlemobile.ui.terminal.rememberTypefaces
-import com.gentlemanprogramming.gentlemobile.ui.terminal.rememberTerminalCellMetrics
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalScreen
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFixtureScreen
 import java.io.File
@@ -300,29 +281,12 @@ class MainActivity : FragmentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
-        // Development shortcut: `--ez fixture true` draws a deterministic 80x24
-        // surface so terminal geometry can be iterated without an SSH host, a
-        // host-key challenge or a live agent.
-        val showFixture = intent?.getBooleanExtra("fixture", false) == true
-        // S24-9: geometry on screen only behind this second extra; normally
-        // the fixture logs it instead (logcat -s Fixture).
-        val showFixtureDebug = intent?.getBooleanExtra("fixture_debug", false) == true
         // Debug-only, per-launch override used by the tests; absent in release.
         val devSessionsDirOverride =
             if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                 intent?.getStringExtra("sessions_dir")
             } else {
                 null
-            }
-        // Debug-only, per-launch preview of the wrap view (S32a presentation
-        // capture): renders the re-flowed pane on a pane that is not cropped.
-        // Same gate as sessions_dir — absent in release — and only at the
-        // view layer: the WrapGuard decisions are untouched.
-        val wrapPreview =
-            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-                intent?.getBooleanExtra("wrap_preview", false) == true
-            } else {
-                false
             }
         // Debug-only, per-launch preview of the hosts work (S34): the live
         // list's rows and one host's own screen, on fixture hosts, so the
@@ -412,11 +376,7 @@ class MainActivity : FragmentActivity() {
                             },
                     )
                 }
-                if (showFixture) {
-                    com.gentlemanprogramming.gentlemobile.ui.terminal.FixtureTerminal(
-                        debugInfo = showFixtureDebug,
-                    )
-                } else if (terminalFixture) {
+                if (terminalFixture) {
                     TerminalFixtureScreen(
                         theme = effectiveTheme,
                         onBack = { finish() },
@@ -433,7 +393,6 @@ class MainActivity : FragmentActivity() {
                     val keyPath = File(filesDir, DeviceIdentity.KEY_FILE).absolutePath
                     ConnectScreen(
                         sessionsDirOverride = devSessionsDirOverride,
-                        wrapPreview = wrapPreview,
                         keyPath = keyPath,
                         // The pinned choice travels down (the Settings
                         // row and the picker mark the stored pin), while the
@@ -484,12 +443,6 @@ class MainActivity : FragmentActivity() {
 // the Sessions screen (T17a) shares the same workers for its SFTP list and
 // lease calls.
 internal val executor = Executors.newFixedThreadPool(2)
-// The claim single-flight (T26 rule 5): activation and resize are two wire
-// calls, and overlapping effect firings (keyboard open/close) must land in
-// decision order — one worker, so the wire order is the decision order.
-internal val claimExecutor = Executors.newSingleThreadExecutor { runnable ->
-    Thread(runnable, "gentle-mobile-claims")
-}
 internal val mainHandler = Handler(Looper.getMainLooper())
 
 /** Log tag for supervision evidence: poller registration and stop lines. */
@@ -559,14 +512,16 @@ private class ScreenState {
     var resumedSendError by mutableStateOf<String?>(null)
     var resumedCloseError by mutableStateOf<String?>(null)
 
-    /** T42: the real terminal — our own PTY lane drawn locally. Opened from
-     *  the session's pane sheet; back returns to the herdr session, which
-     *  stays alive underneath. */
+    /** T42/T48: the real terminal — our own PTY lane drawn locally, the
+     *  only session view. */
     var terminalSession by mutableStateOf<TerminalSession?>(null)
     var terminalStarting by mutableStateOf(false)
     var terminalError by mutableStateOf<String?>(null)
-    var terminalTitle by mutableStateOf<String?>(null)
     var terminalCwd by mutableStateOf<String?>(null)
+    /** T49: whether the terminal PTY is running an agent (what the app
+     *  itself launched) rather than the bare shell. A bare shell offers no
+     *  camera/clip, because nothing would receive the attachment line. */
+    var terminalAgent by mutableStateOf(false)
 
     /** S24-5: the start-session screen's state — the sessions the history
      *  screen already listed (the repositories derive from them, nothing is
@@ -668,45 +623,32 @@ private class ScreenState {
 
 /** The mutable state of one open agent session. */
 private class SessionUi {
-    var pane by mutableStateOf<PaneReadDto?>(null)
-    var readError by mutableStateOf<String?>(null)
-    /** The latest grid from the surface stream; `null` until the host rendered one.
-     *  The whole frame is kept, composer included: the phone shows the pane as it
-     *  is, the way Termux shows it, instead of hiding rows the host drew. */
-    var surface by mutableStateOf<SurfaceDto?>(null)
-    /** The workspace's own tabs (S27-7): from the snapshot the daemon keeps
-     *  sending while the session is open — the strip's rows and the
-     *  pane→tab map a tap needs. Empty until the first snapshot. */
+    /** The workspace's own tabs and panes (T47): from the snapshot the
+     *  daemon keeps sending while the session is open — the pane list's
+     *  rows and the agent each tab hosts. Empty until the first snapshot. */
     var tabs by mutableStateOf<List<TabDto>>(emptyList())
     var panes by mutableStateOf<List<PaneDto>>(emptyList())
     /** The agent whose pane lives in each tab — what a tab tap can make
      *  visible. Tabs without an agent have no entry. */
     var tabAgents by mutableStateOf<Map<String, AgentDto>>(emptyMap())
-    var draft by mutableStateOf("")
-    var sending by mutableStateOf(false)
-    var sendError by mutableStateOf<String?>(null)
-    var refreshNonce by mutableStateOf(0)
+    /** Every agent the snapshot knows, for the pane list's rows. */
+    var agents by mutableStateOf<List<AgentDto>>(emptyList())
 
-    /** Attachments (T13): the queue owns the honest state machine; the
+    /** The host's typed refusal when a pane focus could not land. */
+    var tabError by mutableStateOf<String?>(null)
+
+    /** Attachments (T49): the queue owns the honest state machine; the
      * snapshot list is Compose state so the rows redraw on every transition.
      * Thumbnails are decoded once per attachment, keyed by id; the source
-     * URIs are kept so a Retry can re-read the bytes (the upload transfer
-     * is one-shot). */
+     * URIs are kept so a Retry can re-read the bytes (the transfer is
+     * one-shot). */
     val attachmentQueue = AttachmentQueue()
     var attachments by mutableStateOf<List<Attachment>>(emptyList())
     val thumbnails = mutableMapOf<Long, ImageBitmap>()
     val attachmentUris = mutableMapOf<Long, Uri>()
-    /** A pick-time refusal (oversize, unusable name) shown once, near the
+    /** A pick-time refusal (oversize, unusable name), shown near the
      * composer — the queue refuses before anything is half-added. */
     var attachmentError by mutableStateOf<String?>(null)
-
-    /** Dictation (T14, S8): the pure state machine owns every transition;
-     * [dictation] is the Compose mirror so the listening line and the mic
-     * circle redraw on every change. The recognizer lives in the session
-     * composable; its callbacks drive the machine, the machine decides
-     * what lands in the field. */
-    val dictationController = DictationController()
-    var dictation by mutableStateOf<DictationState>(DictationState.Idle)
 
     /** Re-publish the queue snapshot; call after every queue mutation. */
     fun syncAttachments() {
@@ -722,138 +664,15 @@ private class SessionUi {
         }
     }
 
-    /** Extra-key row state (board 04). Ctrl and Alt are sticky one-shot
-     * modifiers: tapping toggles, the next key chip composes `ctrl+<key>`
-     * / `alt+<key>` and consumes the sticky state. `keySending` debounces
-     * a chip while its request is in flight, and `keyError` carries the
-     * host's typed refusal — a chip never claims a press that did not land. */
-    var ctrlSticky by mutableStateOf(false)
-    var altSticky by mutableStateOf(false)
-    var keySending by mutableStateOf(false)
-    var keyError by mutableStateOf<String?>(null)
-
-    /** S28-1: the host's typed refusal when a tab tap could not be
-     *  focused — a chip never claims a switch that did not land. Cleared
-     *  by the next successful focus. */
-    var tabError by mutableStateOf<String?>(null)
-
-    /** The pane-presentation bookkeeping (S28-3, third round): the frame
-     *  this binding last asked the pane for. `null` = never asked — a
-     *  fresh session or a fresh tab rebind, where the new tab still sits
-     *  at the desktop's size. */
-    var askedCols by mutableStateOf<Int?>(null)
-    var askedRows by mutableStateOf<Int?>(null)
-
-    /** T26 rule 2: whether this client still holds the tab's geometry
-     *  control — one claiming activation per activation, routine size
-     *  updates only after it. Cleared on release and on a new connection. */
-    var surfaceActive by mutableStateOf(false)
-
-    /** T26 rule 7: the decision-time ask — the grid the phone is waiting to
-     *  see painted. A frame of any other grid is held (the previous frame,
-     *  or a blank card), never painted, so the phone can never show a
-     *  width it did not claim. */
-    var requestedCols by mutableStateOf<Int?>(null)
-    var requestedRows by mutableStateOf<Int?>(null)
-
-    /** The host's own refusal when a claim or release did not land
-     *  (T26 rule 3): shown on the session screen, never a silent log. */
-    var reflowError by mutableStateOf<String?>(null)
-
-    /** The honest crop (S31c, T29): the pane's widest visible line in grid
-     *  cells (the honest source for the pane's own width), whether the
-     *  granted grid crops wider content, and the explicit fallback's state
-     *  — whole-pane mode and the width it asks for. Measured once per
-     *  confirmed claim, never per frame. */
-    var widestCells by mutableStateOf(0)
-    var cropNotice by mutableStateOf(false)
-    var wholePane by mutableStateOf(false)
-    var mirrorCols by mutableStateOf(0)
-
-    /** Wrap mode (S32a, T30): the cropped pane's text re-flowed to the
-     *  card's own columns, readable. T36: it is also the AUTOMATIC default
-     *  — when a confirmed crop is measured and wrap is off, it engages on
-     *  its own (WrapGuard.autoWrap); the sharp 1:1 grid stays what happens
-     *  when the pane fits, and wrap leaves on its own then too. */
-    var wrapMode by mutableStateOf(false)
-
-    /** The user declined wrap by returning to 1:1 themselves: the automatic
-     *  default holds off until the pane fits again, so it never fights
-     *  their own choice (T36, WrapGuard.autoWrap). */
-    var wrapDeclined by mutableStateOf(false)
-
-    /** T36: this session view shows a pane that runs no agent — the phone
-     *  shows and keys it, and the composer is replaced by one honest line
-     *  (the daemon refuses prompts on non-agent panes, measured). */
-    var barePane by mutableStateOf(false)
-
-    /** T36: the pane the switcher was last pointed at — a pane without an
-     *  agent. Null while the phone follows the agent's own pane. The
-     *  surface stream follows the daemon's focused pane, so the visible
-     *  pane changes without rebinding; the keys and the fallback read
-     *  address this id. */
-    var barePaneId by mutableStateOf<String?>(null)
-
-    /** T36: every agent the snapshot knows, for the switcher's rows. */
-    var agents by mutableStateOf<List<AgentDto>>(emptyList())
-
-    /** The phone's own 1:1 grid the fallback returns to, captured at claim
-     *  decision time (the card's derived columns). */
-    var oneToOneCols by mutableStateOf(0)
-
-    /** The claim single-flight (T26 rule 5): decide on the UI thread,
-     *  execute on [claimExecutor], apply only the newest confirmation. */
-    val claims = ClaimFlight()
-
-    /** T26 rules 1–2: the surface claim is gone — the session was released
-     *  on back, or a new connection owns the tab's geometry. The next open
-     *  re-claims, whatever geometry the pane was left at, and no frame of
-     *  a stale ask paints in the meantime. */
-    fun clearClaim() {
-        surfaceActive = false
-        askedCols = null
-        askedRows = null
-        requestedCols = null
-        requestedRows = null
-        // S31c rule 3: the fallback rides the claim, so a released session
-        // starts flat again — reopening re-measures and re-decides.
-        wholePane = false
-        mirrorCols = 0
-        wrapMode = false
-        wrapDeclined = false
-        cropNotice = false
-        widestCells = 0
-    }
-
-    /** Full re-baseline: a new connection owns a fresh core store, so the
-     * drawn grid and the fallback read start empty again. Drafts survive.
-     * Attachments do not: their upload session died with the connection. */
+    /** A new connection owns a fresh core store: the snapshot is empty again
+     *  and attachments did not survive — their upload session died with the
+     *  connection. */
     fun resetBaseline() {
-        pane = null
-        readError = null
-        surface = null
-        // Tabs ride the snapshot: a fresh store means a fresh strip.
         tabs = emptyList()
         panes = emptyList()
         tabAgents = emptyMap()
         agents = emptyList()
-        barePaneId = null
         tabError = null
-        // A fresh connection knows no pane width: the first derived frame
-        // must ask (PanePresentation), and the claim is gone with the old
-        // connection (T26 rules 1–2).
-        clearClaim()
-        reflowError = null
-        // A fresh connection starts from no frame at all.
-        // A dead connection cannot keep a recognizer: any dictation in
-        // flight is cancelled honestly (its partial is never committed).
-        if (dictationController.state is DictationState.Listening ||
-            dictationController.state is DictationState.RequestingPermission
-        ) {
-            val update = dictationController.cancel()
-            dictation = update.state
-            draft = update.draft
-        }
         attachmentQueue.snapshot().filter {
             it.state !is AttachmentState.Uploaded
         }.forEach { attachmentQueue.remove(it.id) }
@@ -861,8 +680,8 @@ private class SessionUi {
         syncAttachments()
     }
 
-    /** A sent prompt has handed every uploaded file to the agent: the rows
-     * leave the composer with the draft, so the next message starts clean. */
+    /** A sent line handed every uploaded file to the agent: the rows leave
+     *  with the draft, so the next message starts clean. */
     fun clearSentAttachments() {
         attachmentQueue.snapshot()
             .filter { it.state is AttachmentState.Uploaded }
@@ -874,7 +693,7 @@ private class SessionUi {
 }
 
 /** The screens reachable from the Pair flow; the design shows back buttons. */
-private enum class Route { Main, Settings, Themes, Host, Sessions, StartSession, Resumed, Workspaces, Terminal }
+private enum class Route { Main, Settings, Themes, Host, Sessions, StartSession, Resumed, Workspaces }
 
 /** The words a resume or a prompt failure shows: typed refusals keep their
  *  exact message (the core's Display carries the reason), anything else
@@ -885,10 +704,6 @@ private fun describeResumeFailure(error: Exception): String =
 @Composable
 fun ConnectScreen(
     sessionsDirOverride: String? = null,
-    // Debug-only per-launch preview (S32a capture), already gated by
-    // FLAG_DEBUGGABLE at the activity: the wrap view renders on a pane that
-    // is not cropped. View layer only; absent in release.
-    wrapPreview: Boolean = false,
     keyPath: String,
     appTheme: AppTheme,
     followThePhone: Boolean,
@@ -923,9 +738,6 @@ fun ConnectScreen(
     var port by remember { mutableStateOf(savedForm.port) }
     var user by remember { mutableStateOf(savedForm.user) }
     var session by remember { mutableStateOf("default") }
-    /** User-chosen terminal font size in px, `0f` = fit the grid to the width. */
-    var terminalFontPx by remember { mutableStateOf(0f) }
-
     // Device identity: generated on first launch, migrated from the old
     // external path once, shown so the user never copies files around.
     var identity by remember { mutableStateOf<DeviceIdentity.Identity?>(null) }
@@ -1121,25 +933,17 @@ fun ConnectScreen(
             val generation = screen.generation
             val sessionUi = screen.sessions.getOrPut(agent.paneId) { SessionUi() }
             screen.ui = UiState.Session(connection, agent)
-            pollPane(screen, sessionUi, connection, agent.paneId, generation)
-            pollSurface(screen, sessionUi, connection, agent.paneId, generation)
-            // S27-7: the strip's rows ride the snapshot, polled while the
+            // T48: the terminal is the only session view — a bare shell in
+            // the agent's workspace folder, sized by the phone.
+            screen.terminalSession = null
+            screen.terminalStarting = false
+            screen.terminalError = null
+            screen.terminalCwd = agent.cwd.orEmpty()
+            screen.terminalAgent = false
+            // T47: the pane list's rows ride the snapshot, polled while the
             // session is open, scoped to this agent's workspace.
             pollWorkspaceTabs(screen, sessionUi, connection, agent.workspaceId, agent.paneId, generation)
         }
-    }
-
-    /** T42: open the real terminal for this session — a plain login shell in
-     *  the workspace's folder, over our own PTY. The herdr session stays
-     *  alive underneath; back returns to it. */
-    fun openTerminal(current: UiState.Session) {
-        val profile = screen.profile ?: return
-        screen.terminalSession = null
-        screen.terminalStarting = false
-        screen.terminalError = null
-        screen.terminalCwd = current.agent.cwd.orEmpty()
-        screen.terminalTitle = AgentRowModel.sessionTitle(current.agent.cwd, current.agent.name)
-        route = Route.Terminal
     }
 
     /** S24-5: start a fresh session in `dir` (a repository with history, or
@@ -1823,57 +1627,6 @@ fun ConnectScreen(
         route = Route.Sessions
     }
 
-    // T42: the real terminal — our own PTY, a bare login shell in the
-    // workspace folder, drawn locally. Opened from the session's pane sheet;
-    // back returns to the herdr session, which stays alive underneath.
-    if (route == Route.Terminal) {
-        val terminalProfile = screen.profile
-        if (terminalProfile != null) {
-            TerminalScreen(
-                title = screen.terminalTitle ?: stringResource(R.string.terminal_title),
-                theme = appTheme,
-                session = screen.terminalSession,
-                starting = screen.terminalStarting,
-                error = screen.terminalError,
-                onStart = { cols, rows ->
-                    if (screen.terminalSession == null && !screen.terminalStarting) {
-                        screen.terminalStarting = true
-                        screen.terminalError = null
-                        val cwd = screen.terminalCwd.orEmpty()
-                        executor.execute {
-                            try {
-                                val started = coreStartTerminal(
-                                    terminalProfile,
-                                    cwd,
-                                    cols.toUInt(),
-                                    rows.toUInt(),
-                                )
-                                mainHandler.post {
-                                    screen.terminalSession = started
-                                    screen.terminalStarting = false
-                                    screen.terminalError = null
-                                }
-                            } catch (e: Exception) {
-                                mainHandler.post {
-                                    screen.terminalStarting = false
-                                    screen.terminalError = describe(context, e)
-                                }
-                            }
-                        }
-                    }
-                },
-                onBack = {
-                    screen.terminalSession?.closeSession()
-                    screen.terminalSession = null
-                    screen.terminalError = null
-                    route = Route.Main
-                },
-            )
-            return
-        }
-        route = Route.Main
-    }
-
     // Pairing link paste + QR scan.
     var pairLink by remember { mutableStateOf("") }
     var pairError by remember { mutableStateOf<String?>(null) }
@@ -2301,27 +2054,6 @@ fun ConnectScreen(
                 }
             }
             ForegroundAction.Nothing -> {}
-        }
-
-        // S31c rule 1: return-to-app re-measures once on a live session —
-        // the desktop may have let go while the app slept. The read never
-        // re-claims or resizes the pane, so the terminal view is untouched.
-        if (screen.machine.state !is SupervisionState.Connected) return
-        val current = screen.ui
-        if (current is UiState.Session) {
-            val sessionUi = screen.sessions[current.agent.paneId]
-            val granted = sessionUi?.requestedCols
-            if (sessionUi != null && granted != null) {
-                scheduleCropCheck(
-                    screen,
-                    screen.generation,
-                    sessionUi,
-                    current.connection,
-                    current.agent.paneId,
-                    granted,
-                    sessionUi.oneToOneCols,
-                )
-            }
         }
     }
 
@@ -3200,89 +2932,108 @@ fun ConnectScreen(
 
             is UiState.Session -> {
                 val sessionUi = screen.sessions.getOrPut(current.agent.paneId) { SessionUi() }
-                SessionScreen(
-                    connection = current.connection,
-                    agent = current.agent,
-                    sessionUi = sessionUi,
-                    supervision = screen.machine.state,
-                    tabs = sessionUi.tabs,
+                val profile = screen.profile
+                // T49: the camera and clip pickers behind the terminal's
+                // composer — the photo picker needs no permission; the camera
+                // intent writes into a provider-owned cache file.
+                val cameraUri = remember { mutableStateOf<Uri?>(null) }
+                val pickLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+                    if (uri != null) {
+                        startAttachmentUpload(context, current.connection, sessionUi, uri)
+                    }
+                }
+                val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+                    val uri = cameraUri.value
+                    cameraUri.value = null
+                    if (taken && uri != null) {
+                        startAttachmentUpload(context, current.connection, sessionUi, uri)
+                    }
+                }
+                fun openCamera() {
+                    val dir = java.io.File(context.cacheDir, "attachments").apply { mkdirs() }
+                    val file = java.io.File(dir, "camera-${System.currentTimeMillis()}.jpg")
+                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.attachments", file)
+                    cameraUri.value = uri
+                    try {
+                        cameraLauncher.launch(uri)
+                    } catch (error: Exception) {
+                        sessionUi.attachmentError = context.getString(R.string.session_no_camera_app)
+                    }
+                }
+                fun openPicker() {
+                    try {
+                        pickLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    } catch (error: Exception) {
+                        sessionUi.attachmentError = context.getString(R.string.session_no_gallery_app)
+                    }
+                }
+                val paneRows = PaneSwitcherModel.rows(
                     panes = sessionUi.panes,
-                    terminalFontPx = terminalFontPx,
-                    onFontPxChange = { terminalFontPx = it },
-                    // S31c (T29): the whole-pane fallback's one toggle, the
-                    // language the crop sentence renders in, and the screen
-                    // a scheduled crop check reports to.
-                    screenState = screen,
-                    screenGeneration = screen.generation,
-                    language = language,
-                    onWholePane = {
-                        if (sessionUi.wholePane) {
-                            sessionUi.wholePane = false
-                        } else {
-                            sessionUi.mirrorCols = sessionUi.widestCells
-                            sessionUi.wholePane = true
+                    agents = sessionUi.agents,
+                    tabs = sessionUi.tabs,
+                    workspaceId = current.agent.workspaceId,
+                    currentPaneId = current.agent.paneId,
+                )
+                TerminalScreen(
+                    title = AgentRowModel.sessionTitle(current.agent.cwd, current.agent.name),
+                    theme = appTheme,
+                    session = screen.terminalSession,
+                    starting = screen.terminalStarting,
+                    error = screen.terminalError,
+                    agentRunsHere = screen.terminalAgent,
+                    attachments = sessionUi.attachments,
+                    thumbnails = sessionUi.thumbnails,
+                    paneRows = paneRows,
+                    onStart = { cols, rows ->
+                        if (profile != null && screen.terminalSession == null && !screen.terminalStarting) {
+                            screen.terminalStarting = true
+                            screen.terminalError = null
+                            val cwd = screen.terminalCwd.orEmpty()
+                            executor.execute {
+                                try {
+                                    val started = coreStartTerminal(profile, cwd, cols.toUInt(), rows.toUInt())
+                                    mainHandler.post {
+                                        screen.terminalSession = started
+                                        screen.terminalStarting = false
+                                        screen.terminalError = null
+                                    }
+                                } catch (e: Exception) {
+                                    mainHandler.post {
+                                        screen.terminalStarting = false
+                                        screen.terminalError = describe(context, e)
+                                    }
+                                }
+                            }
                         }
                     },
-                    // S32a (T30): wrap mode's one toggle — the primary action
-                    // of the cropped notice. One tap in, one tap back; the
-                    // fresh read for the wrapped view comes from the
-                    // session's own refresher, never typed by hand.
-                    onWrap = { sessionUi.wrapMode = !sessionUi.wrapMode },
                     onBack = {
+                        screen.terminalSession?.closeSession()
+                        screen.terminalSession = null
+                        screen.terminalError = null
                         screen.generation += 1
                         screen.ui = UiState.Connected(current.connection, snapshot = null)
-                        // The phone held the tab's geometry control while the
-                        // session was open (S28-3): release it, so the desktop's
-                        // own view reflows back to its size. The release also
-                        // ends EVERY pane's claim (T26 rule 1): the ask is
-                        // cleared now, so reopening any agent re-claims from
-                        // its derived grid instead of staying at the desktop
-                        // geometry forever.
-                        val released = screen.sessions.values.toList()
-                        released.forEach { it.clearClaim() }
-                        claimExecutor.execute {
+                        poll(screen, current.connection, screen.generation)
+                        route = Route.Workspaces
+                    },
+                    onCreateTab = {
+                        val connection = current.connection
+                        val generation = screen.generation
+                        executor.execute {
                             val failure = try {
-                                current.connection.setSurfaceActive(false)
+                                connection.createTab(current.agent.workspaceId, true)
                                 null
                             } catch (error: Exception) {
                                 describe(context, error)
                             }
                             mainHandler.post {
-                                if (failure != null) {
-                                    // A refused release reaches the UI (T26
-                                    // rule 3): reopening re-claims and shows
-                                    // the host's own answer if it fails again.
-                                    released.forEach { it.reflowError = failure }
+                                if (screen.generation == generation) {
+                                    sessionUi.tabError = failure
                                 }
                             }
                         }
-                        // Going back restarts snapshot polling: a session open
-                        // had stopped it, and an empty snapshot must refresh,
-                        // not freeze on "Waiting for the first snapshot…".
-                        // The pane poller stops itself: its generation check
-                        // no longer matches a Connected screen.
-                        poll(screen, current.connection, screen.generation)
-                        // Back lands on the workspaces of this host, not on the
-                        // host list: the point of leaving a session is picking
-                        // another workspace, one tap away.
-                        route = Route.Workspaces
                     },
-                    onRetry = { gated { connect(acceptChallenge = null, pair = pairParams) } },
-                    onRefresh = {
-                        val generation = screen.generation
-                        val viewed = sessionUi.barePaneId ?: current.agent.paneId
-                        requestPaneRead(screen, sessionUi, current.connection, viewed, generation)
-                    },
-                    // T36: a pane pick focuses the pane on the host — the
-                    // daemon's own `pane.focus {pane_id}` over the request
-                    // lane — and the visible pane follows, because the
-                    // surface stream renders the focused pane. A pane that
-                    // hosts another agent also rebinds the session to it:
-                    // the composer and the fallback read address what is on
-                    // screen. A pane without an agent just changes what the
-                    // phone shows and keys; the composer gives its place to
-                    // the honest bare-pane line. A refusal shows its typed
-                    // reason — the strip never claims a switch that failed.
                     onPaneSelected = { row ->
                         val connection = current.connection
                         val generation = screen.generation
@@ -3294,95 +3045,29 @@ fun ConnectScreen(
                                 describe(context, error)
                             }
                             mainHandler.post {
-                                // The pick changes which pane the session
-                                // addresses, so the gate cannot compare pane
-                                // ids — only that the same session is open.
-                                val now = screen.ui
-                                if (screen.generation == generation &&
-                                    now is UiState.Session &&
-                                    screen.sessions[now.agent.paneId] === sessionUi
-                                ) {
-                                    if (failure != null) {
-                                        sessionUi.tabError = failure
-                                    } else {
-                                        sessionUi.tabError = null
-                                        if (row.agentPane) {
-                                            val target = sessionUi.agents.firstOrNull { it.paneId == row.paneId }
-                                            if (target != null && target.paneId != current.agent.paneId) {
-                                                openAgentSession(
-                                                    UiState.Connected(connection, snapshot = null),
-                                                    target,
-                                                )
-                                            } else {
-                                                sessionUi.barePaneId = null
-                                            }
-                                        } else {
-                                            sessionUi.barePaneId = row.paneId
-                                        }
-                                    }
+                                if (screen.generation == generation) {
+                                    sessionUi.tabError = failure
                                 }
                             }
                         }
                     },
-                    onSend = { prompt ->
-                        val connection = current.connection
-                        val paneId = current.agent.paneId
-                        val generation = screen.generation
-                        sessionUi.sending = true
-                        sessionUi.sendError = null
-                        sessionUi.draft = ""
-                        executor.execute {
-                            try {
-                                connection.promptAgent(paneId, prompt)
-                                // "Sent" only on the daemon's agent_prompted reply.
-                                mainHandler.post {
-                                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                                        sessionUi.sending = false
-                                        // The uploads the prompt referenced have been
-                                        // handed over: the rows leave with the draft.
-                                        sessionUi.clearSentAttachments()
-                                    }
-                                }
-                            } catch (error: Exception) {
-                                // The draft stays: the prompt was not sent.
-                                mainHandler.post {
-                                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                                        sessionUi.sending = false
-                                        sessionUi.sendError = describe(context, error)
-                                    }
-                                }
-                            }
+                    onCamera = { openCamera() },
+                    onPickImage = { openPicker() },
+                    onRetryUpload = { id ->
+                        val uri = sessionUi.attachmentUris[id]
+                        if (uri != null) {
+                            sessionUi.attachmentQueue.retry(id)
+                            sessionUi.syncAttachments()
+                            uploadAttachment(context, current.connection, sessionUi, id, uri)
                         }
                     },
-                    onSendKeys = { keys ->
-                        val connection = current.connection
-                        // T36: the keys reach the pane the phone shows —
-                        // the switcher's pick, or the agent's own pane.
-                        val paneId = sessionUi.barePaneId ?: current.agent.paneId
-                        val generation = screen.generation
-                        sessionUi.keySending = true
-                        sessionUi.keyError = null
-                        executor.execute {
-                            try {
-                                connection.sendKeys(paneId, keys)
-                                // "Sent" only on the daemon's `ok` reply.
-                                mainHandler.post {
-                                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                                        sessionUi.keySending = false
-                                    }
-                                }
-                            } catch (error: Exception) {
-                                mainHandler.post {
-                                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                                        sessionUi.keySending = false
-                                        sessionUi.keyError = describe(context, error)
-                                    }
-                                }
-                            }
-                        }
+                    onRemoveAttachment = { id ->
+                        sessionUi.attachmentQueue.remove(id)
+                        sessionUi.thumbnails.remove(id)
+                        sessionUi.attachmentUris.remove(id)
+                        sessionUi.syncAttachments()
                     },
-                    wrapPreview = wrapPreview,
-                    onOpenTerminal = { openTerminal(current) },
+                    onAttachmentsConsumed = { sessionUi.clearSentAttachments() },
                 )
             }
         }
@@ -3765,113 +3450,7 @@ private fun sessionStillCurrent(
 ): Boolean {
     val current = screen.ui
     if (screen.generation != generation || current !is UiState.Session) return false
-    // T36: the gate follows the pane the phone actually addresses — the
-    // pane the switcher picked (a shell pane), or the agent's own pane.
-    val viewed = sessionUi.barePaneId ?: current.agent.paneId
-    return viewed == paneId &&
-        screen.sessions[current.agent.paneId] === sessionUi
-}
-
-/**
- * Surface polling: about twelve times a second, read the core's latest-wins
- * slot. The throttle lives in the core (one slot, overwritten in place), so
- * a burst of frames between two polls has already collapsed into the newest
- * one — this loop can never queue a stale frame, it can only read the
- * current grid. Stops when the screen changes or the connection ended.
- */
-private const val SURFACE_POLL_MS = 80L
-
-private fun pollSurface(
-    screen: ScreenState,
-    sessionUi: SessionUi,
-    connection: CompanionConnection,
-    paneId: String,
-    generation: Int,
-) {
-    // One slot for the poller's whole life; the stop log is the teardown
-    // proof (T8c), and a dead connection is reported to the machine so the
-    // session header says not live instead of a frozen grid passing as
-    // current.
-    val slot = screen.pollers.register()
-    Log.i(TAG, "surface poller registered, active=${screen.pollers.count}")
-    fun runOnce() {
-        executor.execute {
-            var reschedule = false
-            try {
-                val surface = try {
-                    connection.latestSurface()
-                } catch (_: Exception) {
-                    null
-                }
-                mainHandler.post {
-                    val previous = sessionUi.surface
-                    if (sessionStillCurrent(screen, sessionUi, paneId, generation) && surface != null) {
-                        // T26 rule 7: never paint a frame of a width the app
-                        // did not ask for. Until the claimed grid arrives, the
-                        // previous frame (or a blank card) is held: a frame of
-                        // any other grid is dropped here, whether it is the
-                        // cold-connect desktop hello or a rebind's stale
-                        // width. The asked bookkeeping is written only from a
-                        // frame that confirms the ask (T26 rule 3).
-                        val asked = sessionUi.requestedCols != null &&
-                            surface.width.toInt() == sessionUi.requestedCols &&
-                            surface.height.toInt() == sessionUi.requestedRows
-                        Log.i(
-                            TAG,
-                            "surface frame: ${surface.width}x${surface.height} rev=${surface.revision} " +
-                                "requested=${sessionUi.requestedCols}x${sessionUi.requestedRows} accepted=$asked",
-                        )
-                        if (asked) {
-                            sessionUi.askedCols = surface.width.toInt()
-                            sessionUi.askedRows = surface.height.toInt()
-                        }
-                        val changed = previous == null ||
-                            surface.width != previous.width ||
-                            surface.height != previous.height ||
-                            surface.revision != previous.revision
-                        if (asked && changed) {
-                            // The whole frame is stored as it arrives: the phone
-                            // shows the pane complete, composer included, the way
-                            // Termux shows it, instead of hiding rows the host drew.
-                            sessionUi.surface = surface
-                        }
-                    }
-                }
-                val ended = try {
-                    connection.isDisconnected()
-                } catch (_: Exception) {
-                    true
-                }
-                if (ended) {
-                    mainHandler.post {
-                        if (screen.generation == generation) {
-                            screen.machine.onDropped(
-                                AppLocale.wrapStored(screen.appContext)
-                                    .getString(R.string.session_reason_host_closed),
-                            )
-                        }
-                    }
-                }
-                reschedule = !ended
-            } finally {
-                if (!reschedule) {
-                    slot.close()
-                    Log.i(TAG, "surface poller stopped, active=${screen.pollers.count}")
-                }
-            }
-            if (reschedule) {
-                mainHandler.postDelayed({
-                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                        runOnce()
-                    } else {
-                        slot.close()
-                        Log.i(TAG, "surface poller stopped, active=${screen.pollers.count}")
-                    }
-                }, SURFACE_POLL_MS)
-            }
-        }
-    }
-    runOnce()
+    return screen.sessions[current.agent.paneId] === sessionUi
 }
 
 /** Tabs polling (S27-7): while a session is open, read the daemon's
@@ -3941,182 +3520,6 @@ private fun ended(connection: CompanionConnection): Boolean = try {
     true
 }
 
-/** One immediate read, off the poll cadence — the manual refresh button. */
-private fun requestPaneRead(
-    screen: ScreenState,
-    sessionUi: SessionUi,
-    connection: CompanionConnection,
-    paneId: String,
-    generation: Int,
-) {
-    executor.execute {
-        try {
-            val read = connection.readPane(paneId)
-            mainHandler.post {
-                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                    sessionUi.pane = read
-                    sessionUi.readError = null
-                }
-            }
-        } catch (error: Exception) {
-            mainHandler.post {
-                if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                    sessionUi.readError =
-                        describe(AppLocale.wrapStored(screen.appContext), error)
-                }
-            }
-        }
-    }
-}
-
-/**
- * The honest-crop check (S31c, T29): after a claim is confirmed, read the
- * pane's visible text once and measure its widest line. Wider than the
- * granted grid proves the daemon did not reflow the pane's PTY — the phone
- * is looking at a cropped view — and the session screen says so. Runs once
- * per confirmed claim (never per frame), a beat later so a real reflow has
- * time to land, and in whole-pane mode it decides whether the fallback is
- * still needed: when the pane sits at the phone's width again, the session
- * returns to 1:1 with no typing.
- */
-private const val CROP_CHECK_DELAY_MS = 1500L
-
-/** How often wrap mode re-reads the pane's text (S32a): the wrapped view
- *  is fed by the same read the crop check uses, so it must keep moving. */
-private const val WRAP_REFRESH_MS = 1000L
-
-private fun scheduleCropCheck(
-    screen: ScreenState,
-    generation: Int,
-    sessionUi: SessionUi,
-    connection: CompanionConnection,
-    paneId: String,
-    grantedCols: Int,
-    phoneCols: Int,
-) {
-    if (grantedCols <= 0) return
-    mainHandler.postDelayed({
-        if (!sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-            return@postDelayed
-        }
-        executor.execute {
-            val read = try {
-                connection.readPane(paneId)
-            } catch (_: Exception) {
-                null
-            }
-            mainHandler.post {
-                if (sessionStillCurrent(screen, sessionUi, paneId, generation) && read != null) {
-                    val widest = CropGuard.widestLineCells(read.text)
-                    sessionUi.widestCells = widest
-                    sessionUi.cropNotice = CropGuard.cropped(widest, grantedCols)
-                    Log.i(
-                        TAG,
-                        "crop check: widest=$widest granted=$grantedCols " +
-                            "cropped=${sessionUi.cropNotice} wrap=${sessionUi.wrapMode}",
-                    )
-                    if (sessionUi.wholePane && CropGuard.returnsToFlatPanel(widest, phoneCols)) {
-                        sessionUi.wholePane = false
-                    }
-                    // S32a rule 6: the host stopped cropping — wrap leaves
-                    // on its own, and 1:1 shows the pane whole with no typing.
-                    if (sessionUi.wrapMode && WrapGuard.wrapDone(widest, grantedCols)) {
-                        sessionUi.wrapMode = false
-                        // The decline held off while the pane stayed cropped;
-                        // once it fits again the automatic default stands.
-                        sessionUi.wrapDeclined = false
-                    }
-                    // T36: wrap is the automatic default when the granted grid
-                    // crops wider pane content — no extra tap. A decline the
-                    // user made by returning to 1:1 holds until the pane fits.
-                    val auto = WrapGuard.autoWrap(sessionUi.cropNotice, sessionUi.wrapMode, sessionUi.wrapDeclined)
-                    if (auto == true) {
-                        Log.i(TAG, "wrap auto-engaged: widest=$widest granted=$grantedCols")
-                        sessionUi.wrapMode = true
-                    }
-                }
-            }
-        }
-    }, CROP_CHECK_DELAY_MS)
-}
-
-/**
- * Pane polling: about twice per second, read the pane's visible text over
- * the request channel — the fallback while the surface stream has not
- * produced its first frame. Once a grid is flowing this stops: the surface
- * is the live view, and polling text beside it would be dead weight.
- */
-private fun pollPane(
-    screen: ScreenState,
-    sessionUi: SessionUi,
-    connection: CompanionConnection,
-    paneId: String,
-    generation: Int,
-) {
-    // Same slot discipline as the other pollers (T8c teardown proof).
-    val slot = screen.pollers.register()
-    Log.i(TAG, "pane poller registered, active=${screen.pollers.count}")
-    fun runOnce() {
-        executor.execute {
-            var reschedule = false
-            try {
-                try {
-                    val read = connection.readPane(paneId)
-                    mainHandler.post {
-                        if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                            sessionUi.pane = read
-                            sessionUi.readError = null
-                        }
-                    }
-                } catch (error: Exception) {
-                    mainHandler.post {
-                        if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                            sessionUi.readError =
-                                describe(AppLocale.wrapStored(screen.appContext), error)
-                        }
-                    }
-                }
-                val ended = try {
-                    connection.isDisconnected()
-                } catch (_: Exception) {
-                    true
-                }
-                if (ended) {
-                    mainHandler.post {
-                        if (screen.generation == generation) {
-                            screen.machine.onDropped(
-                                AppLocale.wrapStored(screen.appContext)
-                                    .getString(R.string.session_reason_host_closed),
-                            )
-                        }
-                    }
-                }
-                reschedule = !ended && sessionUi.surface == null
-            } finally {
-                if (!reschedule) {
-                    slot.close()
-                    Log.i(TAG, "pane poller stopped, active=${screen.pollers.count}")
-                }
-            }
-            if (reschedule) {
-                mainHandler.postDelayed({
-                    if (sessionStillCurrent(screen, sessionUi, paneId, generation)) {
-                        runOnce()
-                    } else {
-                        slot.close()
-                        Log.i(TAG, "pane poller stopped, active=${screen.pollers.count}")
-                    }
-                }, 500)
-            }
-        }
-    }
-    runOnce()
-}
-
-/** The agent session screen: header, terminal grid (or text fallback), composer.
- * Supervision (T8c) rides in as `supervision`: while the connection is not
- * live, the header says so — a frozen grid never passes as current — and the
- * board's interrupted notice with Retry now sits above the terminal. */
 /**
  * The inbox (03-inbox.html) as the connected host's agent list: one
  * surface, groups in the fixed order needs you → done → working → idle,
@@ -4318,760 +3721,6 @@ private fun InboxSection(
                 }
 }
 
-@OptIn(
-    androidx.compose.foundation.ExperimentalFoundationApi::class,
-    androidx.compose.material3.ExperimentalMaterial3Api::class,
-)
-@Composable
-private fun SessionScreen(
-    connection: CompanionConnection,
-    agent: AgentDto,
-    sessionUi: SessionUi,
-    supervision: SupervisionState,
-    // S27-7/S28-1: the workspace's own tabs and panes — the switcher's
-    // rows need the daemon's order. Empty until the first snapshot.
-    tabs: List<TabDto>,
-    panes: List<PaneDto>,
-    terminalFontPx: Float,
-    onFontPxChange: (Float) -> Unit,
-    onBack: () -> Unit,
-    onRefresh: () -> Unit,
-    onPaneSelected: (PaneSwitcherModel.Row) -> Unit,
-    onRetry: () -> Unit,
-    onSend: (String) -> Unit,
-    onSendKeys: (List<String>) -> Unit,
-    // S31c (T29): the screen identity a crop check reports to, the
-    // language the crop sentence renders in, and the fallback's toggle.
-    screenState: ScreenState,
-    screenGeneration: Int,
-    language: AppLanguage,
-    onWholePane: () -> Unit,
-    onWrap: () -> Unit,
-    // Debug-only preview (S32a capture): renders the wrap view on a pane
-    // that is not cropped. View layer only — the WrapGuard decisions and
-    // their tests are untouched, and the extra is absent in release.
-    wrapPreview: Boolean = false,
-    // T42: open the real terminal for this session from the pane sheet.
-    onOpenTerminal: () -> Unit,
-) {
-    val interrupted = supervision as? SupervisionState.Interrupted
-    // T13: the two pickers behind the composer's camera and clip icons.
-    // The photo picker needs no permission; the camera intent writes into a
-    // provider-owned cache file, so no storage permission either.
-    val context = LocalContext.current
-    val cameraUri = remember { mutableStateOf<Uri?>(null) }
-    val pickLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            startAttachmentUpload(context, connection, sessionUi, uri)
-        }
-    }
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
-        val uri = cameraUri.value
-        cameraUri.value = null
-        if (taken && uri != null) {
-            startAttachmentUpload(context, connection, sessionUi, uri)
-        }
-    }
-    fun openCamera() {
-        val dir = java.io.File(context.cacheDir, "attachments").apply { mkdirs() }
-        val file = java.io.File(dir, "camera-${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.attachments", file)
-        cameraUri.value = uri
-        try {
-            cameraLauncher.launch(uri)
-        } catch (error: Exception) {
-            sessionUi.attachmentError = context.getString(R.string.session_no_camera_app)
-        }
-    }
-    fun openPicker() {
-        try {
-            pickLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-            )
-        } catch (error: Exception) {
-            sessionUi.attachmentError = context.getString(R.string.session_no_gallery_app)
-        }
-    }
-
-    // T14 (S8): the shared dictation session — the real recognizer behind
-    // the mic, with the permission gate routed through the composer's
-    // explanation line. The machine decides the state; this only mirrors it.
-    val dictationSession = rememberDictationSession(
-        controller = sessionUi.dictationController,
-        onApply = { update ->
-            sessionUi.draft = update.draft
-            sessionUi.dictation = update.state
-        },
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            // Edge-to-edge: without the insets the header sits under the status
-            // bar and the composer under the navigation bar, and the keyboard
-            // would cover the field the user is typing into.
-            .safeDrawingPadding()
-            .imePadding()
-            // S27-2: the terminal card loses the side padding — the frame
-            // uses the phone's width minus a hair (4 dp each side); the
-            // header, extra keys and composer keep their own inset below.
-            .padding(horizontal = 4.dp, vertical = 12.dp),
-    ) {
-        // Header: back to the agents list, the project's name. Icons instead
-        // of the words; the title is the project name — never the agent
-        // name/kind, so a screen never reads `pi` (S27-5). The glyphs are
-        // small, in the theme's accent, and back is a chevron (S28-2) — the
-        // 44 dp touch target stays.
-        // T36: the pane switcher — one sheet lists every pane of the
-        // workspace, its title and its state. Picking a pane focuses it on
-        // the host (the daemon's own `pane.focus`); the surface stream
-        // follows the focused pane, so what the phone shows and keys is
-        // the pane the human picked. T39: the sheet opens from the header
-        // icon; the strip that named the row is gone, its height in the
-        // terminal.
-        val paneRows = PaneSwitcherModel.rows(
-            panes = panes,
-            agents = sessionUi.agents,
-            tabs = tabs,
-            workspaceId = agent.workspaceId,
-            currentPaneId = sessionUi.barePaneId ?: agent.paneId,
-        )
-        val paneSheetsCd = stringResource(R.string.session_panes)
-        // T39: the pane sheet lives in the header now — the strip that
-        // named it is gone and its height belongs to the terminal.
-        var paneSheet by remember { mutableStateOf(false) }
-        Row(
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        ) {
-            // T39: the back control sits at the real left edge — the row's
-            // own 16 dp inset went and the title keeps its distance instead.
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clickable(onClick = onBack),
-                contentAlignment = androidx.compose.ui.Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_back_chevron),
-                    contentDescription = stringResource(R.string.inbox_back),
-                    tint = LocalPalette.current.accent,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = AgentRowModel.sessionTitle(agent.cwd, agent.name),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 20.sp,
-                    lineHeight = (20 * Air.TITLE_LINE_HEIGHT).sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                statusWord(agent.status)?.let { word ->
-                    Text(
-                        text = word,
-                        color = LocalPalette.current.muted,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            // T39: the pane switcher is a header icon beside refresh — the
-            // same sheet the strip used to open, without the strip's row.
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clickable(enabled = paneRows.isNotEmpty(), onClick = { paneSheet = true })
-                    .semantics {
-                        contentDescription = paneSheetsCd
-                    },
-                contentAlignment = androidx.compose.ui.Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_pane),
-                    contentDescription = null,
-                    tint = if (paneRows.isNotEmpty()) {
-                        LocalPalette.current.accent
-                    } else {
-                        LocalPalette.current.muted
-                    },
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clickable(onClick = onRefresh),
-                contentAlignment = androidx.compose.ui.Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_refresh),
-                    contentDescription = stringResource(R.string.session_refresh),
-                    tint = LocalPalette.current.accent,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        // S27-6: no liveness line — the space belongs to the terminal. When
-        // the connection dropped, the interrupted notice alone says so and
-        // offers Retry; a live link says nothing.
-        if (interrupted != null) {
-            InterruptedNotice(reason = interrupted.reason, onRetry = onRetry)
-        }
-
-        // Terminal area: the cell grid from the surface stream. Before the
-        // first surface arrives (or if the host never sends one) the pane's
-        // visible text shows here instead — never a silently empty view.
-        // S28-1: the host's typed refusal when a focus did not land — the
-        // header never claimed a switch that did not happen.
-        if (paneRows.isNotEmpty()) {
-            sessionUi.tabError?.let { error ->
-                Text(
-                    text = error,
-                    color = LocalPalette.current.error,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-            if (paneSheet) {
-                PaneSwitcherSheet(
-                    rows = paneRows,
-                    onDismiss = { paneSheet = false },
-                    onPick = { row ->
-                        paneSheet = false
-                        onPaneSelected(row)
-                    },
-                    onOpenTerminal = {
-                        paneSheet = false
-                        onOpenTerminal()
-                    },
-                )
-            }
-            Spacer(Modifier.height(4.dp))
-        }
-        // T26 rule 3 + S31c rule 4: the host's own answer when the claim did
-        // not land lives in the always-reserved notice slot below — inside
-        // the terminal area, at a height the grid derives around. A
-        // conditional line here used to change the card's height and
-        // re-fire the claim every 10 s (measured: seq 38x24↔38x26).
-        // T36: the pane whose content the phone shows — the switcher's
-        // pick, or the agent's own pane. Everything that reads or keys the
-        // pane addresses this id.
-        val viewedPaneId = sessionUi.barePaneId ?: agent.paneId
-        val surface = sessionUi.surface
-        val readError = sessionUi.readError
-        // The terminal area owns the leftover height (weight(1f)); the
-        // composer below it is measured first at its own intrinsic height,
-        // so the grid can never run beneath the composer and the composer
-        // can never be pushed off the screen. The card — and the claim
-        // derived from it — exists before any frame arrives (T26 rule 7):
-        // the claim never waits for the frame it is waiting for.
-        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-            val density = LocalDensity.current
-            val typefaces = rememberTypefaces()
-            val metrics = rememberTerminalCellMetrics(typefaces)
-            // Measured advance (S27b): what the font really paints, not
-            // the nominal ratio — measure a run of M's at a reference
-            // size and derive the painted em fraction. The renderer
-            // slots cells with its own paint measurement; this is the
-            // same number, taken here so the fit can trust it.
-            val probePx = 100f
-            // The painted advance measured EXACTLY as the renderer measures:
-            // the same android.graphics.Paint, same typeface, measureText
-            // over a run of M's. One measurement, two users (fit + render),
-            // so they can never disagree again.
-            val painted = remember(metrics, typefaces) {
-                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                paint.typeface = typefaces.regular ?: android.graphics.Typeface.DEFAULT
-                paint.textSize = probePx
-                paint.measureText("M".repeat(80)) / 80f / probePx
-            }
-            val minPx = with(density) { TerminalFontMinSp.toPx() }
-            val maxPx = with(density) { TerminalFontMaxSp.toPx() }
-            // S31c rule 4, revised: the notice slot is reserved only while a
-            // notice is actually showing, and the grid derives from the same
-            // height the layout gives the card — a notice still cannot move
-            // the derived grid, and an empty slot no longer eats 64 dp.
-            val fallbackMode = when {
-                sessionUi.wrapMode || wrapPreview -> WrapGuard.Fallback.WRAP
-                sessionUi.wholePane -> WrapGuard.Fallback.WHOLE
-                else -> WrapGuard.Fallback.FLAT
-            }
-            val readLimited = sessionUi.wrapMode &&
-                (sessionUi.pane == null || sessionUi.pane?.truncated == true)
-            val noticePlan = WrapGuard.noticePlan(sessionUi.cropNotice, fallbackMode, readLimited)
-            val noticeVisible = sessionUi.reflowError != null || noticePlan != null
-            val cardHeightPx = CropGuard.cardHeightForGrid(
-                constraints.maxHeight.toFloat(),
-                density.density,
-                reserveNotice = noticeVisible,
-            )
-            // The constraints, captured before the column below scopes them
-            // out of reach for its content.
-            val cardConstraints = constraints
-            // S28-3: the grid is derived from THIS card, not a fixed
-            // desktop size — the largest cell that still yields a
-            // usable grid, columns from the card's width, rows from its
-            // height. The painted advance governs (as in the fit), so
-            // the derived grid can never overflow the card that derived
-            // it, and the daemon is never asked for a surface bigger
-            // than it renders back. The derivation re-runs on every
-            // card change (rotation, keyboard) and the daemon is
-            // re-asked only when the grid actually changes.
-            val cardSurface = CardSurface.derive(
-                constraints.maxWidth.toFloat(),
-                cardHeightPx,
-                metrics.advanceRatio,
-                metrics.lineHeightRatio,
-                minFontPx = minPx,
-                maxFontPx = maxPx,
-                advanceRatioOverride = maxOf(metrics.advanceRatio, painted),
-            )
-            // S29/S31b: the pane is asked for exactly the card's derived
-            // rows — the crop blanks the composer's own rows in place, so
-            // there is no `+4` allowance and no blank padding anywhere:
-            // the frame fills the card in both directions.
-            val targetRows = cardSurface.rows
-            LaunchedEffect(cardSurface.cols, targetRows, agent.paneId, sessionUi.wholePane, sessionUi.mirrorCols) {
-                // S31/T26: the pane and the painted frame must be the
-                // same width — a resize from a client that never
-                // activated its surface only reshapes the projection and
-                // the PTY keeps the desktop's width (the truncation the
-                // human saw). An inactive surface gets ONE claiming
-                // activation (T26 rule 2), then the exact painted frame;
-                // an active one gets routine size updates only. The
-                // claim runs on one worker (T26 rule 5): the wire order
-                // is the decision order.
-                // S31c rule 3: the explicit fallback asks for the pane's
-                // own width — the widest measured line; the flat session
-                // asks for the card's derived frame. One flight, the same
-                // claiming machinery: one claiming activation per session,
-                // routine size updates only (T26 rules intact).
-                sessionUi.oneToOneCols = cardSurface.cols
-                val ask = CropGuard.targetGrid(
-                    sessionUi.wholePane,
-                    sessionUi.mirrorCols,
-                    cardSurface.cols,
-                    targetRows,
-                )
-                val request = PanePresentation.reflow(
-                    sessionUi.surfaceActive,
-                    sessionUi.askedCols,
-                    sessionUi.askedRows,
-                    ask.cols,
-                    ask.rows,
-                )
-                if (request != null) {
-                    val cols = request.cols.toUShort()
-                    val rows = request.rows.toUShort()
-                    val seq = sessionUi.claims.decide()
-                    Log.i(
-                        TAG,
-                        "claim decided: seq=$seq activate=${request.activateSurface} " +
-                            "grid=${request.cols}x${request.rows} asked=${sessionUi.askedCols}x${sessionUi.askedRows}",
-                    )
-                    // Decision-time ask (T26 rule 7): from now on, only a
-                    // frame of THIS grid is painted.
-                    sessionUi.requestedCols = request.cols
-                    sessionUi.requestedRows = request.rows
-                    sessionUi.reflowError = null
-                    claimExecutor.execute {
-                        val failure = try {
-                            if (request.activateSurface) {
-                                connection.setSurfaceActive(true)
-                            }
-                            if (sessionUi.claims.apply(seq)) {
-                                mainHandler.post { sessionUi.surfaceActive = true }
-                            }
-                            // The cell size rides the resize (the vendored
-                            // client's contract): the daemon needs the cell
-                            // dimensions to reflow the pane it presents.
-                            connection.resizeSurface(
-                                cols,
-                                rows,
-                                cardSurface.cellWidthPx.toInt().toUInt().coerceAtLeast(1u),
-                                cardSurface.cellHeightPx.toInt().toUInt().coerceAtLeast(1u),
-                            )
-                            null
-                        } catch (error: Exception) {
-                            describe(context, error)
-                        }
-                        mainHandler.post {
-                            Log.i(
-                                TAG,
-                                "claim outcome: seq=$seq ok=${failure == null}" +
-                                    (failure?.let { " error=$it" } ?: ""),
-                            )
-                            // The claims gate doubles as the staleness gate:
-                            // a refusal of a superseded claim is noise the
-                            // newer decision already replaced.
-                            if (failure != null && sessionUi.claims.apply(seq)) {
-                                // A refused claim reaches the UI, never a
-                                // Log.w (T26 rule 3): the current grid
-                                // stays and the bookkeeping stays open, so
-                                // a later key change asks again.
-                                sessionUi.reflowError = failure
-                            }
-                            if (failure == null && sessionUi.claims.apply(seq)) {
-                                // S31c rule 1: the claim is confirmed —
-                                // measure the pane once, never per frame.
-                                scheduleCropCheck(
-                                    screenState,
-                                    screenGeneration,
-                                    sessionUi,
-                                    connection,
-                                    viewedPaneId,
-                                    request.cols,
-                                    sessionUi.oneToOneCols,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            // S31c rules 2–4: the terminal card and its notices render in
-            // one column whose first row is the ALWAYS-RESERVED notice
-            // slot — the same height whether it shows the claim's refusal,
-            // the crop sentence with the whole-pane action, or nothing.
-            Column(Modifier.fillMaxSize()) {
-            // S32a rule 2: the slot's sentence and actions come from the pure
-            // decision computed above — wrap as the primary action, the
-            // whole-pane view as the exact-layout fallback, the one-tap return
-            // to 1:1 from wrap or whole. A limited read owns the honesty line.
-            SessionNoticeSlot(
-                reflowError = sessionUi.reflowError,
-                plan = noticePlan,
-                language = language,
-                onWrap = onWrap,
-                onWholePane = onWholePane,
-            )
-            if (surface != null) {
-                val cols = surface.width.toInt().coerceAtLeast(1)
-                val rows = surface.height.toInt().coerceAtLeast(1)
-                // S31b: the grid keeps its full height — the composer's own
-                // rows are blanked in place, nothing is padded, so the frame
-                // fills the card in both directions and the fit fits the
-                // whole grid.
-                val contentRows = rows
-            // Fit rule (S27-1): ONE font size fits the WHOLE frame —
-            // width first, and if the height then overflows the visible
-            // card, the height fits too. Nothing is cropped and no
-            // horizontal scrolling is needed to read a line; the cell
-            // aspect stays intact because one size drives both
-            // dimensions. A pinch overrides the fit only until the
-            // frame's size changes, then the fit rules again.
-            val fit = TerminalFit.fit(
-                cols,
-                contentRows,
-                cardConstraints.maxWidth.toFloat(),
-                cardHeightPx,
-                metrics.advanceRatio,
-                metrics.lineHeightRatio,
-                paintedAdvanceRatio = painted,
-            )
-            LaunchedEffect(cols, rows) {
-                if (terminalFontPx > 0f) onFontPxChange(0f)
-            }
-            val effectivePx = if (terminalFontPx > 0f) {
-                terminalFontPx.coerceIn(minPx, maxPx)
-            } else {
-                fit.fontPx
-            }
-            // Geometry to logcat only (S24-9 precedent): the fit's own
-            // numbers, never on the screen.
-            Log.i(
-                TAG,
-                "terminal fit: frame=${cols}x${rows} card=${cardConstraints.maxWidth}x${cardConstraints.maxHeight} " +
-                    "metrics a=${metrics.advanceRatio} l=${metrics.lineHeightRatio} painted=$painted fontPx=$effectivePx " +
-                    "grid=${cols * metrics.advanceRatio * effectivePx}x${rows * metrics.lineHeightRatio * effectivePx}",
-            )
-            Log.i(
-                TAG,
-                "card surface: card=${cardConstraints.maxWidth}x${cardConstraints.maxHeight} " +
-                    "cell=${cardSurface.cellWidthPx}x${cardSurface.cellHeightPx}px " +
-                    "grid=${cardSurface.cols}x${cardSurface.rows} targetRows=$targetRows " +
-                    "fill=${cardSurface.gridWidthPx / cardConstraints.maxWidth.toFloat()}x" +
-                    "${cardSurface.gridHeightPx / cardConstraints.maxHeight.toFloat()} " +
-                    "fontPx=${cardSurface.fontPx}",
-            )
-            val gridWidthPx = cols * metrics.advanceRatio * effectivePx
-            val gridHeightPx = rows * metrics.lineHeightRatio * effectivePx
-
-            var viewSize by remember { mutableStateOf(IntSize.Zero) }
-            val hScroll = rememberScrollState()
-            val vScroll = rememberScrollState()
-            val cellHalfPx = (metrics.lineHeightRatio * effectivePx / 2f).toInt().coerceAtLeast(1)
-            // Pinned to the bottom while the user is there: new frames
-            // follow only when pinned, so reading history is not yanked.
-            val pinnedToBottom = remember { mutableStateOf(true) }
-            LaunchedEffect(vScroll, cellHalfPx) {
-                snapshotFlow { vScroll.value }.collect {
-                    pinnedToBottom.value = vScroll.maxValue == 0 ||
-                        vScroll.value >= vScroll.maxValue - cellHalfPx
-                }
-            }
-            LaunchedEffect(surface.revision, effectivePx, gridHeightPx, viewSize) {
-                if (pinnedToBottom.value) vScroll.scrollTo(vScroll.maxValue)
-            }
-
-            // Pinch only changes the font size; one-finger drags belong
-            // to the scroll (canPan = false keeps the transform detector
-            // out of the drag gesture's way).
-            val transformState = rememberTransformableState { zoomChange, _, _ ->
-                val current = if (terminalFontPx > 0f) terminalFontPx else effectivePx
-                onFontPxChange((current * zoomChange).coerceIn(minPx, maxPx))
-            }
-            // S32a rule 3: wrap mode's view is fed by the pane read — the
-            // same read the crop check uses — refreshed while the mode is
-            // on. The honest states (no read yet, failed read, truncated
-            // read) are handled below, never an empty card pretending
-            // success.
-            val wrapViewActive = (sessionUi.wrapMode || wrapPreview) &&
-                sessionUi.pane != null &&
-                WrapGuard.canWrap(sessionUi.pane?.truncated == true)
-            if (sessionUi.wrapMode || wrapPreview) {
-                LaunchedEffect(viewedPaneId, screenGeneration) {
-                    while (sessionUi.wrapMode || wrapPreview) {
-                        requestPaneRead(screenState, sessionUi, connection, viewedPaneId, screenGeneration)
-                        kotlinx.coroutines.delay(WRAP_REFRESH_MS)
-                    }
-                }
-            }
-            // T39: the whole-line bottom edge in wrap mode — the card's
-            // height and the wrapped lines share one pitch, so a settled
-            // view never leaves a half-drawn line at the card's edge
-            // ([LineGuard]). The geometry is computed once here and given
-            // to the view, so the fit and the height can never disagree.
-            val wrapGeometry = if (wrapViewActive && sessionUi.pane != null) {
-                with(density) {
-                    val padPx = WrapGuard.WRAP_PADDING_DP.dp.toPx()
-                    val usable = (cardConstraints.maxWidth.toFloat() - 2f * padPx).coerceAtLeast(0f)
-                    val floorPx = 16.sp.toPx()
-                    val font = WrapGuard.wrapFont(usable, painted, floorPx, maxPx)
-                    WrapGeometry(
-                        fontPx = font,
-                        lineHeightPx = font * metrics.lineHeightRatio,
-                        cols = WrapGuard.wrapCols(usable, font, painted),
-                    )
-                }
-            } else {
-                null
-            }
-            // T39: a settled scroll rests on a line boundary — flat mode
-            // snaps to the cell pitch, wrap mode to the wrapped lines' own
-            // pitch — so a half-drawn line never stays at the card's edge.
-            val snapLinePx = wrapGeometry?.lineHeightPx ?: (metrics.lineHeightRatio * effectivePx)
-            LaunchedEffect(vScroll, snapLinePx) {
-                var wasScrolling = false
-                snapshotFlow { vScroll.isScrollInProgress }.collect { scrolling ->
-                    if (!scrolling && wasScrolling) {
-                        val current = vScroll.value.toFloat()
-                        val target = LineGuard.snapOffsetPx(current, snapLinePx, vScroll.maxValue.toFloat())
-                        if (target != current) vScroll.scrollTo(target.toInt())
-                    }
-                    wasScrolling = scrolling
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // S27b: the card hugs the frame's real rows — a
-                    // smaller frame leaves no dead black area below, a
-                    // taller one scrolls inside the leftover height.
-                    // T29b: the whole-pane fallback is the deliberate
-                    // exception — the card fills the height the grid
-                    // derives from, and the scaled grid is letterboxed
-                    // inside it (equal bands above and below), so the
-                    // small text reads as a chosen view, not a broken
-                    // one. The derived grid is untouched. Wrap mode is
-                    // the other deliberate view: the card fills its
-                    // height and the re-flowed text scrolls vertically.
-                    // T39: in wrap mode the height is a whole number of
-                    // line pitches — the last visible line fits fully or
-                    // is not drawn.
-                    .height(
-                        with(density) {
-                            when {
-                                sessionUi.wholePane -> cardHeightPx.toDp()
-                                wrapGeometry != null ->
-                                    LineGuard.wholeLinesHeightPx(
-                                        cardHeightPx,
-                                        wrapGeometry.lineHeightPx,
-                                    ).toDp()
-                                sessionUi.wrapMode || wrapPreview -> cardHeightPx.toDp()
-                                else -> minOf(gridHeightPx, cardHeightPx).toDp()
-                            }
-                        },
-                    )
-                    .background(TerminalDefaultBackground)
-                    .clip(RoundedCornerShape(12.dp))
-                    .onSizeChanged { viewSize = it }
-                    .verticalScroll(vScroll)
-                    .horizontalScroll(hScroll)
-                    .transformable(transformState, canPan = { false }),
-            ) {
-                if (sessionUi.wholePane) {
-                    // Letterbox: the scaled grid exactly the fit's size,
-                    // centered with equal bands above and below (the fit
-                    // already bounds the grid by the card's height, so
-                    // the bands never go negative).
-                    val letterbox = with(density) {
-                        ((cardHeightPx - gridHeightPx) / 2f).coerceAtLeast(0f).toDp()
-                    }
-                    Column {
-                        Spacer(Modifier.height(letterbox))
-                        TerminalSurface(
-                            surface = surface,
-                            fontSizePx = effectivePx,
-                            modifier = Modifier.size(
-                                with(density) { gridWidthPx.toDp() },
-                                with(density) { gridHeightPx.toDp() },
-                            ),
-                        )
-                        Spacer(Modifier.height(letterbox))
-                    }
-                } else if (wrapViewActive && wrapGeometry != null) {
-                    // S32a rule 3: the pane's text re-flowed to the card's
-                    // own columns, readable — no horizontal clipping, no
-                    // pinch, vertical scroll when the text is taller than
-                    // the card. The read carries no styling (PaneReadDto is
-                    // plain text), so the wrapped view renders in the
-                    // terminal's foreground colour.
-                    WrappedPaneText(
-                        text = sessionUi.pane?.text ?: "",
-                        geometry = wrapGeometry,
-                    )
-                } else {
-                // The renderer guarantees the whole frame fits the
-                // canvas it actually sees (it re-measures its own
-                // paint and rescales when hinting widens the real
-                // advance) — nothing is cropped, no horizontal
-                // scrolling is needed to read a line.
-                TerminalSurface(
-                    surface = surface,
-                    fontSizePx = effectivePx,
-                    modifier = Modifier.size(
-                        with(density) { maxOf(gridWidthPx, viewSize.width.toFloat()).toDp() },
-                        with(density) { maxOf(gridHeightPx, viewSize.height.toFloat()).toDp() },
-                    ),
-                )
-                }
-            }
-            } else when {
-                readError != null -> Text(
-                    text = readError,
-                    color = LocalPalette.current.error,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                )
-                else -> {
-                    val pane = sessionUi.pane
-                    Column(Modifier.fillMaxWidth().weight(1f)) {
-                    Text(
-                        text = when {
-                            pane == null -> stringResource(R.string.session_reading_pane)
-                            pane.text.isEmpty() -> stringResource(R.string.session_pane_empty)
-                            else -> pane.text
-                        },
-                        color = MaterialTheme.colorScheme.onBackground,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .background(LocalPalette.current.surface, RoundedCornerShape(12.dp))
-                            .padding(12.dp),
-                    )
-                    if (pane?.truncated == true) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.session_pane_truncated),
-                            color = LocalPalette.current.muted,
-                            fontSize = 11.sp,
-                        )
-                    }
-                    }
-                }
-            }
-            }
-        }
-
-        // Extra keys (board 04): the designed strip between the terminal
-        // and the composer. Every chip maps to a key name the daemon
-        // accepts (measured: esc, tab, enter, up, down, and ctrl+/alt+
-        // compositions), so all are enabled; Ctrl and Alt are sticky.
-        Spacer(Modifier.height(12.dp))
-        ExtraKeyRow(sessionUi, onSendKeys, modifier = Modifier.padding(horizontal = 16.dp))
-
-        // Composer: a prompt, sent through the daemon's own agent.prompt.
-        // One row — the field with the send action beside it — so the
-        // composer stays inside the one-thumb zone on a phone: a full-width
-        // button row pushes it off the bottom.
-        Spacer(Modifier.height(12.dp))
-        // T36: a picked shell pane cannot be prompted (the daemon refuses
-        // agent.prompt on non-agent panes, measured), so the composer gives
-        // its place to one honest line — the keys row below still writes
-        // real key events into the pane the human picked.
-        if (sessionUi.barePaneId != null) {
-            Text(
-                text = stringResource(R.string.session_bare_pane),
-                color = LocalPalette.current.muted,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-        } else {
-        // Composer: a prompt, sent through the daemon's own agent.prompt.
-        // One designed row per 04-session.html — see ui/session/SessionComposer.
-        // The send prompt is the draft plus the confirmed uploads' suffix
-        // lines, composed by the core so the contract lives in one place.
-        SessionComposer(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            draft = sessionUi.draft,
-            onDraftChange = { sessionUi.draft = it },
-            attachments = sessionUi.attachments,
-            thumbnails = sessionUi.thumbnails,
-            sending = sessionUi.sending,
-            sendError = sessionUi.sendError,
-            dictation = sessionUi.dictation,
-            onSend = {
-                val prompt = coreComposePrompt(
-                    sessionUi.draft,
-                    sessionUi.attachmentQueue.promptSuffixes(),
-                )
-                onSend(prompt)
-            },
-            onCamera = { openCamera() },
-            onPickImage = { openPicker() },
-            onStartDictation = { dictationSession.start(sessionUi.draft) },
-            onStopDictation = { dictationSession.stop() },
-            onCancelDictation = { dictationSession.cancel() },
-            onOpenSettings = { dictationSession.openPermissionSettings() },
-            onDismissMessage = { dictationSession.dismissMessage() },
-            onRetryUpload = { id ->
-                val uri = sessionUi.attachmentUris[id]
-                if (uri != null) {
-                    sessionUi.attachmentQueue.retry(id)
-                    sessionUi.syncAttachments()
-                    uploadAttachment(context, connection, sessionUi, id, uri)
-                }
-            },
-            onRemoveAttachment = { id ->
-                sessionUi.attachmentQueue.remove(id)
-                sessionUi.thumbnails.remove(id)
-                sessionUi.attachmentUris.remove(id)
-                sessionUi.syncAttachments()
-            },
-        )
-        }
-    }
-}
 
 /**
  * T13 pick → plan → add → upload. Runs on the main thread until the
@@ -5236,140 +3885,7 @@ private fun GhostButton(
     }
 }
 
-/**
- * The session screen's notice slot (S31c rules 2–4): one fixed-height area
- * between the tab strip and the terminal card that carries the claim's
- * typed refusal and the crop sentence with the whole-pane action. The
- * height is the same whether or not anything is written in it — a notice
- * can never change the card's height, so it can never change the derived
- * grid and re-fire the claim that measured it.
- */
-@Composable
-private fun SessionNoticeSlot(
-    reflowError: String?,
-    plan: WrapGuard.NoticePlan?,
-    language: AppLanguage,
-    onWrap: () -> Unit,
-    onWholePane: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(if (reflowError == null && plan == null) 0.dp else CropGuard.NOTICE_SLOT_DP.dp)
-            .padding(horizontal = 12.dp),
-    ) {
-        Box(Modifier.height(16.dp)) {
-            reflowError?.let { error ->
-                Text(
-                    text = error,
-                    color = LocalPalette.current.error,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (plan != null) {
-            Row(
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    text = CropVoice.notice(language, plan.sentence),
-                    color = LocalPalette.current.error,
-                    fontSize = 12.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                for (action in plan.actions) {
-                    val label = when (action) {
-                        WrapGuard.NoticeAction.WRAP -> CropVoice.wrapText(language)
-                        WrapGuard.NoticeAction.WHOLE -> CropVoice.showWholePane(language)
-                        WrapGuard.NoticeAction.BACK -> CropVoice.backToPhone(language)
-                    }
-                    val onClick = when (action) {
-                        WrapGuard.NoticeAction.WRAP -> onWrap
-                        WrapGuard.NoticeAction.WHOLE -> onWholePane
-                        WrapGuard.NoticeAction.BACK ->
-                            if (plan.sentence == CropVoice.State.WRAP) onWrap else onWholePane
-                    }
-                    Text(
-                        text = label,
-                        color = LocalPalette.current.accent,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier
-                            .clickable(onClick = onClick)
-                            .padding(start = 10.dp)
-                            .heightIn(min = 44.dp)
-                            .wrapContentHeight(androidx.compose.ui.Alignment.CenterVertically),
-                    )
-                }
-            }
-        }
-    }
-}
 
-/**
- * Wrap mode's view (S32a rule 3): the pane's read text re-flowed at the
- * geometry the session screen computed ([WrapGeometry]) — the same font
- * and line pitch the card's whole-line height derives from, so the card
- * bottom edge always lies on a line boundary (T39). Rendered in the
- * terminal's foreground colour (the read carries no styling), one line per
- * wrapped line, vertical scroll when it is taller than the card via the
- * card's own scroll. An empty pane says so instead of showing a blank card
- * as success.
- */
-private class WrapGeometry(
-    val fontPx: Float,
-    val lineHeightPx: Float,
-    val cols: Int,
-)
-
-@Composable
-private fun WrappedPaneText(
-    text: String,
-    geometry: WrapGeometry,
-) {
-    val density = LocalDensity.current
-    val typefaces = rememberTypefaces()
-    val monoFamily = remember(typefaces) {
-        FontFamily(typefaces.regular ?: android.graphics.Typeface.MONOSPACE)
-    }
-    val fontSp = with(density) { geometry.fontPx.toSp() }
-    val lineSp = with(density) { geometry.lineHeightPx.toSp() }
-    val lines = remember(text, geometry.cols) { WrapGuard.lines(text, geometry.cols) }
-    // T39: no vertical padding — the card's height is a whole number of
-    // line pitches measured from the content's top, so a straddling line
-    // can never rest at the card's bottom edge.
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-    ) {
-        if (lines.all { it.isBlank() }) {
-            Text(
-                text = stringResource(R.string.session_pane_empty),
-                color = LocalPalette.current.text,
-                fontSize = fontSp,
-                lineHeight = lineSp,
-                fontFamily = monoFamily,
-            )
-        } else {
-            for (line in lines) {
-                Text(
-                    text = line,
-                    color = LocalPalette.current.text,
-                    fontSize = fontSp,
-                    lineHeight = lineSp,
-                    fontFamily = monoFamily,
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun Notice(message: String, color: androidx.compose.ui.graphics.Color) {
@@ -6141,289 +4657,6 @@ private fun InterruptedNotice(reason: String, onRetry: () -> Unit) {
     }
 }
 
-/** The switcher row's state word: an agent's own human status (the same
- *  words the header uses, `Idle` never renders), or the honest `shell`
- *  word for a pane without an agent. */
-@Composable
-private fun paneStateWord(row: PaneSwitcherModel.Row): String = when (val state = row.state) {
-    is PaneSwitcherModel.State.Agent -> statusWord(state.status) ?: stringResource(R.string.status_unknown)
-    PaneSwitcherModel.State.Shell -> stringResource(R.string.session_pane_shell)
-}
-
-/** The pane switcher sheet (T36): every pane of the workspace — its title
- *  and its state, the visible one marked — the way Termux's session
- *  switcher works. A pick hands the row to [onPaneSelected]; the strip and
- *  the host make the switch happen. */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-private fun PaneSwitcherSheet(
-    rows: List<PaneSwitcherModel.Row>,
-    onDismiss: () -> Unit,
-    onPick: (PaneSwitcherModel.Row) -> Unit,
-    onOpenTerminal: () -> Unit,
-) {
-    val p = LocalPalette.current
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = p.surface,
-    ) {
-        Column(Modifier.padding(horizontal = 16.dp)) {
-            Text(
-                text = stringResource(R.string.session_panes),
-                color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-            rows.forEach { row ->
-                Row(
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .clickable { onPick(row) },
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = row.title,
-                            color = if (row.agentPane) p.accent else MaterialTheme.colorScheme.onBackground,
-                            fontSize = 15.sp,
-                            fontWeight = if (row.current) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = paneStateWord(row),
-                            color = p.muted,
-                            fontSize = 11.sp,
-                        )
-                    }
-                    if (row.current) {
-                        Text(
-                            text = "‹",
-                            color = p.accent,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-            }
-            // T42: the real terminal, from the same sheet — the herdr
-            // surface and the approval view stay one tap back.
-            Row(
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 44.dp)
-                    .clickable { onOpenTerminal() },
-            ) {
-                Text(
-                    text = stringResource(R.string.terminal_open),
-                    color = p.accent,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-    }
-}
-
-/**
- * The extra-key row (board 04): Esc, Tab, Ctrl, Alt, arrows, Enter, sitting
- * above the composer. Every chip sends the daemon's own `pane.send_keys`
- * through the core — one request per press, `Ok(())` only on the daemon's
- * `ok` reply. Ctrl and Alt are sticky: tapping toggles the pressed state
- * (design `aria-pressed`), and the next key chip composes `ctrl+<key>`,
- * `alt+<key>` or `ctrl+alt+<key>` and consumes the sticky state — exactly
- * one press per modifier, so a sticky flag can never surprise a second key.
- * Every key here is representable on the wire (measured), so no chip needs
- * a disabled state; a failed send shows the host's typed refusal instead of
- * pretending the key landed.
- *
- * T39: the labels come from [ExtraKeyRowModel] — the arrows and Enter are
- * their glyphs so no word is ever cut mid-character — and the chips flow
- * to a second row instead of clipping. Momentary keys fill briefly while
- * the tap happens, so a press reads as a press.
- */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun ExtraKeyRow(
-    sessionUi: SessionUi,
-    onSendKeys: (List<String>) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    fun compose(key: String): List<String> {
-        val modifiers = listOfNotNull(
-            "ctrl".takeIf { sessionUi.ctrlSticky },
-            "alt".takeIf { sessionUi.altSticky },
-        )
-        return listOf(if (modifiers.isEmpty()) key else modifiers.joinToString("+") + "+" + key)
-    }
-
-    fun press(key: String) {
-        if (sessionUi.keySending) return
-        onSendKeys(compose(key))
-        // Sticky modifiers are one-shot: consumed by the key they composed.
-        sessionUi.ctrlSticky = false
-        sessionUi.altSticky = false
-    }
-
-    Column(modifier = modifier) {
-        // One row, always: each chip shares the width evenly, so the glyphs
-        // for the arrows and Enter can never be pushed onto a second line.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            // Sticky toggles keep their word; the momentary keys keep the
-            // model's labels — words where the word fits, glyphs elsewhere.
-            ExtraKeyRowModel.chips().forEach { chip ->
-                Box(Modifier.weight(1f), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                    when (chip.kind) {
-                        ExtraKeyRowModel.Kind.STICKY -> ExtraKeyChip(
-                            label = chip.label,
-                            enabled = true,
-                            pressed = chip.id == "ctrl" && sessionUi.ctrlSticky ||
-                                chip.id == "alt" && sessionUi.altSticky,
-                            sending = sessionUi.keySending,
-                        ) {
-                            if (chip.id == "ctrl") sessionUi.ctrlSticky = !sessionUi.ctrlSticky
-                            else sessionUi.altSticky = !sessionUi.altSticky
-                        }
-                        ExtraKeyRowModel.Kind.MOMENTARY -> MomentaryKeyChip(
-                            label = chip.label,
-                            sending = sessionUi.keySending,
-                        ) { press(chip.id) }
-                    }
-                }
-            }
-        }
-        sessionUi.keyError?.let { error ->
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = error,
-                color = LocalPalette.current.error,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-            )
-        }
-    }
-}
-
-/**
- * One key chip: a ~30px visual inside a 44dp touch target (board 04).
- * `pressed` is the sticky-modifier state (design `aria-pressed="true"`):
- * accent edge and selection fill. A disabled chip keeps the muted text and
- * no click — the honest unavailable state, never a fake press.
- */
-@Composable
-private fun ExtraKeyChip(
-    label: String,
-    enabled: Boolean,
-    pressed: Boolean = false,
-    sending: Boolean = false,
-    interaction: MutableInteractionSource = remember { MutableInteractionSource() },
-    onPress: () -> Unit,
-) {
-    val palette = LocalPalette.current
-    Box(
-        modifier = Modifier
-            .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
-            .padding(horizontal = 3.dp, vertical = 8.dp),
-        contentAlignment = androidx.compose.ui.Alignment.Center,
-    ) {
-        val clickModifier = if (enabled && !sending) {
-            Modifier.clickable(
-                interactionSource = interaction,
-                indication = LocalIndication.current,
-                onClick = onPress,
-            )
-        } else {
-            Modifier
-        }
-        Box(
-            modifier = Modifier
-                .widthIn(min = 30.dp)
-                .height(30.dp)
-                .then(clickModifier)
-                .border(
-                    1.dp,
-                    if (pressed) palette.accentEdge else palette.line,
-                    RoundedCornerShape(8.dp),
-                )
-                .background(
-                    if (pressed) palette.selection else palette.surfaceRaised,
-                    RoundedCornerShape(8.dp),
-                )
-                .padding(horizontal = 4.dp),
-            contentAlignment = androidx.compose.ui.Alignment.Center,
-        ) {
-            Text(
-                text = label,
-                color = when {
-                    pressed -> palette.accentEdge
-                    enabled -> MaterialTheme.colorScheme.onBackground
-                    else -> palette.textDisabled
-                },
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                softWrap = false,
-            )
-        }
-    }
-}
-
-/** How long a momentary chip keeps its pressed fill after the tap releases,
- * so a quick tap still reads as a press. */
-private const val KEY_FLASH_MS = 180L
-
-/**
- * A momentary key chip (T39): the same visual as [ExtraKeyChip], and a
- * filled pressed state for exactly the life of the tap — the interaction
- * source's own press, held a beat after release so a quick tap reads as
- * "this was pressed", never as a sticky toggle that stayed down.
- */
-@Composable
-private fun MomentaryKeyChip(
-    label: String,
-    sending: Boolean,
-    onPress: () -> Unit,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed = interaction.collectIsPressedAsState().value
-    var flash by remember { mutableStateOf(false) }
-    LaunchedEffect(pressed) {
-        if (pressed) {
-            flash = true
-        } else if (flash) {
-            delay(KEY_FLASH_MS)
-            flash = false
-        }
-    }
-    ExtraKeyChip(
-        label = label,
-        enabled = true,
-        pressed = flash,
-        sending = sending,
-        interaction = interaction,
-    ) {
-        onPress()
-    }
-}
-
-/** The agent's status word for the session header (S27-5/S27-8): human
- *  words, never the agent kind, and `Idle` never renders — an idle agent's
- *  header shows just the project name. */
-@Composable
-private fun statusWord(status: AgentStatusDto): String? = when (status) {
-    AgentStatusDto.IDLE -> null
-    AgentStatusDto.WORKING -> stringResource(R.string.status_working)
-    AgentStatusDto.BLOCKED -> stringResource(R.string.status_needs_you)
-    AgentStatusDto.DONE -> stringResource(R.string.status_done)
-    AgentStatusDto.UNKNOWN -> stringResource(R.string.status_unknown)
-}
 
 /** S24-1: the localized inbox group label — the human word, the count only
  *  when it is not one (the rule AgentRowModel.groupLabel encodes). */

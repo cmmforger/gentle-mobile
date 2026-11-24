@@ -177,6 +177,7 @@
     <!-- T36: el selector de paneles — la tira de la tarjeta abre la hoja con los paneles del espacio -->
     <string name="session_panes">Paneles</string>
     <string name="session_pane_shell">shell</string>
+    <string name="terminal_new_tab">Nueva pestaña</string>
     <string name="session_bare_pane">Este panel corre una shell — las teclas de abajo le llegan. El teléfono escribe a agentes solamente.</string>
     <string name="session_pane_truncated">El host dejó fuera las filas más viejas.</string>
     <string name="session_no_camera_app">no hay una app de cámara en este dispositivo</string>
@@ -315,8 +316,8 @@
     <string name="set_area_terminal_font">Fuente de terminal</string>
     <string name="set_area_terminal_font_sub">La terminal y el campo de escritura, en este dispositivo.</string>
     <string name="set_terminal_font_mono">%1$s · monoespaciada — es la que dibuja la terminal.</string>
-    <string name="set_terminal_font_fallback">JetBrains Mono (incluida) · la cara elegida es proporcional.</string>
-    <string name="set_terminal_font_foot">La terminal sigue a la tipografía cuando es monoespaciada; una cara proporcional cae a la JetBrains Mono incluida para que las columnas sigan alineadas.</string>
+    <string name="set_terminal_font_fallback">IosevkaTerm Nerd Font · la cara elegida es proporcional.</string>
+    <string name="set_terminal_font_foot">La terminal siempre dibuja con la IosevkaTerm Nerd Font incluida, así los íconos Nerd sobreviven a cualquier tipografía y las columnas siguen alineadas.</string>
     <string name="set_area_about">Acerca de</string>
     <string name="set_area_about_sub">Versión y novedades.</string>
 
@@ -444,7 +445,5 @@
     <string name="err_transport">La conexión al host falló: %1$s</string>
     <string name="err_timeout">El host tardó demasiado en responder: %1$s</string>
 
-    <!-- T42: la terminal real -->
-    <string name="terminal_title">Terminal</string>
-    <string name="terminal_open">Abrir terminal</string>
+
 </resources>

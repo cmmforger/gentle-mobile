@@ -611,6 +611,8 @@ class TerminalEmulator(
         if (nc != cols) {
             reflow(nc, nr)
         } else {
+            val removed = (screen.size - nr).coerceAtLeast(0)
+            val added = (nr - screen.size).coerceAtLeast(0)
             while (screen.size > nr) {
                 scrollback.addLast(screen.removeFirst())
                 if (scrollback.size > MAX_SCROLLBACK) scrollback.removeFirst()
@@ -619,6 +621,11 @@ class TerminalEmulator(
                 val line = scrollback.removeLastOrNull() ?: blankLine()
                 screen.addFirst(line)
             }
+            // The top edge is the one that changes, so the cursor follows
+            // its own line: up when rows are trimmed, down when they grow
+            // back — never left pointing at a blank row that used to be
+            // above the prompt.
+            cursorY = (cursorY - removed).coerceAtLeast(0) + added
             rows = nr
             scrollTop = 0
             scrollBottom = rows - 1

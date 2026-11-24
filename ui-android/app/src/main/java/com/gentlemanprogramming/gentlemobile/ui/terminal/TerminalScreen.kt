@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -24,8 +25,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,6 +42,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
@@ -49,27 +54,38 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.core.TerminalSession
+import com.gentlemanprogramming.gentlemobile.ui.session.Attachment
+import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentState
 import com.gentlemanprogramming.gentlemobile.ui.session.ExtraKeyRowModel
+import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
+import com.gentlemanprogramming.gentlemobile.ui.session.formatBytes
+import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
-import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalAppTypeface
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
+import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel
 import kotlinx.coroutines.delay
 
 private val TERMINAL_FONT_SP = 14.sp
 
 /**
- * The real terminal (T46): the PTY's byte stream drawn as a cell grid, full
- * bleed. The top bar (back · panes · refresh, 44 dp) stays tappable while
- * the keyboard is up; the key row and the composer (field + send button)
- * sit at the bottom above the IME. The soft keyboard sends keystrokes
- * straight to the PTY — no capitalisation, autocorrect or suggestions — and
- * the IME resize re-derives the grid and re-asks the PTY (`window-change`).
+ * The only session view (T48): the PTY's byte stream drawn as a cell grid,
+ * full bleed. The top bar (back · panes · refresh, 44 dp) stays tappable
+ * while the keyboard is up; the key row and the composer sit at the bottom
+ * above the IME. The panes button opens the workspace's pane/tab list with a
+ * `+` to create a tab; picking one focuses it on the host.
+ *
+ * The composer is a normal field: the phone keyboard's own voice-to-text
+ * types into it. When the terminal runs an agent (the app launched one), the
+ * composer also offers camera and clip — an image uploads over SFTP and its
+ * `[attached image: <path>]` line is typed into the PTY on send. A bare
+ * shell offers no attachments: nothing would receive them.
  */
 @Composable
 fun TerminalScreen(
@@ -78,8 +94,19 @@ fun TerminalScreen(
     session: TerminalSession?,
     starting: Boolean,
     error: String?,
+    agentRunsHere: Boolean,
+    attachments: List<Attachment>,
+    thumbnails: Map<Long, ImageBitmap>,
+    paneRows: List<PaneSwitcherModel.Row>,
     onStart: (cols: Int, rows: Int) -> Unit,
     onBack: () -> Unit,
+    onCreateTab: () -> Unit,
+    onPaneSelected: (PaneSwitcherModel.Row) -> Unit,
+    onCamera: () -> Unit,
+    onPickImage: () -> Unit,
+    onRetryUpload: (Long) -> Unit,
+    onRemoveAttachment: (Long) -> Unit,
+    onAttachmentsConsumed: () -> Unit,
 ) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
@@ -89,6 +116,7 @@ fun TerminalScreen(
     var closed by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf(TextFieldValue("")) }
     val composer = remember { TerminalComposer() }
+    var paneSheet by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -97,22 +125,23 @@ fun TerminalScreen(
             .safeDrawingPadding()
             .imePadding(),
     ) {
-        TerminalTopBar(title = title, onBack = onBack)
+        TerminalTopBar(title = title, onBack = onBack, onOpenPanes = { paneSheet = true })
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
         ) {
             val density = LocalDensity.current
-            val metrics = rememberTerminalCellMetrics(terminalTypefaces)
             val fontSizePx = with(density) { TERMINAL_FONT_SP.toPx() }
-            val cellW = fontSizePx * metrics.advanceRatio
-            val cellH = fontSizePx * metrics.lineHeightRatio
+            // The cell size is measured at the paint size the renderer uses,
+            // so the derived grid is exactly the grid that is painted — the
+            // PTY, the buffer and the canvas can never disagree on rows.
+            val cell = rememberTerminalCellSize(terminalTypefaces, fontSizePx)
             val grid = TerminalGeometry.derive(
                 constraints.maxWidth.toFloat(),
                 constraints.maxHeight.toFloat(),
-                cellW,
-                cellH,
+                cell.widthPx,
+                cell.heightPx,
             )
             // Start the PTY once a real grid exists, and keep the emulator
             // and the PTY on the same geometry through every IME change.
@@ -127,6 +156,9 @@ fun TerminalScreen(
                 }
                 if (e.cols != grid.cols || e.rows != grid.rows) {
                     e.resize(grid.cols, grid.rows)
+                    // A resize must re-paint immediately, never wait for the
+                    // next PTY byte — the keyboard open/close redraws at once.
+                    frameVersion++
                 }
                 val s = session
                 if (s != null && (e.cols != s.cols().toInt() || e.rows != s.rows().toInt())) {
@@ -172,6 +204,9 @@ fun TerminalScreen(
         )
         TerminalComposerRow(
             enabled = session != null && !closed,
+            agentRunsHere = TerminalAttachments.offersCameraAndClip(agentRunsHere),
+            attachments = attachments,
+            thumbnails = thumbnails,
             value = input,
             onValueChange = { new ->
                 val delta = composer.commit(new.text)
@@ -179,16 +214,39 @@ fun TerminalScreen(
                 input = if (composer.fieldText == new.text) new else TextFieldValue(composer.fieldText)
             },
             onSubmit = {
-                val delta = composer.submit()
-                if (delta.isNotEmpty()) session?.write(delta)
-                input = TextFieldValue(composer.fieldText)
+                val suffixes = attachments.mapNotNull {
+                    (it.state as? AttachmentState.Uploaded)?.promptSuffix
+                }
+                val bytes = composer.submit() + TerminalAttachments.suffixBytes(suffixes)
+                if (bytes.isNotEmpty()) session?.write(bytes)
+                input = TextFieldValue("")
+                if (suffixes.isNotEmpty()) onAttachmentsConsumed()
+            },
+            onCamera = onCamera,
+            onPickImage = onPickImage,
+            onRetryUpload = onRetryUpload,
+            onRemoveAttachment = onRemoveAttachment,
+        )
+    }
+
+    if (paneSheet) {
+        TerminalPaneSheet(
+            rows = paneRows,
+            onDismiss = { paneSheet = false },
+            onPick = { row ->
+                paneSheet = false
+                onPaneSelected(row)
+            },
+            onCreateTab = {
+                paneSheet = false
+                onCreateTab()
             },
         )
     }
 }
 
 @Composable
-private fun TerminalTopBar(title: String, onBack: () -> Unit) {
+private fun TerminalTopBar(title: String, onBack: () -> Unit, onOpenPanes: () -> Unit) {
     val palette = LocalPalette.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -219,7 +277,12 @@ private fun TerminalTopBar(title: String, onBack: () -> Unit) {
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
-        Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clickable(onClick = onOpenPanes),
+            contentAlignment = Alignment.Center,
+        ) {
             Icon(
                 painter = painterResource(R.drawable.ic_pane),
                 contentDescription = stringResource(R.string.session_panes),
@@ -227,10 +290,7 @@ private fun TerminalTopBar(title: String, onBack: () -> Unit) {
                 modifier = Modifier.size(18.dp),
             )
         }
-        Box(
-            modifier = Modifier.size(44.dp),
-            contentAlignment = Alignment.Center,
-        ) {
+        Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
             Icon(
                 painter = painterResource(R.drawable.ic_refresh),
                 contentDescription = stringResource(R.string.session_refresh),
@@ -317,66 +377,304 @@ private fun TerminalKeyChip(
     }
 }
 
+/**
+ * The terminal composer (T49): the app's rounded field with its side
+ * margins and the send button beside it, exactly the session composer's
+ * shape (defect: it had lost its border and run edge to edge). When the
+ * terminal runs an agent, the field carries camera and clip inside; a bare
+ * shell keeps a plain field, because nothing would receive an attachment.
+ */
 @Composable
 private fun TerminalComposerRow(
     enabled: Boolean,
+    agentRunsHere: Boolean,
+    attachments: List<Attachment>,
+    thumbnails: Map<Long, ImageBitmap>,
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
     onSubmit: () -> Unit,
+    onCamera: () -> Unit,
+    onPickImage: () -> Unit,
+    onRetryUpload: (Long) -> Unit,
+    onRemoveAttachment: (Long) -> Unit,
 ) {
     val palette = LocalPalette.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+    ) {
+        attachments.forEach { attachment ->
+            TerminalAttachmentRow(
+                attachment = attachment,
+                thumbnail = thumbnails[attachment.id],
+                onRetry = { onRetryUpload(attachment.id) },
+                onRemove = { onRemoveAttachment(attachment.id) },
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp, max = 96.dp)
+                    .clip(RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
+                    .background(palette.surface, RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
+                    .border(1.dp, palette.line, RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
+                    .padding(horizontal = 2.dp),
+            ) {
+                if (agentRunsHere) {
+                    ComposerIcon(
+                        drawable = R.drawable.ic_camera,
+                        description = stringResource(R.string.cd_camera),
+                        enabled = enabled,
+                        onClick = onCamera,
+                    )
+                }
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    enabled = enabled,
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        color = if (enabled) MaterialTheme.colorScheme.onBackground else palette.textDisabled,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    cursorBrush = SolidColor(palette.accent),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.None,
+                        imeAction = ImeAction.Send,
+                    ),
+                    keyboardActions = KeyboardActions(onSend = { onSubmit() }),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 12.dp),
+                )
+                if (agentRunsHere) {
+                    ComposerIcon(
+                        drawable = R.drawable.ic_clip,
+                        description = stringResource(R.string.cd_clip),
+                        enabled = enabled,
+                        onClick = onPickImage,
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(palette.accent)
+                    .clickable(enabled = enabled, onClick = onSubmit),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_send),
+                    contentDescription = stringResource(R.string.cd_send),
+                    tint = palette.bg,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComposerIcon(drawable: Int, description: String, enabled: Boolean, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(44.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+    ) {
+        Icon(
+            painter = painterResource(drawable),
+            contentDescription = description,
+            tint = if (enabled) palette.text else palette.muted,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+@Composable
+private fun TerminalAttachmentRow(
+    attachment: Attachment,
+    thumbnail: ImageBitmap?,
+    onRetry: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    val removeCd = stringResource(R.string.att_remove_cd, attachment.displayName)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 6.dp),
+            .padding(vertical = 2.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .weight(1f)
-                .height(44.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(palette.surfaceRaised, RoundedCornerShape(8.dp))
-                .border(1.dp, palette.line, RoundedCornerShape(8.dp))
-                .padding(horizontal = 12.dp),
-        ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                enabled = enabled,
-                singleLine = true,
-                textStyle = TextStyle(
-                    color = if (enabled) MaterialTheme.colorScheme.onBackground else palette.textDisabled,
-                    fontSize = 14.sp,
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = attachment.displayName,
+                color = palette.text,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            when (val state = attachment.state) {
+                is AttachmentState.Uploading -> Text(
+                    text = stringResource(
+                        R.string.att_uploading,
+                        if (attachment.sizeBytes > 0) ((state.sentBytes * 100) / attachment.sizeBytes).toInt().coerceIn(0, 100) else 0,
+                        formatBytes(state.sentBytes),
+                        formatBytes(attachment.sizeBytes),
+                    ),
+                    color = palette.muted,
+                    fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
-                ),
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.None,
-                    autoCorrectEnabled = false,
-                    keyboardType = KeyboardType.Ascii,
-                    imeAction = ImeAction.Send,
-                ),
-                keyboardActions = KeyboardActions(onSend = { onSubmit() }),
-                modifier = Modifier.fillMaxWidth(),
+                )
+                is AttachmentState.Uploaded -> Text(
+                    text = stringResource(R.string.att_uploaded, formatBytes(attachment.sizeBytes), state.remotePath),
+                    color = palette.success,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                is AttachmentState.Failed -> Text(
+                    text = stringResource(R.string.att_failed, state.message),
+                    color = palette.error,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                AttachmentState.Ready -> Text(
+                    text = stringResource(R.string.att_ready, formatBytes(attachment.sizeBytes)),
+                    color = palette.muted,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+        if (attachment.state is AttachmentState.Failed) {
+            Text(
+                text = stringResource(R.string.att_retry),
+                color = palette.accentEdge,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clickable(onClick = onRetry)
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
             )
         }
-        Spacer(Modifier.width(8.dp))
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .size(44.dp)
-                .clip(CircleShape)
-                .background(palette.accent)
-                .clickable(enabled = enabled, onClick = onSubmit),
+                .clickable(onClick = onRemove),
         ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_send),
-                contentDescription = stringResource(R.string.cd_send),
-                tint = palette.bg,
-                modifier = Modifier.size(20.dp),
-            )
+            Text(text = "✕", color = palette.muted, fontSize = 15.sp)
         }
+    }
+}
+
+/** The workspace's pane/tab list (T47): every pane of the workspace, with
+ *  a `+` that creates a tab. Picking a row focuses the pane on the host. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TerminalPaneSheet(
+    rows: List<PaneSwitcherModel.Row>,
+    onDismiss: () -> Unit,
+    onPick: (PaneSwitcherModel.Row) -> Unit,
+    onCreateTab: () -> Unit,
+) {
+    val p = LocalPalette.current
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = p.surface,
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Text(
+                text = stringResource(R.string.session_panes),
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            rows.forEach { row ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .clickable { onPick(row) },
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = row.title,
+                            color = if (row.agentPane) p.accent else MaterialTheme.colorScheme.onBackground,
+                            fontSize = 15.sp,
+                            fontWeight = if (row.current) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = paneStateWord(row),
+                            color = p.muted,
+                            fontSize = 11.sp,
+                        )
+                    }
+                    if (row.current) {
+                        Text(text = "‹", color = p.accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .clickable(onClick = onCreateTab),
+            ) {
+                Text(text = "+", color = p.accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.terminal_new_tab),
+                    color = p.accent,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun paneStateWord(row: PaneSwitcherModel.Row): String = when (val state = row.state) {
+    is PaneSwitcherModel.State.Agent ->
+        WorkspacesModel.statusWordRes(state.status)?.let { stringResource(it) }
+            ?: stringResource(R.string.status_unknown)
+    PaneSwitcherModel.State.Shell -> stringResource(R.string.session_pane_shell)
+}
+
+/** The cell size the renderer paints at: measured at [fontSizePx] with the
+ *  resolved terminal face, so the derived grid is the painted grid. */
+private class TerminalCellSize(val widthPx: Float, val heightPx: Float)
+
+@Composable
+private fun rememberTerminalCellSize(typefaces: TerminalTypefaces, fontSizePx: Float): TerminalCellSize {
+    return remember(typefaces, fontSizePx) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.typeface = typefaces.regular ?: android.graphics.Typeface.DEFAULT
+        paint.textSize = fontSizePx
+        val fm = paint.fontMetrics
+        TerminalCellSize(paint.measureText("M"), fm.descent - fm.ascent)
     }
 }
 
@@ -439,8 +737,8 @@ private fun DrawScope.drawTerminal(
     val rows = lines.size
     val cols = emulator.cols
 
-    // The whole grid must fit the canvas: re-measure and rescale once if the
-    // real advance at this size runs wider than the nominal ratio.
+    // The grid was derived from this exact cell size, so this loop is only a
+    // safety net against a font engine that paints wider than it measures.
     var guard = 0
     while ((cellWidth * cols > size.width || cellHeight * rows > size.height) && guard < 4) {
         val widthScale = if (cellWidth * cols > size.width) size.width / (cellWidth * cols) else 1f
@@ -493,7 +791,6 @@ private fun DrawScope.drawTerminal(
         val cx = emulator.cursorX
         val cy = emulator.cursorY
         if (cx < cols && cy < rows) {
-            paint.color = colors.foreground
             drawRect(
                 Color(colors.foreground),
                 Offset(cellX(cx), cellY(cy)),

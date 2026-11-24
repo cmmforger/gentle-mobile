@@ -123,13 +123,13 @@ class TypefaceStoreTest {
     }
 
     @Test
-    fun `every proportional choice falls back to the bundled monospace`() {
+    fun `every proportional choice falls back to the nerd-font monospace`() {
         for (choice in AppTypeface.entries.filter { it != AppTypeface.IOSEVKA_TERM }) {
             val resolution = terminalFaceFor(choice)
-            assertEquals("$choice falls back to JetBrains Mono regular", R.font.jetbrainsmono_regular, resolution.regular)
-            assertEquals(R.font.jetbrainsmono_bold, resolution.bold)
-            assertEquals(R.font.jetbrainsmono_italic, resolution.italic)
-            assertEquals(R.font.jetbrainsmono_bolditalic, resolution.boldItalic)
+            assertEquals("$choice falls back to IosevkaTerm regular", R.font.iosevkaterm_regular, resolution.regular)
+            assertEquals(R.font.iosevkaterm_bold, resolution.bold)
+            assertNull("$choice falls back to a face with no italic", resolution.italic)
+            assertNull("$choice falls back to a face with no bold-italic", resolution.boldItalic)
             assertTrue("$choice is proportional and must fall back", resolution.fallback)
         }
     }

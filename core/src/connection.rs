@@ -668,6 +668,29 @@ impl Connection {
         })
     }
 
+    /// Create a tab in one workspace (`tab.create {workspace_id, focus}`,
+    /// T47): the daemon's own creation on the request lane, focused so the
+    /// new tab is where the human lands. The reply is the created tab's
+    /// `tab_info`.
+    pub fn tab_create(
+        &self,
+        workspace_id: &str,
+        focus: bool,
+    ) -> std::result::Result<(), crate::requests::HubError> {
+        let hub = self
+            .requests
+            .as_ref()
+            .ok_or(crate::requests::HubError::Request(crate::requests::RequestError::Disconnected))?;
+        hub.request(
+            crate::requests::METHOD_TAB_CREATE,
+            crate::requests::tab_create_params(workspace_id, focus),
+            crate::requests::REQUEST_TIMEOUT,
+        )
+        .and_then(|value| {
+            crate::requests::parse_tab_create(&value).map_err(crate::requests::HubError::Request)
+        })
+    }
+
     /// Focus one pane (`pane.focus {pane_id}`, the pane switcher's own
     /// switch, T36): the daemon's `PaneTarget` on the same request lane —
     /// measured from `herdr api schema --json`, protocol 22, and verified

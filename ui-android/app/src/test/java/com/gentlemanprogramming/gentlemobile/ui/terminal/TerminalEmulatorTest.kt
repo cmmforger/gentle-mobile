@@ -88,6 +88,30 @@ class TerminalEmulatorTest {
     }
 
     @Test
+    fun a_grow_after_a_shrink_re_anchors_the_cursor_to_its_line() {
+        val e = emulator(80, 3)
+        e.feed("one\r\ntwo\r\nthree".toByteArray())
+        assertEquals(2, e.cursorY)
+        e.resize(80, 2)
+        assertEquals(1, e.cursorY)
+        e.resize(80, 3)
+        // The cursor must follow its line back down, not stay on a blank top row.
+        assertEquals(2, e.cursorY)
+        assertEquals("t", e.screenLines()[e.cursorY][0].text)
+    }
+
+    @Test
+    fun every_resize_keeps_the_screen_row_count_equal_to_rows() {
+        val e = emulator(80, 5)
+        for ((cols, rows) in listOf(80 to 5, 80 to 3, 80 to 8, 60 to 8, 60 to 4, 90 to 6)) {
+            e.resize(cols, rows)
+            assertEquals("rows must match the buffer", rows, e.rows)
+            assertEquals("the buffer holds exactly rows lines", rows, e.screenLines().size)
+            assertEquals("the grid width matches", cols, e.cols)
+        }
+    }
+
+    @Test
     fun reverse_video_swaps_foreground_and_background() {
         val e = emulator()
         e.feed("\u001B[7mX".toByteArray())

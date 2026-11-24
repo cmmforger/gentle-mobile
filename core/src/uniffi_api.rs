@@ -1344,6 +1344,22 @@ impl CompanionConnection {
         connection.tab_focus(&tab_id).map_err(CompanionError::from)
     }
 
+    /// Create a tab in one workspace (`tab.create {workspace_id, focus}`,
+    /// T47): the daemon's own creation on the request lane, focused so the
+    /// new tab is where the human lands. `Ok` carries nothing — the tab is
+    /// visible in the next snapshot.
+    pub fn create_tab(&self, workspace_id: String, focus: bool) -> Result<(), CompanionError> {
+        let inner = self.inner.lock().map_err(|_| CompanionError::Transport {
+            detail: "the connection is not available".to_owned(),
+        })?;
+        let connection = inner
+            .as_ref()
+            .ok_or(CompanionError::Transport { detail: "the connection is closed".to_owned() })?;
+        connection
+            .tab_create(&workspace_id, focus)
+            .map_err(CompanionError::from)
+    }
+
     /// Focus one pane of the current workspace (the pane switcher, T36):
     /// the daemon's own `pane.focus {pane_id}`, the same switch tapping a
     /// pane in the herdr TUI does. Verified live on protocol 22: a shell

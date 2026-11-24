@@ -77,23 +77,20 @@ data class TerminalFaceResolution(
     val fallback: Boolean,
 )
 
-/** One pure decision: a monospaced typeface drives the terminal with its own
- *  face; every proportional face (and System) falls back to the bundled
- *  monospace so the grid's columns keep lining up. */
-fun terminalFaceFor(choice: AppTypeface): TerminalFaceResolution = when (choice) {
-    AppTypeface.IOSEVKA_TERM -> TerminalFaceResolution(
+/** One pure decision: the terminal always paints with a monospaced face
+ *  that carries Nerd glyphs — IosevkaTerm Nerd Font. The app typeface only
+ *  decides whether its own face drives the chrome; a proportional choice
+ *  (and System) falls back to the same bundled Nerd mono so the grid keeps
+ *  lining up and the icons survive. JetBrains Mono is never the terminal
+ *  face: it has no Nerd glyphs, so a proportional choice would lose them. */
+fun terminalFaceFor(choice: AppTypeface): TerminalFaceResolution {
+    val proportional = choice != AppTypeface.IOSEVKA_TERM
+    return TerminalFaceResolution(
         regular = R.font.iosevkaterm_regular,
         bold = R.font.iosevkaterm_bold,
         italic = null,
         boldItalic = null,
-        fallback = false,
-    )
-    else -> TerminalFaceResolution(
-        regular = R.font.jetbrainsmono_regular,
-        bold = R.font.jetbrainsmono_bold,
-        italic = R.font.jetbrainsmono_italic,
-        boldItalic = R.font.jetbrainsmono_bolditalic,
-        fallback = true,
+        fallback = proportional,
     )
 }
 

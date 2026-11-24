@@ -412,9 +412,9 @@ fun SettingsScreen(
             sub = stringResource(R.string.set_area_terminal_font_sub),
             iconGlyph = "T",
         ) {
-            // The terminal follows the app typeface: a monospaced face drives
-            // it, a proportional one falls back to the bundled JetBrains Mono.
-            // The row states the truth — never a silent fallback.
+            // The terminal always paints with the bundled IosevkaTerm Nerd
+            // Font; a proportional app face never leaks into it. The row
+            // states the truth — never a silent fallback.
             val terminalResolution = terminalFaceFor(typeface)
             SettingRow(
                 name = stringResource(R.string.set_typeface_family),
