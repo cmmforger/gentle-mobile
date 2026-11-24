@@ -18,4 +18,8 @@ object PairCommand {
         require('\'' !in key) { "the public key line cannot contain a quote" }
         return "$HOST_TOOL pair --add-key '$key'"
     }
+
+    /** The one-scan pairing command the host-commands block shows (T50):
+     *  run it on the PC, it prints the QR the phone scans. */
+    fun pair(): String = "$HOST_TOOL pair"
 }

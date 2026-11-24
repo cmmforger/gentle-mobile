@@ -54,11 +54,15 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -173,6 +177,7 @@ import com.gentlemanprogramming.gentlemobile.ui.sessions.ResumedSessionScreen
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesScreen
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostsModel
+import com.gentlemanprogramming.gentlemobile.ui.hosts.HostDeletion
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostRowModel
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostScreenModel
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostScreenState
@@ -201,6 +206,8 @@ import com.gentlemanprogramming.gentlemobile.security.biometricDecision
 import com.gentlemanprogramming.gentlemobile.security.parseHostSpec
 import com.gentlemanprogramming.gentlemobile.security.requireBiometricUnlock
 import com.gentlemanprogramming.gentlemobile.ui.settings.SettingsScreen
+import com.gentlemanprogramming.gentlemobile.ui.settings.AdvancedSettings
+import com.gentlemanprogramming.gentlemobile.ui.settings.AdvancedSettingsStore
 import com.gentlemanprogramming.gentlemobile.ui.session.AddResult
 import com.gentlemanprogramming.gentlemobile.ui.session.ExtraKeyRowModel
 import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
@@ -222,6 +229,7 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.resolvedTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.ThemeStore
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalScreen
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalFixtureScreen
+import com.gentlemanprogramming.gentlemobile.ui.terminal.CursorMode
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -315,6 +323,10 @@ class MainActivity : FragmentActivity() {
                 TypefaceStore(SharedPreferencesStore(this@MainActivity))
             }
             var typeface by remember { mutableStateOf(typefaceStore.selected()) }
+            val advancedStore = remember {
+                AdvancedSettingsStore(SharedPreferencesStore(this@MainActivity))
+            }
+            var advanced by remember { mutableStateOf(advancedStore.load()) }
             // S33: Follow the phone — dark renders Cute, light renders Paper;
             // off (the default) the pinned theme stands.
             var followThePhone by remember { mutableStateOf(themeStore.followThePhone()) }
@@ -400,6 +412,7 @@ class MainActivity : FragmentActivity() {
                         appTheme = appTheme,
                         followThePhone = followThePhone,
                         language = language,
+                        advanced = advanced,
                         openAgentPane = openAgentPane,
                         onSetLanguage = { chosen ->
                             // Applied immediately (the composition provides
@@ -420,6 +433,10 @@ class MainActivity : FragmentActivity() {
                         onSetFollowThePhone = { follow ->
                             followThePhone = follow
                             themeStore.setFollowThePhone(follow)
+                        },
+                        onSetAdvanced = { settings ->
+                            advanced = settings
+                            advancedStore.save(settings)
                         },
                     )
                 }
@@ -708,9 +725,11 @@ fun ConnectScreen(
     appTheme: AppTheme,
     followThePhone: Boolean,
     language: AppLanguage,
+    advanced: AdvancedSettings,
     onSetLanguage: (AppLanguage) -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     onSetFollowThePhone: (Boolean) -> Unit,
+    onSetAdvanced: (AdvancedSettings) -> Unit,
     openAgentPane: androidx.compose.runtime.MutableState<String?>,
 ) {
     val screen = remember { ScreenState() }
@@ -719,6 +738,20 @@ fun ConnectScreen(
     // S24-1: the worker threads resolve their strings (errors, drop
     // reasons) through the application context, in the stored locale.
     screen.appContext = context.applicationContext
+
+    // T50 (Advanced → Behaviour): keep the screen on only while a terminal
+    // is actually open, never app-wide.
+    LaunchedEffect(advanced.keepScreenOn, screen.ui) {
+        val activity = AppLocale.unwrapToLifecycle(context) as? FragmentActivity
+        val keep = advanced.keepScreenOn && screen.ui is UiState.Session
+        activity?.window?.apply {
+            if (keep) {
+                addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+    }
 
     var route by remember { mutableStateOf(Route.Main) }
 
@@ -733,6 +766,7 @@ fun ConnectScreen(
     // S26-5: the host being renamed, and the text being typed for it.
     var renameTarget by remember { mutableStateOf<SavedHostEntry?>(null) }
     var renameText by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<SavedHostEntry?>(null) }
     var hostName by remember { mutableStateOf(savedForm.name) }
     var host by remember { mutableStateOf(savedForm.host) }
     var port by remember { mutableStateOf(savedForm.port) }
@@ -747,8 +781,6 @@ fun ConnectScreen(
     val biometricStore = remember { BiometricUnlockStore(SharedPreferencesStore(context)) }
     var biometricDecision by remember { mutableStateOf<BiometricDecision?>(null) }
     var biometricEnabled by remember { mutableStateOf(false) }
-    var knownHosts by remember { mutableStateOf<List<KnownHostDto>>(emptyList()) }
-    var regenerated by remember { mutableStateOf(false) }
 
     fun loadIdentity() {
         executor.execute {
@@ -812,34 +844,10 @@ fun ConnectScreen(
         }
     }
 
-    /** The hosts the core has pinned right now, for the Settings list: the
-     *  union of every saved host's own known_hosts file (S24-4) — a pin is
-     *  per host, so the list reads them all. */
-    fun refreshHosts() {
-        val generation = screen.generation
-        executor.execute {
-            val hosts = try {
-                screen.hosts.flatMap { entry ->
-                    val portInt = entry.port.trim().toIntOrNull() ?: return@flatMap emptyList()
-                    val path = File(context.filesDir, KnownHostsFile.fileName(entry.host, portInt))
-                    try {
-                        listKnownHosts(path.absolutePath)
-                    } catch (_: Exception) {
-                        emptyList()
-                    }
-                }
-            } catch (_: Exception) {
-                emptyList()
-            }
-            mainHandler.post { if (screen.generation == generation) knownHosts = hosts }
-        }
-    }
-
-    // Settings reads live state on entry: the pinned hosts and the biometric
-    // capability are re-asked every time the screen opens (T18).
+    // Settings reads live state on entry: the biometric capability is
+    // re-asked every time the screen opens (T18).
     LaunchedEffect(route) {
         if (route == Route.Settings) {
-            refreshHosts()
             refreshBiometrics()
         }
     }
@@ -1212,6 +1220,24 @@ fun ConnectScreen(
         releaseHeldLease(screen)
     }
 
+    /** T50: deleting a host removes the saved host and its own pin — and
+     *  nothing else. A deleted live host disconnects first. */
+    fun deleteHost(entry: SavedHostEntry) {
+        if (entry.host.equals(host.trim(), ignoreCase = true) && entry.port.trim() == port.trim()) {
+            disconnectLive()
+        }
+        hostsStore.remove(entry.host, entry.port)
+        val pinPath = File(context.filesDir, HostDeletion.pinFile(entry)).absolutePath
+        executor.execute {
+            try {
+                forgetHost(pinPath, entry.host, entry.port.trim().toIntOrNull()?.toUShort() ?: 0u)
+            } catch (_: Exception) {
+            }
+        }
+        deleteTarget = null
+        refreshSavedHosts()
+    }
+
     // S18: app teardown releases the advisory lease — the composition is
     // the app's lifetime for the connect flow, so disposing it is the
     // last chance to hand the claim back.
@@ -1221,62 +1247,21 @@ fun ConnectScreen(
 
     if (route == Route.Settings) {
         SettingsScreen(
-            identity = identity,
-            identityError = identityError,
-            knownHosts = knownHosts,
             biometricDecision = biometricDecision,
             biometricEnabled = biometricEnabled,
             theme = appTheme,
             followThePhone = followThePhone,
             language = language,
+            advanced = advanced,
             onSetFollowThePhone = onSetFollowThePhone,
             onSetLanguage = onSetLanguage,
+            onSetAdvanced = onSetAdvanced,
             connected = screen.ui is UiState.Connected,
-            regenerated = regenerated,
             notificationsGranted = notificationsGranted,
-            onCopyKey = {
-                identity?.let { clipboard.setText(AnnotatedString(it.publicKeyLine)) }
-            },
             onOpenThemes = { route = Route.Themes },
             onToggleBiometric = { enabled ->
                 biometricEnabled = enabled
                 biometricStore.setEnabled(enabled)
-            },
-            onRegenerateKey = {
-                val generation = screen.generation
-                executor.execute {
-                    try {
-                        val fresh = DeviceIdentity.regenerate(context)
-                        mainHandler.post {
-                            if (screen.generation == generation) {
-                                identity = fresh
-                                regenerated = true
-                            }
-                        }
-                        // A new key means new trust: the pins are gone.
-                        mainHandler.post { refreshHosts() }
-                    } catch (error: Exception) {
-                        mainHandler.post { identityError = describe(context, error) }
-                    }
-                }
-            },
-            onForgetHost = { host ->
-                val target = parseHostSpec(host.spec)
-                if (target != null) {
-                    val (forgottenHost, port) = target
-                    executor.execute {
-                        try {
-                            // The pin lives in that host's own file (S24-4).
-                            val path = File(
-                                context.filesDir,
-                                KnownHostsFile.fileName(forgottenHost, port),
-                            )
-                            forgetHost(path.absolutePath, forgottenHost, port.toUShort())
-                        } catch (_: Exception) {
-                        }
-                        mainHandler.post { refreshHosts() }
-                    }
-                }
             },
             onRevoke = {
                 // Wipe what this device holds and come back to the Pair
@@ -1286,8 +1271,6 @@ fun ConnectScreen(
                 executor.execute {
                     DeviceIdentity.wipeAt(context.filesDir)
                     mainHandler.post {
-                        regenerated = false
-                        knownHosts = emptyList<KnownHostDto>()
                         identity = null
                         identityError = null
                         screen.ui = UiState.Hosts
@@ -1421,6 +1404,7 @@ fun ConnectScreen(
                     // (S34); back returns there.
                     route = Route.Host
                 },
+                sortByName = advanced.sortSessionsByName,
             )
             return
         }
@@ -1631,15 +1615,11 @@ fun ConnectScreen(
     var pairLink by remember { mutableStateOf("") }
     var pairError by remember { mutableStateOf<String?>(null) }
     var cameraMessage by remember { mutableStateOf<String?>(null) }
-    var copiedKey by remember { mutableStateOf(false) }
     var copiedCommand by remember { mutableStateOf(false) }
-    var pasted by remember { mutableStateOf(false) }
     // S25-1: per-field validation messages — one per field, set on submit.
     var hostError by remember { mutableStateOf<String?>(null) }
     var portError by remember { mutableStateOf<String?>(null) }
     var userError by remember { mutableStateOf<String?>(null) }
-    // S25-3: Manual setup stays collapsed until the user asks for it.
-    var manualOpen by remember { mutableStateOf(false) }
     // S25-3: the fingerprint an `fp=` link pinned — shown before
     // connecting and enforced at the handshake. It changes only when a
     // new link is applied; a refusal still fails closed on any mismatch.
@@ -1714,7 +1694,6 @@ fun ConnectScreen(
 
     fun applyPairLink(raw: String): Boolean {
         val parsed = PairLink.parse(raw, pairInvalid)
-        pasted = parsed is PairLinkResult.Parsed
         return when (parsed) {
             is PairLinkResult.Parsed -> {
                 host = parsed.host
@@ -2466,222 +2445,50 @@ fun ConnectScreen(
                 Spacer(Modifier.height(12.dp))
                 Hairline()
 
-                // Manual setup — collapsed by default, and the ONLY place
-                // the rest lives: the phone's key, the host command and
-                // the gc:// link paste field. Nothing else on the main
-                // surface (reworked screen).
-                Row(
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .clickable { manualOpen = !manualOpen },
-                ) {
+                // The host commands (T50): what runs on the PC — the real
+                // gentle-mobile pair in a mono block with a copy button,
+                // a note about keeping it current, and the phone-side line.
+                Spacer(Modifier.height(8.dp))
+                BlockLabel(stringResource(R.string.pair_host_block_title))
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text(
-                        text = stringResource(R.string.pair_manual_label),
+                        text = PairCommand.pair(),
                         color = MaterialTheme.colorScheme.onBackground,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f),
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(LocalPalette.current.surfaceRaised, RoundedCornerShape(8.dp))
+                            .padding(12.dp),
                     )
-                    Text(
-                        text = if (manualOpen) "▾" else "▸",
-                        color = LocalPalette.current.accent,
-                        fontSize = 16.sp,
+                    Spacer(Modifier.width(8.dp))
+                    GhostButton(
+                        label = stringResource(R.string.pair_copy),
+                        onClick = {
+                            clipboard.setText(AnnotatedString(PairCommand.pair()))
+                            copiedCommand = true
+                        },
                     )
                 }
-                if (!manualOpen) {
+                if (copiedCommand) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = stringResource(R.string.pair_manual_hint),
-                        color = LocalPalette.current.muted,
+                        text = stringResource(R.string.pair_copied),
+                        color = LocalPalette.current.accent,
                         fontSize = 11.sp,
                     )
                 }
-                if (manualOpen) {
-                    Spacer(Modifier.height(8.dp))
-                    // The phone's own public key, with the identity state
-                    // shown honestly — "creating the key…", the error, or
-                    // the key itself. Never a spinner that hides a failure.
-                    BlockLabel(stringResource(R.string.pair_key_label))
-                    val identity = identity
-                    val identityFailure = identityError
-                    when {
-                        identityFailure != null -> Text(
-                            text = identityFailure,
-                            color = LocalPalette.current.error,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                        )
-                        identity == null -> Text(
-                            text = stringResource(R.string.pair_creating_key),
-                            color = LocalPalette.current.muted,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                        )
-                        else -> {
-                            SelectionContainer {
-                                Text(
-                                    text = identity.publicKeyLine,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(LocalPalette.current.surfaceRaised, RoundedCornerShape(8.dp))
-                                        .padding(12.dp),
-                                )
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                GhostButton(
-                                    label = stringResource(R.string.pair_copy),
-                                    onClick = {
-                                        clipboard.setText(AnnotatedString(identity.publicKeyLine))
-                                        copiedKey = true
-                                        copiedCommand = false
-                                    },
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = if (copiedKey) stringResource(R.string.pair_copied) else
-                                        stringResource(R.string.pair_key_trust_hint),
-                                    color = if (copiedKey) LocalPalette.current.accent else LocalPalette.current.muted,
-                                    fontSize = 11.sp,
-                                    maxLines = 2,
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Hairline()
-
-                    // The host command, ready to copy — the real CLI
-                    // (S25-1): gentle-mobile pair --add-key '<key>'.
-                    BlockLabel(stringResource(R.string.pair_host_label))
-                    val identityForCommand = identity
-                    if (identityForCommand == null) {
-                        Text(
-                            text = stringResource(R.string.pair_ready_when_key),
-                            color = LocalPalette.current.muted,
-                            fontSize = 12.sp,
-                        )
-                    } else {
-                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            Text(
-                                text = buildAnnotatedString {
-                                    withStyle(SpanStyle(color = LocalPalette.current.accent)) { append("\u27AF ") }
-                                    append(PairCommand.addKey(identityForCommand.publicKeyLine))
-                                },
-                                color = MaterialTheme.colorScheme.onBackground,
-                                fontSize = 11.sp,
-                                lineHeight = 18.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            GhostButton(
-                                label = stringResource(R.string.pair_copy),
-                                onClick = {
-                                    clipboard.setText(
-                                        AnnotatedString(
-                                            PairCommand.addKey(identityForCommand.publicKeyLine),
-                                        ),
-                                    )
-                                    copiedCommand = true
-                                    copiedKey = false
-                                },
-                            )
-                        }
-                        if (copiedCommand) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = stringResource(R.string.pair_copied_command),
-                                color = LocalPalette.current.accent,
-                                fontSize = 11.sp,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Hairline()
-
-                    // The gc:// link paste field: the same local parse
-                    // (S25-4) the scanner runs — typed or pasted, refused
-                    // locally before any native call.
-                    BlockLabel(stringResource(R.string.pair_link_label))
-                    OutlinedTextField(
-                        value = pairLink,
-                        onValueChange = {
-                            pairLink = it
-                            pairError = null
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = {
-                            Text(
-                                "gc://host:port?user=\u2026",
-                                color = LocalPalette.current.muted,
-                                fontSize = 13.sp,
-                                fontFamily = FontFamily.Monospace,
-                            )
-                        },
-                        textStyle = TextStyle(
-                            color = MaterialTheme.colorScheme.onBackground,
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.Monospace,
-                        ),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Uri,
-                            imeAction = ImeAction.Done,
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = { if (pairLink.isNotBlank()) applyPairLink(pairLink) },
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = LocalPalette.current.accent,
-                            unfocusedBorderColor = LocalPalette.current.line,
-                            focusedContainerColor = LocalPalette.current.surface,
-                            unfocusedContainerColor = LocalPalette.current.surface,
-                            cursorColor = LocalPalette.current.accent,
-                        ),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row {
-                        GhostButton(
-                            label = stringResource(R.string.pair_paste),
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                val text = clipboard.getText()?.text.orEmpty()
-                                if (text.isBlank()) {
-                                    pairError =
-                                        context.getString(R.string.pair_clipboard_empty)
-                                } else {
-                                    applyPairLink(text)
-                                }
-                            },
-                        )
-                    }
-                    pairError?.let { error ->
-                        Notice(error, LocalPalette.current.error)
-                    }
-                    if (pasted) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = pairParams?.let {
-                                stringResource(
-                                    R.string.pair_will_pair,
-                                    "${it.host}:${it.port}", host, user,
-                                )
-                            } ?: stringResource(R.string.pair_will_connect, host, port, user),
-                            color = LocalPalette.current.muted,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.pair_host_block_note),
+                    color = LocalPalette.current.muted,
+                    fontSize = 11.sp,
+                )
+                Text(
+                    text = stringResource(R.string.pair_phone_vpn),
+                    color = LocalPalette.current.muted,
+                    fontSize = 11.sp,
+                )
             }
 
             is UiState.Challenge -> {
@@ -2820,6 +2627,7 @@ fun ConnectScreen(
                             renameTarget = entry
                             renameText = entry.name
                         },
+                        onDelete = { entry -> deleteTarget = entry },
                     )
                     // S26-5: one small surface for the new name.
                     renameTarget?.let { target ->
@@ -2893,6 +2701,7 @@ fun ConnectScreen(
                             renameTarget = entry
                             renameText = entry.name
                         },
+                        onDelete = { entry -> deleteTarget = entry },
                     )
                     // S26-5: the same one-surface rename, on this list too.
                     renameTarget?.let { target ->
@@ -3068,8 +2877,20 @@ fun ConnectScreen(
                         sessionUi.syncAttachments()
                     },
                     onAttachmentsConsumed = { sessionUi.clearSentAttachments() },
+                    cursorMode = advanced.cursorMode,
+                    cursorBlink = advanced.cursorBlink,
+                    useComposer = advanced.useComposer,
+                    sendOnEnter = advanced.sendOnEnter,
                 )
             }
+        }
+
+        deleteTarget?.let { target ->
+            DeleteHostDialog(
+                entry = target,
+                onConfirm = { deleteHost(target) },
+                onCancel = { deleteTarget = null },
+            )
         }
     }
 }
@@ -4334,6 +4155,63 @@ private fun RenameHostDialog(
     }
 }
 
+/** T50: the confirmation after a host row's swipe-to-Eliminar. Deleting is
+ *  destructive (the pin goes with the host), so it is its own dialog, never
+ *  a silent swipe. */
+@Composable
+private fun DeleteHostDialog(
+    entry: SavedHostEntry,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(LocalPalette.current.surface, RoundedCornerShape(16.dp))
+                .padding(20.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.hosts_delete_title),
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.hosts_delete_body, entry.name),
+                color = LocalPalette.current.muted,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = stringResource(R.string.set_cancel),
+                    color = LocalPalette.current.muted,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .clickable(onClick = onCancel)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.hosts_delete),
+                    color = LocalPalette.current.error,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clickable(onClick = onConfirm)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun NodeRow(
     name: String,
@@ -4411,30 +4289,64 @@ private fun RowHairline() {
     )
 }
 
-/** The hosts list's rows (S34): one row per host, a hairline between rows
- *  (board 02), the state as one word — connected and interrupted in the
- *  accent, saved quiet. Both the live and the unconnected list render the
- *  same rows this way. */
+/** The hosts list's rows (S34, T50): one row per host, a hairline between
+ *  rows (board 02), the state as one word — connected and interrupted in
+ *  the accent, saved quiet. Swiping a row reveals Eliminar; completing the
+ *  swipe opens the confirmation (it never deletes on the swipe alone). */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun HostRows(
     rows: List<HostRowModel>,
     onOpen: (HostRowModel) -> Unit,
     onRename: (SavedHostEntry) -> Unit,
+    onDelete: (SavedHostEntry) -> Unit,
 ) {
     rows.forEachIndexed { index, row ->
-        NodeRow(
-            name = row.entry.name,
-            state = when (row.state) {
-                HostRowState.Connected -> stringResource(R.string.nodes_state_row_connected)
-                HostRowState.Interrupted -> stringResource(R.string.nodes_state_row_interrupted)
-                HostRowState.Saved -> stringResource(R.string.nodes_state_row_saved)
-            },
-            meta = HostsModel.address(row.entry),
-            stateAccent = row.state != HostRowState.Saved,
-            onOpen = { onOpen(row) },
-            renameLabel = stringResource(R.string.hosts_rename),
-            onRename = { onRename(row.entry) },
-        )
+        key(row.entry.host, row.entry.port) {
+            val dismissState = rememberSwipeToDismissBoxState(
+                confirmValueChange = { value ->
+                    if (value == SwipeToDismissBoxValue.EndToStart) {
+                        onDelete(row.entry)
+                    }
+                    false
+                },
+            )
+            SwipeToDismissBox(
+                state = dismissState,
+                enableDismissFromStartToEnd = false,
+                backgroundContent = {
+                    val p = LocalPalette.current
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(p.error, RoundedCornerShape(Air.RADIUS_FIELD_DP.dp))
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = androidx.compose.ui.Alignment.CenterEnd,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.hosts_delete),
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                },
+            ) {
+                NodeRow(
+                    name = row.entry.name,
+                    state = when (row.state) {
+                        HostRowState.Connected -> stringResource(R.string.nodes_state_row_connected)
+                        HostRowState.Interrupted -> stringResource(R.string.nodes_state_row_interrupted)
+                        HostRowState.Saved -> stringResource(R.string.nodes_state_row_saved)
+                    },
+                    meta = HostsModel.address(row.entry),
+                    stateAccent = row.state != HostRowState.Saved,
+                    onOpen = { onOpen(row) },
+                    renameLabel = stringResource(R.string.hosts_rename),
+                    onRename = { onRename(row.entry) },
+                )
+            }
+        }
         if (index < rows.size - 1) {
             RowHairline()
         }
@@ -4581,6 +4493,7 @@ private fun HostsPreview() {
             ),
             onOpen = {},
             onRename = {},
+            onDelete = {},
         )
         Spacer(Modifier.height(24.dp))
         HostScreen(
@@ -4677,10 +4590,12 @@ private fun ConnectScreenPreview() {
             appTheme = AppTheme.CUTE,
             followThePhone = false,
             language = AppLanguage.ENGLISH,
+            advanced = AdvancedSettings(),
             onSetLanguage = {},
             openAgentPane = androidx.compose.runtime.mutableStateOf<String?>(null),
             onSelectTheme = {},
             onSetFollowThePhone = {},
+            onSetAdvanced = {},
         )
     }
 }

@@ -48,17 +48,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.gentlemanprogramming.gentlemobile.R
-import com.gentlemanprogramming.gentlemobile.core.KnownHostDto
-import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
-import com.gentlemanprogramming.gentlemobile.identity.OpenSshKey
 import com.gentlemanprogramming.gentlemobile.security.BiometricDecision
 import com.gentlemanprogramming.gentlemobile.ui.locale.AppLanguage
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsConfig
+import com.gentlemanprogramming.gentlemobile.ui.terminal.CursorMode
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTypeface
@@ -68,7 +65,6 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.LocalOnSetTypeface
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import com.gentlemanprogramming.gentlemobile.ui.theme.terminalFaceFor
-import java.security.MessageDigest
 
 /**
  * The Settings screen (S21/S33, board `07-settings.html`): one card per
@@ -86,26 +82,21 @@ import java.security.MessageDigest
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    identity: DeviceIdentity.Identity?,
-    identityError: String?,
-    knownHosts: List<KnownHostDto>,
     biometricDecision: BiometricDecision?,
     biometricEnabled: Boolean,
     theme: AppTheme,
     followThePhone: Boolean,
     language: AppLanguage,
+    advanced: AdvancedSettings,
     onSetFollowThePhone: (Boolean) -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
+    onSetAdvanced: (AdvancedSettings) -> Unit,
     connected: Boolean,
-    regenerated: Boolean,
     /** T15 (S11): the notification permission as the device holds it —
      *  `null` below Android 13, where there is nothing to deny. */
     notificationsGranted: Boolean?,
-    onCopyKey: () -> Unit,
     onOpenThemes: () -> Unit,
     onToggleBiometric: (Boolean) -> Unit,
-    onRegenerateKey: () -> Unit,
-    onForgetHost: (KnownHostDto) -> Unit,
     onRevoke: () -> Unit,
     onDisconnect: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
@@ -114,10 +105,9 @@ fun SettingsScreen(
     val p = LocalPalette.current
     val typeface = LocalAppTypeface.current
     val onSetTypeface = LocalOnSetTypeface.current
-    var confirmRegenerate by remember { mutableStateOf(false) }
     var confirmRevoke by remember { mutableStateOf(false) }
-    var hostsOpen by remember { mutableStateOf(false) }
     var typefacePickerOpen by remember { mutableStateOf(false) }
+    var cursorModePickerOpen by remember { mutableStateOf(false) }
     // Sessions directory (T17a): the override lives across screens, so the
     // edit state belongs to the function, not to a card slot.
     val context = LocalContext.current
@@ -162,100 +152,6 @@ fun SettingsScreen(
             sub = stringResource(R.string.set_area_security_sub),
             icon = painterResource(R.drawable.ic_area_lock),
         ) {
-            // Device key: the real identity, its type, a short fingerprint and
-            // where it lives. Regenerate is real (T18): a confirmation first —
-            // it destroys the old key — then a fresh identity and cleared pins.
-            SettingRow(
-                name = stringResource(R.string.set_device_key),
-                sub = when {
-                    identityError != null -> stringResource(R.string.set_device_key_error)
-                    identity != null -> stringResource(
-                        R.string.set_device_key_sub,
-                        keyFingerprint(identity.publicKeyLine)
-                            ?: stringResource(R.string.set_device_key_fp_unavailable),
-                    )
-                    else -> stringResource(R.string.set_device_key_reading)
-                },
-                isMono = true,
-                trailing = {
-                    MiniButton(
-                        label = stringResource(R.string.set_regenerate),
-                        enabled = identity != null,
-                        onClick = { confirmRegenerate = true },
-                    )
-                },
-            )
-            if (regenerated) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.set_regenerated),
-                        color = p.text,
-                        fontSize = 12.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    MiniButton(
-                        label = stringResource(R.string.set_copy_key),
-                        enabled = identity != null,
-                        onClick = onCopyKey,
-                    )
-                }
-            }
-
-            // Known hosts: what the core actually pinned, read from its
-            // known_hosts store, with the fingerprint each connect challenge
-            // shows. A forgotten host challenges its fingerprint again.
-            SettingRow(
-                name = stringResource(R.string.set_known_hosts),
-                sub = if (knownHosts.isEmpty()) {
-                    stringResource(R.string.set_known_hosts_empty)
-                } else {
-                    if (hostsOpen) {
-                        pluralStringResource(R.plurals.pinned_count, knownHosts.size, knownHosts.size)
-                    } else {
-                        stringResource(
-                            R.string.set_known_hosts_closed,
-                            knownHosts.joinToString(" · ") { it.spec },
-                            knownHosts.size,
-                        )
-                    }
-                },
-                isMono = true,
-                onClick = if (knownHosts.isEmpty()) null else ({ hostsOpen = !hostsOpen }),
-                trailing = if (knownHosts.isEmpty()) null else {
-                    {
-                        MiniButton(
-                            label = if (hostsOpen) {
-                                stringResource(R.string.set_hide)
-                            } else {
-                                stringResource(R.string.set_manage)
-                            },
-                            enabled = true,
-                        ) {
-                            hostsOpen = !hostsOpen
-                        }
-                    }
-                },
-            )
-            if (hostsOpen) {
-                knownHosts.forEach { host ->
-                    SettingRow(
-                        name = host.spec,
-                        sub = host.fingerprint,
-                        isMono = true,
-                        trailing = {
-                            MiniButton(label = stringResource(R.string.set_forget), enabled = true) { onForgetHost(host) }
-                        },
-                    )
-                }
-                UnavailableNote(stringResource(R.string.set_forget_note))
-            }
-
             // Biometric unlock: a real switch (T18). On, it stands between the
             // user and every session open and every connect. A device that
             // cannot enforce it keeps the switch off with the exact reason.
@@ -430,6 +326,85 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(12.dp))
         SettingsCard(
+            title = stringResource(R.string.set_area_advanced),
+            sub = stringResource(R.string.set_area_advanced_sub),
+            iconGlyph = "≡",
+        ) {
+            GroupHeading(stringResource(R.string.set_advanced_group_cursor))
+            SettingRow(
+                name = stringResource(R.string.set_cursor_mode),
+                sub = cursorModeLabel(advanced.cursorMode),
+                onClick = { cursorModePickerOpen = true },
+                trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
+            )
+            SettingRow(
+                name = stringResource(R.string.set_cursor_blink),
+                sub = stringResource(R.string.set_cursor_blink_sub),
+                trailing = {
+                    GateSwitch(
+                        checked = advanced.cursorBlink,
+                        enabled = true,
+                        onToggle = { onSetAdvanced(advanced.copy(cursorBlink = it)) },
+                    )
+                },
+            )
+
+            GroupHeading(stringResource(R.string.set_advanced_group_input))
+            SettingRow(
+                name = stringResource(R.string.set_use_composer),
+                sub = stringResource(R.string.set_use_composer_sub),
+                trailing = {
+                    GateSwitch(
+                        checked = advanced.useComposer,
+                        enabled = true,
+                        onToggle = { onSetAdvanced(advanced.copy(useComposer = it)) },
+                    )
+                },
+            )
+            SettingRow(
+                name = stringResource(R.string.set_send_on_enter),
+                sub = stringResource(R.string.set_send_on_enter_sub),
+                trailing = {
+                    GateSwitch(
+                        checked = advanced.sendOnEnter,
+                        enabled = advanced.useComposer,
+                        onToggle = { onSetAdvanced(advanced.copy(sendOnEnter = it)) },
+                    )
+                },
+            )
+            if (!advanced.useComposer) {
+                UnavailableNote(stringResource(R.string.set_send_on_enter_off))
+            }
+
+            GroupHeading(stringResource(R.string.set_advanced_group_behaviour))
+            SettingRow(
+                name = stringResource(R.string.set_keep_screen_on),
+                sub = stringResource(R.string.set_keep_screen_on_sub),
+                trailing = {
+                    GateSwitch(
+                        checked = advanced.keepScreenOn,
+                        enabled = true,
+                        onToggle = { onSetAdvanced(advanced.copy(keepScreenOn = it)) },
+                    )
+                },
+            )
+
+            GroupHeading(stringResource(R.string.set_advanced_group_sessions))
+            SettingRow(
+                name = stringResource(R.string.set_sort_sessions_by_name),
+                sub = stringResource(R.string.set_sort_sessions_by_name_sub),
+                trailing = {
+                    GateSwitch(
+                        checked = advanced.sortSessionsByName,
+                        enabled = true,
+                        onToggle = { onSetAdvanced(advanced.copy(sortSessionsByName = it)) },
+                    )
+                },
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        SettingsCard(
             title = stringResource(R.string.set_area_about),
             sub = stringResource(R.string.set_area_about_sub),
             iconGlyph = "i",
@@ -520,18 +495,6 @@ fun SettingsScreen(
             textContentColor = p.muted,
         )
     }
-    if (confirmRegenerate) {
-        ConfirmDialog(
-            title = stringResource(R.string.set_confirm_regenerate_title),
-            body = stringResource(R.string.set_confirm_regenerate_body),
-            confirmLabel = stringResource(R.string.set_regenerate),
-            onConfirm = {
-                confirmRegenerate = false
-                onRegenerateKey()
-            },
-            onDismiss = { confirmRegenerate = false },
-        )
-    }
     if (confirmRevoke) {
         ConfirmDialog(
             title = stringResource(R.string.set_confirm_revoke_title),
@@ -604,6 +567,72 @@ fun SettingsScreen(
             }
         }
     }
+    if (cursorModePickerOpen) {
+        ModalBottomSheet(
+            onDismissRequest = { cursorModePickerOpen = false },
+            containerColor = p.surface,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Air.CARD_PADDING_DP.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.set_cursor_mode),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(8.dp))
+                for (mode in CursorMode.entries) {
+                    val current = mode == advanced.cursorMode
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = Air.TOUCH_DP.dp)
+                            .clickable {
+                                cursorModePickerOpen = false
+                                onSetAdvanced(advanced.copy(cursorMode = mode))
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = cursorModeLabel(mode),
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 15.sp,
+                            fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (current) {
+                            Text("✓", color = p.accent, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun cursorModeLabel(mode: CursorMode): String = when (mode) {
+    CursorMode.BLOCK -> stringResource(R.string.set_cursor_mode_block)
+    CursorMode.UNDERLINE -> stringResource(R.string.set_cursor_mode_underline)
+    CursorMode.BAR -> stringResource(R.string.set_cursor_mode_bar)
+}
+
+/** The quiet group label inside the Advanced card (Moshi's grouped shape). */
+@Composable
+private fun GroupHeading(text: String) {
+    val p = LocalPalette.current
+    Text(
+        text = text,
+        color = p.muted,
+        fontSize = 11.sp,
+        letterSpacing = 1.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
+    )
 }
 
 @Composable
@@ -918,18 +947,6 @@ private fun GateSwitch(checked: Boolean, enabled: Boolean, onToggle: (Boolean) -
             )
         }
     }
-}
-
-/**
- * A short OpenSSH-style fingerprint of the device key: the first two and the
- * last byte of the SHA-256 over the raw public key, in the board's `ab:cd:…:ef`
- * shape. Never the whole key — the full public line stays on the Pair screen.
- */
-internal fun keyFingerprint(publicKeyLine: String): String? {
-    val blob = OpenSshKey.publicBlobFromLine(publicKeyLine) ?: return null
-    val pub = OpenSshKey.ed25519PublicFromBlob(blob) ?: return null
-    val digest = MessageDigest.getInstance("SHA-256").digest(pub)
-    return "%02x:%02x:…:%02x".format(digest[0], digest[1], digest[31])
 }
 
 /** The real versionName from the installed package — never a hardcoded one. */

@@ -16,6 +16,11 @@ class PairCommandTest {
     }
 
     @Test
+    fun `the host command block runs the one-scan pair command`() {
+        assertEquals("gentle-mobile pair", PairCommand.pair())
+    }
+
+    @Test
     fun `wraps the key in single quotes`() {
         assertEquals(
             "gentle-mobile pair --add-key 'ssh-ed25519 AAAAC3Nza demo@gentle'",

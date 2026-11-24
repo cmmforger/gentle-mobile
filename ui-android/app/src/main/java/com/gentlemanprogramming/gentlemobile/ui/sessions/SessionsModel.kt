@@ -133,9 +133,21 @@ object SessionsModel {
         ).joinToString(" · ")
 
     /** Newest first, and capped: a host can hold hundreds of sessions and a
-     *  phone list is not a file browser. */
-    fun ordered(sessions: List<SessionDto>, cap: Int = 60): List<SessionDto> =
-        sessions.sortedByDescending { it.lastModifiedEpochMs }.take(cap)
+     *  phone list is not a file browser. `byName` (T50) sorts by the
+     *  project name instead, case-insensitive — the same word the row shows. */
+    fun ordered(sessions: List<SessionDto>, cap: Int = 60, byName: Boolean = false): List<SessionDto> =
+        (if (byName) {
+            sessions.sortedWith(compareBy({ sortName(it) }, { it.sessionId }))
+        } else {
+            sessions.sortedByDescending { it.lastModifiedEpochMs }
+        }).take(cap)
+
+    /** The name the row shows for a session: the last path segment, falling
+     *  back to the session id when the host recorded no cwd. */
+    fun sortName(session: SessionDto): String =
+        session.cwd?.substringAfterLast('/')?.ifBlank { null }
+            ?.lowercase()
+            ?: session.sessionId.lowercase()
 
     /** The visible note after reclaiming a stale lease (S18: never
      *  silently). */

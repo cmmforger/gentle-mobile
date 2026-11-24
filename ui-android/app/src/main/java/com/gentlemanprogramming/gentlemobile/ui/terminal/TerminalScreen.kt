@@ -74,6 +74,9 @@ import kotlinx.coroutines.delay
 
 private val TERMINAL_FONT_SP = 14.sp
 
+/** The blink period in ms — the same 530 ms [TerminalCursor] expects. */
+private const val BLINK_PERIOD_MS = 530L
+
 /**
  * The only session view (T48): the PTY's byte stream drawn as a cell grid,
  * full bleed. The top bar (back · panes · refresh, 44 dp) stays tappable
@@ -107,6 +110,10 @@ fun TerminalScreen(
     onRetryUpload: (Long) -> Unit,
     onRemoveAttachment: (Long) -> Unit,
     onAttachmentsConsumed: () -> Unit,
+    cursorMode: CursorMode,
+    cursorBlink: Boolean,
+    useComposer: Boolean,
+    sendOnEnter: Boolean,
 ) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
@@ -117,6 +124,14 @@ fun TerminalScreen(
     var input by remember { mutableStateOf(TextFieldValue("")) }
     val composer = remember { TerminalComposer() }
     var paneSheet by remember { mutableStateOf(false) }
+    var blinkPhase by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(cursorBlink) {
+        while (cursorBlink) {
+            kotlinx.coroutines.delay(530L)
+            blinkPhase++
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -195,6 +210,9 @@ fun TerminalScreen(
                 starting = starting && emulator == null,
                 error = error,
                 frameVersion = frameVersion,
+                cursorMode = cursorMode,
+                cursorBlink = cursorBlink,
+                blinkPhase = blinkPhase,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -202,31 +220,39 @@ fun TerminalScreen(
             composer = composer,
             onKey = { bytes -> session?.write(bytes) },
         )
-        TerminalComposerRow(
-            enabled = session != null && !closed,
-            agentRunsHere = TerminalAttachments.offersCameraAndClip(agentRunsHere),
-            attachments = attachments,
-            thumbnails = thumbnails,
-            value = input,
-            onValueChange = { new ->
-                val delta = composer.commit(new.text)
-                if (delta.isNotEmpty()) session?.write(delta)
-                input = if (composer.fieldText == new.text) new else TextFieldValue(composer.fieldText)
-            },
-            onSubmit = {
-                val suffixes = attachments.mapNotNull {
-                    (it.state as? AttachmentState.Uploaded)?.promptSuffix
-                }
-                val bytes = composer.submit() + TerminalAttachments.suffixBytes(suffixes)
-                if (bytes.isNotEmpty()) session?.write(bytes)
-                input = TextFieldValue("")
-                if (suffixes.isNotEmpty()) onAttachmentsConsumed()
-            },
-            onCamera = onCamera,
-            onPickImage = onPickImage,
-            onRetryUpload = onRetryUpload,
-            onRemoveAttachment = onRemoveAttachment,
-        )
+        if (useComposer) {
+            TerminalComposerRow(
+                enabled = session != null && !closed,
+                agentRunsHere = TerminalAttachments.offersCameraAndClip(agentRunsHere),
+                attachments = attachments,
+                thumbnails = thumbnails,
+                value = input,
+                sendOnEnter = sendOnEnter,
+                onValueChange = { new ->
+                    val delta = composer.commit(new.text)
+                    if (delta.isNotEmpty()) session?.write(delta)
+                    input = if (composer.fieldText == new.text) new else TextFieldValue(composer.fieldText)
+                },
+                onSubmit = {
+                    val suffixes = attachments.mapNotNull {
+                        (it.state as? AttachmentState.Uploaded)?.promptSuffix
+                    }
+                    val bytes = composer.submit() + TerminalAttachments.suffixBytes(suffixes)
+                    if (bytes.isNotEmpty()) session?.write(bytes)
+                    input = TextFieldValue("")
+                    if (suffixes.isNotEmpty()) onAttachmentsConsumed()
+                },
+                onCamera = onCamera,
+                onPickImage = onPickImage,
+                onRetryUpload = onRetryUpload,
+                onRemoveAttachment = onRemoveAttachment,
+            )
+        } else {
+            TerminalDirectInputRow(
+                enabled = session != null && !closed,
+                onBytes = { bytes -> session?.write(bytes) },
+            )
+        }
     }
 
     if (paneSheet) {
@@ -391,6 +417,7 @@ private fun TerminalComposerRow(
     attachments: List<Attachment>,
     thumbnails: Map<Long, ImageBitmap>,
     value: TextFieldValue,
+    sendOnEnter: Boolean,
     onValueChange: (TextFieldValue) -> Unit,
     onSubmit: () -> Unit,
     onCamera: () -> Unit,
@@ -447,9 +474,13 @@ private fun TerminalComposerRow(
                     cursorBrush = SolidColor(palette.accent),
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.None,
-                        imeAction = ImeAction.Send,
+                        imeAction = if (sendOnEnter) ImeAction.Send else ImeAction.None,
                     ),
-                    keyboardActions = KeyboardActions(onSend = { onSubmit() }),
+                    keyboardActions = if (sendOnEnter) {
+                        KeyboardActions(onSend = { onSubmit() })
+                    } else {
+                        KeyboardActions()
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .padding(vertical = 12.dp),
@@ -497,6 +528,52 @@ private fun ComposerIcon(drawable: Int, description: String, enabled: Boolean, o
             contentDescription = description,
             tint = if (enabled) palette.text else palette.muted,
             modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/**
+ * The direct input row (T50): with "use the field" off, keystrokes reach the
+ * PTY the moment they are typed — the field never accumulates text. Enter
+ * sends one CR through the keyboard's send action.
+ */
+@Composable
+private fun TerminalDirectInputRow(enabled: Boolean, onBytes: (ByteArray) -> Unit) {
+    val palette = LocalPalette.current
+    var value by remember { mutableStateOf(TextFieldValue("")) }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = { new ->
+                val delta = TerminalKeys.forwardInput(value.text, new.text)
+                if (delta.isNotEmpty()) onBytes(delta)
+                value = TextFieldValue("")
+            },
+            enabled = enabled,
+            singleLine = true,
+            textStyle = TextStyle(
+                color = if (enabled) MaterialTheme.colorScheme.onBackground else palette.textDisabled,
+                fontSize = 13.sp,
+                fontFamily = FontFamily.Monospace,
+            ),
+            cursorBrush = SolidColor(palette.accent),
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.None,
+                imeAction = ImeAction.Send,
+            ),
+            keyboardActions = KeyboardActions(onSend = { onBytes(byteArrayOf(0x0D)) }),
+            modifier = Modifier
+                .weight(1f)
+                .heightIn(min = 44.dp, max = 96.dp)
+                .clip(RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
+                .background(palette.surface, RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
+                .border(1.dp, palette.line, RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
+                .padding(horizontal = 12.dp, vertical = 12.dp),
         )
     }
 }
@@ -688,6 +765,9 @@ private fun TerminalCanvas(
     starting: Boolean,
     error: String?,
     frameVersion: Int,
+    cursorMode: CursorMode,
+    cursorBlink: Boolean,
+    blinkPhase: Long,
     modifier: Modifier,
 ) {
     Canvas(modifier = modifier) {
@@ -703,7 +783,7 @@ private fun TerminalCanvas(
             drawCenteredText(message)
             return@Canvas
         }
-        drawTerminal(e, colors, typefaces, fontSizePx, closed)
+        drawTerminal(e, colors, typefaces, fontSizePx, closed, cursorMode, cursorBlink, blinkPhase)
         if (closed) {
             drawCenteredText("The shell has ended.")
         }
@@ -724,6 +804,9 @@ private fun DrawScope.drawTerminal(
     typefaces: TerminalTypefaces,
     fontSizePx: Float,
     closed: Boolean,
+    cursorMode: CursorMode,
+    cursorBlink: Boolean,
+    blinkPhase: Long,
 ) {
     val canvas = drawContext.canvas.nativeCanvas
     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
@@ -786,15 +869,26 @@ private fun DrawScope.drawTerminal(
     paint.isUnderlineText = false
     paint.isStrikeThruText = false
 
-    // Cursor on top, in the terminal's foreground colour.
-    if (emulator.cursorVisible && !closed) {
+    // Cursor on top, shaped by the Advanced choice and hidden on the blink's
+    // off phase. The block fills, underline and bar are fractions of the cell.
+    val paintCursor = TerminalCursor.visible(
+        emulator.cursorVisible,
+        cursorBlink,
+        blinkPhase * BLINK_PERIOD_MS,
+    )
+    if (paintCursor && !closed) {
         val cx = emulator.cursorX
         val cy = emulator.cursorY
         if (cx < cols && cy < rows) {
+            val rect = TerminalCursor.rect(cursorMode)
+            val left = cellX(cx) + rect.left * cellWidth
+            val top = cellY(cy) + rect.top * cellHeight
+            val right = cellX(cx) + rect.right * cellWidth
+            val bottom = cellY(cy) + rect.bottom * cellHeight
             drawRect(
                 Color(colors.foreground),
-                Offset(cellX(cx), cellY(cy)),
-                Size(cellWidth, cellHeight),
+                Offset(left, top),
+                Size(right - left, bottom - top),
             )
         }
     }
@@ -876,6 +970,9 @@ fun TerminalFixtureScreen(theme: AppTheme, onBack: () -> Unit) {
                 starting = false,
                 error = null,
                 frameVersion = 0,
+                cursorMode = CursorMode.BLOCK,
+                cursorBlink = false,
+                blinkPhase = 0,
                 modifier = Modifier.fillMaxSize(),
             )
         }

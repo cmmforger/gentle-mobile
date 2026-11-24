@@ -92,6 +92,7 @@ fun SessionsScreen(
     onResume: (session: SessionDto, sessionsDirOverride: String) -> Unit,
     onStartNew: (sessions: List<SessionDto>) -> Unit,
     onBack: () -> Unit,
+    sortByName: Boolean,
 ) {
     val p = LocalPalette.current
     val context = LocalContext.current
@@ -125,7 +126,7 @@ fun SessionsScreen(
                 val listed = listSessions(profile, sessionsDir, deviceLeaseId)
                 mainHandler.post {
                     SessionsCache.put(cacheKey, listed, System.currentTimeMillis())
-                    sessions = SessionsModel.ordered(listed)
+                    sessions = SessionsModel.ordered(listed, byName = sortByName)
                     error = null
                 }
             } catch (e: Exception) {
@@ -145,7 +146,7 @@ fun SessionsScreen(
         }
         bypassCache = false
         if (cached != null) {
-            sessions = SessionsModel.ordered(cached)
+            sessions = SessionsModel.ordered(cached, byName = sortByName)
             error = null
         } else {
             load()

@@ -12,7 +12,7 @@ enum class SettingsArea {
     LANGUAGE,
     TYPEFACE,
     TERMINAL_FONT,
-    NOTIFICATIONS,
+    ADVANCED,
     ABOUT,
 }
 
@@ -22,11 +22,11 @@ enum class SettingsRow {
     PINNED_THEME,
 }
 
-/** The rows the Security card carries (T36): what a person can act on —
- *  the device key, the saved hosts, the biometric gate and host pinning. */
+/** The rows the Security card carries (T50): what a person can act on —
+ *  the biometric gate and host pinning. The device key and the saved hosts
+ *  left: the identity is real but not a settings card, and deleting a host
+ *  lives on the host row itself. */
 enum class SecurityRow {
-    DEVICE_KEY,
-    SAVED_HOSTS,
     BIOMETRIC,
     PINNING,
 }
@@ -38,7 +38,7 @@ object SettingsAreas {
         SettingsArea.LANGUAGE,
         SettingsArea.TYPEFACE,
         SettingsArea.TERMINAL_FONT,
-        SettingsArea.NOTIFICATIONS,
+        SettingsArea.ADVANCED,
         SettingsArea.ABOUT,
     )
 
@@ -48,8 +48,6 @@ object SettingsAreas {
     )
 
     val securityRows: List<SecurityRow> = listOf(
-        SecurityRow.DEVICE_KEY,
-        SecurityRow.SAVED_HOSTS,
         SecurityRow.BIOMETRIC,
         SecurityRow.PINNING,
     )

@@ -50,6 +50,11 @@
     <string name="pair_manual_label">Configuración manual</string>
     <string name="pair_manual_hint">La clave del teléfono, el comando del host y el enlace gc://, para cuando no hay un QR para escanear.</string>
 
+    <!-- Configuración manual (T50): el bloque de comandos del host, no un formulario -->
+    <string name="pair_host_block_title">En la computadora</string>
+    <string name="pair_host_block_note">Imprime un QR para escanear con el teléfono — actualizalo en la computadora cuando se actualice la app.</string>
+    <string name="pair_phone_vpn">Teléfono: conectá Tailscale (u otra VPN) para llegar al host.</string>
+
     <!-- Huella de la clave del host que trae el enlace (S25-3): se muestra antes de conectar -->
     <string name="pair_fp_label">Huella de la clave del host</string>
     <string name="pair_fp_hint">Comparala con lo que imprime el host antes de conectar.</string>
@@ -93,6 +98,9 @@
     <string name="nodes_state_not_connected">Sin conexión</string>
     <string name="hosts_add">Agregar un equipo</string>
     <string name="hosts_rename">Cambiar nombre</string>
+    <string name="hosts_delete">Eliminar</string>
+    <string name="hosts_delete_title">¿Eliminar este host?</string>
+    <string name="hosts_delete_body">Se van a borrar %1$s y su clave guardada de este teléfono.</string>
     <string name="hosts_rename_title">Poné un nombre a este host</string>
     <string name="hosts_rename_save">Guardar</string>
     <string name="hosts_empty">Todavía no hay equipos — agregá uno para empezar.</string>
@@ -299,7 +307,7 @@
     <!-- Ajustes -->
     <string name="set_title">Ajustes</string>
     <string name="set_section_security">Seguridad</string>
-    <string name="set_area_security_sub">La clave del teléfono, los hosts en los que confía.</string>
+    <string name="set_area_security_sub">Biometría, fijado de host y notificaciones.</string>
     <string name="set_area_appearance">Apariencia</string>
     <string name="set_area_appearance_sub">Seguí tu teléfono, o fijá uno.</string>
     <string name="set_follow_phone">Seguir al teléfono</string>
@@ -312,12 +320,33 @@
     <string name="set_typeface_family">Familia</string>
     <string name="set_typeface_value">Del sistema</string>
     <string name="set_typeface_mono">mono</string>
-    <string name="set_typeface_foot">La elección dibuja todas las pantallas de una vez y sobrevive un reinicio. Space Grotesk e IBM Plex Sans traen regular y negrita; Aldrich tiene un solo peso; IosevkaTerm trae regular y negrita y es monoespaciada.</string>
+    <string name="set_typeface_foot">Se aplica a todas las pantallas y sobrevive un reinicio.</string>
     <string name="set_area_terminal_font">Fuente de terminal</string>
     <string name="set_area_terminal_font_sub">La terminal y el campo de escritura, en este dispositivo.</string>
     <string name="set_terminal_font_mono">%1$s · monoespaciada — es la que dibuja la terminal.</string>
     <string name="set_terminal_font_fallback">IosevkaTerm Nerd Font · la cara elegida es proporcional.</string>
-    <string name="set_terminal_font_foot">La terminal siempre dibuja con la IosevkaTerm Nerd Font incluida, así los íconos Nerd sobreviven a cualquier tipografía y las columnas siguen alineadas.</string>
+    <string name="set_terminal_font_foot">La terminal siempre pinta en IosevkaTerm Nerd Font — íconos y columnas sobreviven a cualquier cara.</string>
+    <string name="set_area_advanced">Avanzado</string>
+    <string name="set_area_advanced_sub">Comportamiento de la terminal que es real y está conectado.</string>
+    <string name="set_advanced_group_cursor">Cursor</string>
+    <string name="set_advanced_group_input">Entrada</string>
+    <string name="set_advanced_group_behaviour">Comportamiento</string>
+    <string name="set_advanced_group_sessions">Sesiones</string>
+    <string name="set_cursor_mode">Forma del cursor</string>
+    <string name="set_cursor_mode_block">Bloque</string>
+    <string name="set_cursor_mode_underline">Subrayado</string>
+    <string name="set_cursor_mode_bar">Barra</string>
+    <string name="set_cursor_blink">Parpadeo</string>
+    <string name="set_cursor_blink_sub">El cursor parpadea.</string>
+    <string name="set_use_composer">Usar el campo</string>
+    <string name="set_use_composer_sub">Escribí en el campo y después enviá. Apagado, escribe directo en la terminal.</string>
+    <string name="set_send_on_enter">Enviar con Intro</string>
+    <string name="set_send_on_enter_sub">Intro envía el campo; apagado lo deja hasta que toques enviar.</string>
+    <string name="set_send_on_enter_off">Solo aplica mientras el campo está encendido.</string>
+    <string name="set_keep_screen_on">Mantener la pantalla encendida</string>
+    <string name="set_keep_screen_on_sub">La pantalla queda despierta mientras hay una terminal abierta.</string>
+    <string name="set_sort_sessions_by_name">Ordenar por nombre</string>
+    <string name="set_sort_sessions_by_name_sub">Las sesiones se listan por nombre de proyecto, no por las más nuevas.</string>
     <string name="set_area_about">Acerca de</string>
     <string name="set_area_about_sub">Versión y novedades.</string>
 
@@ -356,7 +385,7 @@
     <string name="set_notifications_on">Encendidas</string>
     <string name="set_notifications_off">Apagadas</string>
     <string name="set_notifications_on_detail">El teléfono te va a avisar cuando un agente te necesite.</string>
-    <string name="set_notifications_off_detail">Apagadas — las notificaciones fueron rechazadas, así que el teléfono queda callado mientras un agente te necesite. Activalas en los ajustes de Android.</string>
+    <string name="set_notifications_off_detail">Apagadas — las notificaciones fueron rechazadas, así que el teléfono queda callado mientras un agente te necesite.</string>
     <string name="set_notifications_na_detail">Esta versión de Android no pregunta — permitir las notificaciones es cosa del sistema.</string>
 
     <string name="set_cancel">Cancelar</string>
@@ -369,7 +398,7 @@
     <string name="set_disconnect">Desconectar</string>
     <string name="set_disconnect_note">Sin conexión — la acción de desconectar pertenece a una sesión viva.</string>
     <string name="set_revoke">Revocar en este dispositivo</string>
-    <string name="set_revoke_note">Borra la clave de este teléfono y sus hosts guardados. Del lado del host todavía hace falta gentle-mobile-pair --revoke en cada host — la app no puede ejecutarlo: solo tiene la clave de este teléfono, nunca una shell en el host.</string>
+    <string name="set_revoke_note">Borra la clave de este teléfono y sus hosts guardados — del lado del host todavía hace falta gentle-mobile-pair --revoke.</string>
     <string name="set_confirm_regenerate_title">¿Regenerar la clave del dispositivo?</string>
     <string name="set_confirm_regenerate_body">Esto destruye la clave vieja y borra todos los hosts guardados — una clave nueva significa confianza nueva. Cada host tiene que confiar en la clave nueva antes de poder conectarse.</string>
     <string name="set_confirm_revoke_title">¿Revocar en este dispositivo?</string>

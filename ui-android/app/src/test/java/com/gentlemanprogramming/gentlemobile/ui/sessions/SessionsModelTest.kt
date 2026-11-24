@@ -278,6 +278,44 @@ class SessionsModelTest {
         const val OVERRIDE_KEY_STORE_KEY = "sessions_dir_override"
     }
 
+    // --- T50: sort sessions by name ---------------------------------------------
+
+    @Test
+    fun ordered_defaults_to_newest_first() {
+        val sessions = listOf(
+            repoSession("/srv/old", 1_000),
+            repoSession("/srv/new", 9_000),
+            repoSession("/srv/mid", 4_000),
+        )
+        assertEquals(
+            listOf("/srv/new", "/srv/mid", "/srv/old"),
+            SessionsModel.ordered(sessions).map { it.cwd },
+        )
+    }
+
+    @Test
+    fun ordered_by_name_sorts_the_project_names_case_insensitively() {
+        val sessions = listOf(
+            repoSession("/srv/Bravo", 9_000),
+            repoSession("/srv/alpha", 1_000),
+            repoSession("/srv/Charlie", 4_000),
+        )
+        assertEquals(
+            listOf("/srv/alpha", "/srv/Bravo", "/srv/Charlie"),
+            SessionsModel.ordered(sessions, byName = true).map { it.cwd },
+        )
+    }
+
+    @Test
+    fun a_session_without_a_cwd_sorts_by_its_id_when_by_name() {
+        val withCwd = repoSession("/srv/app", 1_000)
+        val withoutCwd = repoSession(null, 9_000)
+        assertEquals(
+            listOf(withoutCwd.cwd, withCwd.cwd),
+            SessionsModel.ordered(listOf(withoutCwd, withCwd), byName = true).map { it.cwd },
+        )
+    }
+
     // --- S24-5: repositories from history --------------------------------------
 
     private fun repoSession(cwd: String?, modified: Long) = SessionDto(

@@ -22,7 +22,7 @@ class SettingsAreasTest {
                 SettingsArea.LANGUAGE,
                 SettingsArea.TYPEFACE,
                 SettingsArea.TERMINAL_FONT,
-                SettingsArea.NOTIFICATIONS,
+                SettingsArea.ADVANCED,
                 SettingsArea.ABOUT,
             ),
             SettingsAreas.order,
@@ -31,12 +31,11 @@ class SettingsAreasTest {
 
     @Test
     fun `the security card carries exactly what a person can act on`() {
-        // T36: device key, saved hosts, biometric, host pinning. The developer
-        // sessions-directory override and the notifications rows left the card.
+        // T50: the device key and saved hosts left the settings screen — the
+        // identity is real but not a card, and host deletion lives on the
+        // host row. Biometric and pinning remain.
         assertEquals(
             listOf(
-                SecurityRow.DEVICE_KEY,
-                SecurityRow.SAVED_HOSTS,
                 SecurityRow.BIOMETRIC,
                 SecurityRow.PINNING,
             ),
