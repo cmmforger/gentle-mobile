@@ -4287,6 +4287,8 @@ private fun NodeRow(
     stateAccent: Boolean = false,
     renameLabel: String? = null,
     onRename: (() -> Unit)? = null,
+    deleteLabel: String? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -4328,6 +4330,19 @@ private fun NodeRow(
         }
         // S26-5: renaming a saved host is its own target, not a long press —
         // with several machines the name is how the human tells them apart.
+        // T53: a visible delete, not only the swipe — the human should not
+        // have to discover a gesture to remove a host.
+        if (onDelete != null && !deleteLabel.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .size(Air.TOUCH_DP.dp)
+                    .clickable(onClick = onDelete)
+                    .semantics { contentDescription = deleteLabel },
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                Text("\u2715", color = LocalPalette.current.error, fontSize = 15.sp)
+            }
+        }
         if (onRename != null && !renameLabel.isNullOrBlank()) {
             Text(
                 text = renameLabel,
@@ -4391,6 +4406,11 @@ private fun HostRows(
                     onOpen = { onOpen(row) },
                     renameLabel = stringResource(R.string.hosts_rename),
                     onRename = { onRename(row.entry) },
+                    deleteLabel = stringResource(R.string.hosts_delete),
+                    onDelete = {
+                        openRowId = null
+                        onDelete(row.entry)
+                    },
                 )
             }
         }

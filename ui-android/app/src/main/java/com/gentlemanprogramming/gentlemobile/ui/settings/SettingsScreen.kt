@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -122,7 +123,6 @@ fun SettingsScreen(
     var confirmRevoke by remember { mutableStateOf(false) }
     var typefacePickerOpen by remember { mutableStateOf(false) }
     var terminalFontPickerOpen by remember { mutableStateOf(false) }
-    var cursorModePickerOpen by remember { mutableStateOf(false) }
     var advancedOpen by remember { mutableStateOf(false) }
     // Sessions directory (T17a): the override lives across screens, so the
     // edit state belongs to the function, not to a card slot.
@@ -356,12 +356,48 @@ fun SettingsScreen(
             onToggle = { advancedOpen = !advancedOpen },
         ) {
             GroupHeading(stringResource(R.string.set_advanced_group_cursor))
-            SettingRow(
-                name = stringResource(R.string.set_cursor_mode),
-                sub = cursorModeLabel(advanced.cursorMode),
-                onClick = { cursorModePickerOpen = true },
-                trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
-            )
+            // T53: the three shapes live in the card — you pick by looking.
+            var cursorBlinkPhase by remember { mutableStateOf(0L) }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    kotlinx.coroutines.delay(CursorPreview.PERIOD_MS)
+                    cursorBlinkPhase++
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                for (mode in CursorMode.entries) {
+                    val chosen = mode == advanced.cursorMode
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = Air.TOUCH_DP.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (chosen) p.selection else p.surfaceRaised)
+                            .clickable { onSetAdvanced(advanced.copy(cursorMode = mode)) }
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CursorPreviewCell(
+                            mode = mode,
+                            visible = CursorPreview.blink(cursorBlinkPhase * CursorPreview.PERIOD_MS),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = cursorModeLabel(mode),
+                            color = if (chosen) p.accent else p.text,
+                            fontSize = 13.sp,
+                            fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
             SettingRow(
                 name = stringResource(R.string.set_cursor_blink),
                 sub = stringResource(R.string.set_cursor_blink_sub),
@@ -580,65 +616,6 @@ fun SettingsScreen(
                                 fontSize = 11.sp,
                             )
                         }
-                        Spacer(Modifier.weight(1f))
-                        if (current) {
-                            Text("✓", color = p.accent, fontSize = 15.sp)
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if (cursorModePickerOpen) {
-        var blinkPhase by remember { mutableStateOf(0L) }
-        LaunchedEffect(Unit) {
-            while (true) {
-                kotlinx.coroutines.delay(CursorPreview.PERIOD_MS)
-                blinkPhase++
-            }
-        }
-        ModalBottomSheet(
-            onDismissRequest = { cursorModePickerOpen = false },
-            containerColor = p.surface,
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Air.CARD_PADDING_DP.dp)
-                    .padding(bottom = 24.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.set_cursor_mode),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(Modifier.height(8.dp))
-                for (mode in CursorMode.entries) {
-                    val current = mode == advanced.cursorMode
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = Air.TOUCH_DP.dp)
-                            .clickable {
-                                cursorModePickerOpen = false
-                                onSetAdvanced(advanced.copy(cursorMode = mode))
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Each option is a preview of the shape itself,
-                        // blinking so the motion is seen before choosing.
-                        CursorPreviewCell(
-                            mode = mode,
-                            visible = CursorPreview.blink(blinkPhase * CursorPreview.PERIOD_MS),
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = cursorModeLabel(mode),
-                            color = MaterialTheme.colorScheme.onBackground,
-                            fontSize = 15.sp,
-                            fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                        )
                         Spacer(Modifier.weight(1f))
                         if (current) {
                             Text("✓", color = p.accent, fontSize = 15.sp)
