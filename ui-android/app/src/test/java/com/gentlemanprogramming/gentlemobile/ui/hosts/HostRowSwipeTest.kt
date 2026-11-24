@@ -11,12 +11,12 @@ class HostRowSwipeTest {
 
     @Test
     fun `a drag past the threshold opens`() {
-        assertEquals(SwipeReveal.OPEN, HostRowSwipe.settle(offsetPx = -49f, thresholdPx = 48f))
+        assertEquals(SwipeReveal.OPEN, HostRowSwipe.settle(offsetPx = 49f, thresholdPx = 48f))
     }
 
     @Test
     fun `a small drag settles back closed`() {
-        assertEquals(SwipeReveal.CLOSED, HostRowSwipe.settle(offsetPx = -47f, thresholdPx = 48f))
+        assertEquals(SwipeReveal.CLOSED, HostRowSwipe.settle(offsetPx = 47f, thresholdPx = 48f))
         assertEquals(SwipeReveal.CLOSED, HostRowSwipe.settle(offsetPx = 0f, thresholdPx = 48f))
     }
 
@@ -28,6 +28,6 @@ class HostRowSwipeTest {
     @Test
     fun `the row is offset by the reveal width only when open`() {
         assertEquals(0f, HostRowSwipe.offset(SwipeReveal.CLOSED, revealPx = 72f), 0f)
-        assertEquals(-72f, HostRowSwipe.offset(SwipeReveal.OPEN, revealPx = 72f), 0f)
+        assertEquals(72f, HostRowSwipe.offset(SwipeReveal.OPEN, revealPx = 72f), 0f)
     }
 }
