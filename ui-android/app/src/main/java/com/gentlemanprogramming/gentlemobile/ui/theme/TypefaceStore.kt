@@ -8,14 +8,16 @@ import com.gentlemanprogramming.gentlemobile.R
  * The interface typeface the app draws with: the platform face by default,
  * or one of the bundled OFL faces. Applied through the `MaterialTheme`
  * typography in Theme.kt, so every screen follows without touching each
- * composable. The terminal keeps JetBrains Mono — this is the chrome's
- * face, never the terminal's.
+ * composable. The terminal follows this choice too: a monospaced face
+ * drives it, a proportional one falls back to the bundled JetBrains Mono
+ * ([terminalFaceFor]).
  */
 enum class AppTypeface(val label: String) {
     SYSTEM("System"),
     SPACE_GROTESK("Space Grotesk"),
     IBM_PLEX_SANS("IBM Plex Sans"),
     ALDRICH("Aldrich"),
+    IOSEVKA_TERM("IosevkaTerm Nerd Font"),
     ;
 
     companion object {
@@ -59,6 +61,40 @@ fun bundledFace(choice: AppTypeface): BundledFace? = when (choice) {
     AppTypeface.SPACE_GROTESK -> BundledFace(R.font.space_grotesk_regular, R.font.space_grotesk_bold)
     AppTypeface.IBM_PLEX_SANS -> BundledFace(R.font.ibm_plex_sans_regular, R.font.ibm_plex_sans_bold)
     AppTypeface.ALDRICH -> BundledFace(R.font.aldrich_regular, null)
+    AppTypeface.IOSEVKA_TERM -> BundledFace(R.font.iosevkaterm_regular, R.font.iosevkaterm_bold)
+}
+
+/**
+ * The terminal's resolved face for an app typeface: the chosen bundled face
+ * itself when it is monospaced, otherwise the bundled JetBrains Mono.
+ * [fallback] marks the second case so the UI can state it, never silently.
+ */
+data class TerminalFaceResolution(
+    val regular: Int,
+    val bold: Int?,
+    val italic: Int?,
+    val boldItalic: Int?,
+    val fallback: Boolean,
+)
+
+/** One pure decision: a monospaced typeface drives the terminal with its own
+ *  face; every proportional face (and System) falls back to the bundled
+ *  monospace so the grid's columns keep lining up. */
+fun terminalFaceFor(choice: AppTypeface): TerminalFaceResolution = when (choice) {
+    AppTypeface.IOSEVKA_TERM -> TerminalFaceResolution(
+        regular = R.font.iosevkaterm_regular,
+        bold = R.font.iosevkaterm_bold,
+        italic = null,
+        boldItalic = null,
+        fallback = false,
+    )
+    else -> TerminalFaceResolution(
+        regular = R.font.jetbrainsmono_regular,
+        bold = R.font.jetbrainsmono_bold,
+        italic = R.font.jetbrainsmono_italic,
+        boldItalic = R.font.jetbrainsmono_bolditalic,
+        fallback = true,
+    )
 }
 
 /** The choice and the way to change it, provided beside [LocalPalette] so

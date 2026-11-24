@@ -221,7 +221,6 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTypeface
 import com.gentlemanprogramming.gentlemobile.ui.theme.GentleMobileTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.TypefaceStore
-import com.gentlemanprogramming.gentlemobile.ui.theme.TerminalFontStore
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.SharedPreferencesStore
 import com.gentlemanprogramming.gentlemobile.ui.theme.resolvedTheme
@@ -352,10 +351,6 @@ class MainActivity : FragmentActivity() {
                 TypefaceStore(SharedPreferencesStore(this@MainActivity))
             }
             var typeface by remember { mutableStateOf(typefaceStore.selected()) }
-            val terminalFontStore = remember {
-                TerminalFontStore(SharedPreferencesStore(this@MainActivity))
-            }
-            var terminalFont by remember { mutableStateOf(terminalFontStore.selected()) }
             // S33: Follow the phone — dark renders Cute, light renders Paper;
             // off (the default) the pinned theme stands.
             var followThePhone by remember { mutableStateOf(themeStore.followThePhone()) }
@@ -390,11 +385,6 @@ class MainActivity : FragmentActivity() {
                         // typography) and persisted for the next launch.
                         typefaceStore.select(chosen)
                         typeface = chosen
-                    },
-                    terminalFont = terminalFont,
-                    onSetTerminalFont = { chosen ->
-                        terminalFontStore.select(chosen)
-                        terminalFont = chosen
                     },
                 ) {
                 // The chrome follows the theme it renders: Paper's light page

@@ -98,4 +98,50 @@ class TypefaceStoreTest {
     fun `the system family is the platform default`() {
         assertEquals(FontFamily.Default, fontFamilyFor(AppTypeface.SYSTEM))
     }
+
+    @Test
+    fun `iosevka term is a choice with its own label`() {
+        assertTrue(AppTypeface.entries.contains(AppTypeface.IOSEVKA_TERM))
+        assertEquals("IosevkaTerm Nerd Font", AppTypeface.IOSEVKA_TERM.label)
+    }
+
+    @Test
+    fun `iosevka term ships regular and bold`() {
+        val face = requireNotNull(bundledFace(AppTypeface.IOSEVKA_TERM))
+        assertEquals(R.font.iosevkaterm_regular, face.regular)
+        assertEquals(R.font.iosevkaterm_bold, face.bold)
+    }
+
+    @Test
+    fun `the monospaced choice drives the terminal with its own face`() {
+        val resolution = terminalFaceFor(AppTypeface.IOSEVKA_TERM)
+        assertEquals(R.font.iosevkaterm_regular, resolution.regular)
+        assertEquals(R.font.iosevkaterm_bold, resolution.bold)
+        assertNull("IosevkaTerm ships no italic", resolution.italic)
+        assertNull("IosevkaTerm ships no bold-italic", resolution.boldItalic)
+        assertFalse("a monospaced choice must not fall back", resolution.fallback)
+    }
+
+    @Test
+    fun `every proportional choice falls back to the bundled monospace`() {
+        for (choice in AppTypeface.entries.filter { it != AppTypeface.IOSEVKA_TERM }) {
+            val resolution = terminalFaceFor(choice)
+            assertEquals("$choice falls back to JetBrains Mono regular", R.font.jetbrainsmono_regular, resolution.regular)
+            assertEquals(R.font.jetbrainsmono_bold, resolution.bold)
+            assertEquals(R.font.jetbrainsmono_italic, resolution.italic)
+            assertEquals(R.font.jetbrainsmono_bolditalic, resolution.boldItalic)
+            assertTrue("$choice is proportional and must fall back", resolution.fallback)
+        }
+    }
+
+    @Test
+    fun `fallback marks exactly the proportional choices`() {
+        for (choice in AppTypeface.entries) {
+            assertEquals(
+                "fallback must be true exactly for non-monospaced choices",
+                choice != AppTypeface.IOSEVKA_TERM,
+                terminalFaceFor(choice).fallback,
+            )
+        }
+    }
 }

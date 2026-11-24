@@ -310,10 +310,13 @@
     <string name="set_area_typeface_sub">La cara de la app, en este dispositivo.</string>
     <string name="set_typeface_family">Familia</string>
     <string name="set_typeface_value">Del sistema</string>
-    <string name="set_typeface_foot">La elección dibuja todas las pantallas de una vez y sobrevive un reinicio. Space Grotesk e IBM Plex Sans traen regular y negrita; Aldrich tiene un solo peso.</string>
+    <string name="set_typeface_mono">mono</string>
+    <string name="set_typeface_foot">La elección dibuja todas las pantallas de una vez y sobrevive un reinicio. Space Grotesk e IBM Plex Sans traen regular y negrita; Aldrich tiene un solo peso; IosevkaTerm trae regular y negrita y es monoespaciada.</string>
     <string name="set_area_terminal_font">Fuente de terminal</string>
     <string name="set_area_terminal_font_sub">La terminal y el campo de escritura, en este dispositivo.</string>
-    <string name="set_terminal_font_foot">IosevkaTerm Nerd Font es la predeterminada; JetBrains Mono queda como alternativa. La grilla se vuelve a medir para que el ancho de celda y la altura de línea sigan exactos.</string>
+    <string name="set_terminal_font_mono">%1$s · monoespaciada — es la que dibuja la terminal.</string>
+    <string name="set_terminal_font_fallback">JetBrains Mono (incluida) · la cara elegida es proporcional.</string>
+    <string name="set_terminal_font_foot">La terminal sigue a la tipografía cuando es monoespaciada; una cara proporcional cae a la JetBrains Mono incluida para que las columnas sigan alineadas.</string>
     <string name="set_area_about">Acerca de</string>
     <string name="set_area_about_sub">Versión y novedades.</string>
 

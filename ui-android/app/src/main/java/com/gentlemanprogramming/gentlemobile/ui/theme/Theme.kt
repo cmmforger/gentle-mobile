@@ -74,8 +74,6 @@ fun GentleMobileTheme(
     theme: AppTheme = AppTheme.default,
     typeface: AppTypeface = AppTypeface.default,
     onSetTypeface: (AppTypeface) -> Unit = {},
-    terminalFont: TerminalFont = TerminalFont.default,
-    onSetTerminalFont: (TerminalFont) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val palette = paletteOf(theme)
@@ -83,8 +81,6 @@ fun GentleMobileTheme(
         LocalPalette provides palette,
         LocalAppTypeface provides typeface,
         LocalOnSetTypeface provides onSetTypeface,
-        LocalTerminalFont provides terminalFont,
-        LocalOnSetTerminalFont provides onSetTerminalFont,
     ) {
         MaterialTheme(
             colorScheme = materialScheme(palette),

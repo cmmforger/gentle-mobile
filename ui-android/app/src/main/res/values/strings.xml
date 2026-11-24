@@ -309,10 +309,13 @@
     <string name="set_area_typeface_sub">The app\u2019s own face, on this device.</string>
     <string name="set_typeface_family">Family</string>
     <string name="set_typeface_value">System</string>
-    <string name="set_typeface_foot">The choice draws every screen at once, and survives a restart. Space Grotesk and IBM Plex Sans ship regular and bold; Aldrich is one weight.</string>
+    <string name="set_typeface_mono">mono</string>
+    <string name="set_typeface_foot">The choice draws every screen at once, and survives a restart. Space Grotesk and IBM Plex Sans ship regular and bold; Aldrich is one weight; IosevkaTerm ships regular and bold and is monospaced.</string>
     <string name="set_area_terminal_font">Terminal font</string>
     <string name="set_area_terminal_font_sub">The terminal and the draft field, on this device.</string>
-    <string name="set_terminal_font_foot">IosevkaTerm Nerd Font is the default; JetBrains Mono stays as the alternative. The grid re-measures itself so cell widths and line heights stay exact.</string>
+    <string name="set_terminal_font_mono">%1$s · monospaced — it drives the terminal.</string>
+    <string name="set_terminal_font_fallback">JetBrains Mono (bundled) · the chosen face is proportional.</string>
+    <string name="set_terminal_font_foot">The terminal follows the app typeface when it is monospaced; a proportional face falls back to the bundled JetBrains Mono so columns keep lining up.</string>
     <string name="set_area_about">About</string>
     <string name="set_area_about_sub">Version and what\u2019s new.</string>
 

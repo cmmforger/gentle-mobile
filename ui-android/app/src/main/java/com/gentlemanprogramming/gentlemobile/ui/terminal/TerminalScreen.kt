@@ -54,7 +54,7 @@ import com.gentlemanprogramming.gentlemobile.core.TerminalSession
 import com.gentlemanprogramming.gentlemobile.ui.session.ExtraKeyRowModel
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
-import com.gentlemanprogramming.gentlemobile.ui.theme.LocalTerminalFont
+import com.gentlemanprogramming.gentlemobile.ui.theme.LocalAppTypeface
 import kotlinx.coroutines.delay
 
 private val TERMINAL_FONT_SP = 14.sp
@@ -78,7 +78,7 @@ fun TerminalScreen(
 ) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
-    val terminalTypefaces = rememberTerminalTypefaces(LocalTerminalFont.current)
+    val terminalTypefaces = rememberTerminalTypefaces(LocalAppTypeface.current)
     var emulator by remember { mutableStateOf<TerminalEmulator?>(null) }
     var frameVersion by remember { mutableStateOf(0) }
     var closed by remember { mutableStateOf(false) }
@@ -489,7 +489,7 @@ fun fixtureTerminalBytes(): ByteArray = buildString {
 fun TerminalFixtureScreen(theme: AppTheme, onBack: () -> Unit) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
-    val terminalTypefaces = rememberTerminalTypefaces(LocalTerminalFont.current)
+    val terminalTypefaces = rememberTerminalTypefaces(LocalAppTypeface.current)
     val emulator = remember(theme) {
         TerminalEmulator(64, 24, terminalColors).apply { feed(fixtureTerminalBytes()) }
     }

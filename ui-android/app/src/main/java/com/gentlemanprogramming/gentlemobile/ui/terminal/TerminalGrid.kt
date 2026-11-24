@@ -18,8 +18,8 @@ import androidx.core.content.res.ResourcesCompat
 import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.core.CellDto
 import com.gentlemanprogramming.gentlemobile.core.SurfaceDto
-import com.gentlemanprogramming.gentlemobile.ui.theme.TerminalFont
-import com.gentlemanprogramming.gentlemobile.ui.theme.bundledTerminalFace
+import com.gentlemanprogramming.gentlemobile.ui.theme.AppTypeface
+import com.gentlemanprogramming.gentlemobile.ui.theme.terminalFaceFor
 
 /**
  * The terminal grid: a real cell renderer over the core's decoded surface
@@ -136,15 +136,16 @@ fun rememberTypefaces(): TerminalTypefaces {
     }
 }
 
-/** The terminal's own face (T44): the selected [TerminalFont]'s bundled
- *  weights, resolved once per choice. The herdr surface keeps
- *  [rememberTypefaces] (JetBrains Mono); this is the PTY terminal's grid. */
+/** The terminal's own face: the selected [AppTypeface]'s bundled weights
+ *  when it is monospaced, the bundled JetBrains Mono otherwise. The herdr
+ *  surface keeps [rememberTypefaces] (JetBrains Mono); this is the PTY
+ *  terminal's grid. */
 @Composable
-fun rememberTerminalTypefaces(choice: TerminalFont): TerminalTypefaces {
+fun rememberTerminalTypefaces(choice: AppTypeface): TerminalTypefaces {
     val context = LocalContext.current
     return remember(choice) {
         fun font(id: Int): Typeface? = runCatching { ResourcesCompat.getFont(context, id) }.getOrNull()
-        val face = bundledTerminalFace(choice)
+        val face = terminalFaceFor(choice)
         TerminalTypefaces(
             regular = font(face.regular),
             bold = face.bold?.let { font(it) },
