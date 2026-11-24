@@ -10,8 +10,11 @@ object TerminalKeys {
     fun bytesFor(key: String, ctrl: Boolean, alt: Boolean): ByteArray = when (key) {
         "esc" -> byteArrayOf(0x1B)
         "tab" -> byteArrayOf(0x09)
+        "enter" -> byteArrayOf(0x0D)
         "up" -> arrow('A', ctrl, alt)
         "down" -> arrow('B', ctrl, alt)
+        "right" -> arrow('C', ctrl, alt)
+        "left" -> arrow('D', ctrl, alt)
         else -> byteArrayOf()
     }
 

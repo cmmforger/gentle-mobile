@@ -64,8 +64,11 @@ import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.core.TerminalSession
 import com.gentlemanprogramming.gentlemobile.ui.session.Attachment
 import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentState
-import com.gentlemanprogramming.gentlemobile.ui.session.ExtraKeyRowModel
 import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
+import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutAction
+import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutKey
+import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutPad
+import com.gentlemanprogramming.gentlemobile.ui.session.bytes
 import com.gentlemanprogramming.gentlemobile.ui.session.formatBytes
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
@@ -119,6 +122,7 @@ fun TerminalScreen(
     cursorBlink: Boolean,
     useComposer: Boolean,
     sendOnEnter: Boolean,
+    shortcutPad: ShortcutPad,
 ) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
@@ -222,6 +226,7 @@ fun TerminalScreen(
             )
         }
         TerminalKeyRow(
+            pad = shortcutPad,
             composer = composer,
             onKey = { bytes -> session?.write(bytes) },
         )
@@ -336,36 +341,96 @@ private fun TerminalTopBar(title: String, onBack: () -> Unit, onOpenPanes: () ->
 }
 
 @Composable
-private fun TerminalKeyRow(composer: TerminalComposer, onKey: (ByteArray) -> Unit) {
-    fun press(id: String) {
-        val bytes = TerminalKeys.bytesFor(id, composer.ctrlSticky, composer.altSticky)
+private fun TerminalKeyRow(
+    pad: ShortcutPad,
+    composer: TerminalComposer,
+    onKey: (ByteArray) -> Unit,
+) {
+    fun press(key: ShortcutKey) {
+        val bytes = key.bytes(composer.ctrlSticky, composer.altSticky)
         if (bytes.isNotEmpty()) {
             onKey(bytes)
             composer.disarm()
         }
     }
 
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        ExtraKeyRowModel.terminalChips().forEach { chip ->
-            val pressed = chip.id == "ctrl" && composer.ctrlSticky ||
-                chip.id == "alt" && composer.altSticky
-            TerminalKeyChip(
-                label = chip.label,
-                pressed = pressed,
-                modifier = Modifier.weight(1f),
+        if (pad.joystickVisible) {
+            TerminalJoystick(onPress = ::press)
+        }
+        if (pad.visibleKeys.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                when (chip.kind) {
-                    ExtraKeyRowModel.Kind.STICKY -> {
-                        if (chip.id == "ctrl") composer.toggleCtrl() else composer.toggleAlt()
+                pad.visibleKeys.forEach { key ->
+                    val name = (key.action as? ShortcutAction.Key)?.name
+                    val pressed = name == "ctrl" && composer.ctrlSticky ||
+                        name == "alt" && composer.altSticky
+                    TerminalKeyChip(
+                        label = key.label,
+                        pressed = pressed,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        when (name) {
+                            "ctrl" -> composer.toggleCtrl()
+                            "alt" -> composer.toggleAlt()
+                            else -> press(key)
+                        }
                     }
-                    ExtraKeyRowModel.Kind.MOMENTARY -> press(chip.id)
                 }
             }
+        }
+    }
+}
+
+/** The joystick cluster (T52): up, left, Enter, right, down as its own unit. */
+@Composable
+private fun TerminalJoystick(onPress: (ShortcutKey) -> Unit) {
+    fun at(id: String): ShortcutKey = ShortcutPad.JOYSTICK.first { it.id == id }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 4.dp),
+    ) {
+        JoystickCell(at("joy_up"), onPress)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            JoystickCell(at("joy_left"), onPress)
+            JoystickCell(at("joy_enter"), onPress)
+            JoystickCell(at("joy_right"), onPress)
+        }
+        JoystickCell(at("joy_down"), onPress)
+    }
+}
+
+@Composable
+private fun JoystickCell(key: ShortcutKey, onPress: (ShortcutKey) -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        modifier = Modifier.size(44.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(30.dp)
+                .border(1.dp, palette.line, RoundedCornerShape(8.dp))
+                .background(palette.surfaceRaised, RoundedCornerShape(8.dp))
+                .clickable { onPress(key) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = key.label,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+            )
         }
     }
 }

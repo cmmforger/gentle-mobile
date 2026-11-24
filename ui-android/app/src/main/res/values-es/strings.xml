@@ -474,5 +474,32 @@
     <string name="err_transport">La conexión al host falló: %1$s</string>
     <string name="err_timeout">El host tardó demasiado en responder: %1$s</string>
 
+    <!-- Shortcuts (T52) -->
+    <string name="set_area_shortcuts">Atajos</string>
+    <string name="set_area_shortcuts_sub">Las teclas sobre el teclado, su orden y lo que envía cada una.</string>
+    <string name="shortcuts_title">Atajos</string>
+    <string name="shortcuts_intro">El pad va sobre el teclado en la terminal. Vos decidís qué teclas se ven, en qué orden y qué hace cada una.</string>
+    <string name="shortcuts_preview">Vista previa</string>
+    <string name="shortcuts_preview_empty">No hay nada en el pad — la terminal no muestra fila de teclas.</string>
+    <string name="shortcuts_joystick">Joystick</string>
+    <string name="shortcuts_joystick_sub">Las flechas con Enter en el medio.</string>
+    <string name="shortcuts_on_pad">En el pad</string>
+    <string name="shortcuts_hidden">Ocultas</string>
+    <string name="shortcuts_enable">Mostrar esta tecla</string>
+    <string name="shortcuts_disable">Ocultar esta tecla</string>
+    <string name="shortcuts_drag">Arrastrar para reordenar</string>
+    <string name="shortcuts_add">Agregar tecla</string>
+    <string name="shortcuts_open">Editar el pad</string>
+    <string name="shortcuts_add_title">Nueva tecla</string>
+    <string name="shortcuts_label_hint">Lo que dice la tecla</string>
+    <string name="shortcuts_action">Acción</string>
+    <string name="shortcuts_action_key">Tecla</string>
+    <string name="shortcuts_action_text">Texto</string>
+    <string name="shortcuts_text_hint">ej. echo hola</string>
+    <string name="shortcuts_send_enter">Enviar Enter después</string>
+    <string name="shortcuts_delete">Borrar</string>
+    <string name="shortcuts_delete_cd">Borrar %1$s</string>
+    <string name="shortcuts_delete_title">¿Borrar esta tecla?</string>
+    <string name="shortcuts_delete_body">%1$s sale del pad para siempre.</string>
 
 </resources>

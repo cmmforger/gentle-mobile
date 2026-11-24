@@ -218,8 +218,10 @@ import com.gentlemanprogramming.gentlemobile.security.requireBiometricUnlock
 import com.gentlemanprogramming.gentlemobile.ui.settings.SettingsScreen
 import com.gentlemanprogramming.gentlemobile.ui.settings.AdvancedSettings
 import com.gentlemanprogramming.gentlemobile.ui.settings.AdvancedSettingsStore
+import com.gentlemanprogramming.gentlemobile.ui.settings.ShortcutPadStore
+import com.gentlemanprogramming.gentlemobile.ui.settings.ShortcutsScreen
 import com.gentlemanprogramming.gentlemobile.ui.session.AddResult
-import com.gentlemanprogramming.gentlemobile.ui.session.ExtraKeyRowModel
+import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutPad
 import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
 import com.gentlemanprogramming.gentlemobile.ui.session.formatBytes
 import com.gentlemanprogramming.gentlemobile.ui.session.Attachment
@@ -342,6 +344,10 @@ class MainActivity : FragmentActivity() {
                 AdvancedSettingsStore(SharedPreferencesStore(this@MainActivity))
             }
             var advanced by remember { mutableStateOf(advancedStore.load()) }
+            val shortcutPadStore = remember {
+                ShortcutPadStore(SharedPreferencesStore(this@MainActivity))
+            }
+            var shortcutPad by remember { mutableStateOf(shortcutPadStore.load()) }
             // S33: Follow the phone — dark renders Cute, light renders Paper;
             // off (the default) the pinned theme stands.
             var followThePhone by remember { mutableStateOf(themeStore.followThePhone()) }
@@ -433,6 +439,7 @@ class MainActivity : FragmentActivity() {
                         followThePhone = followThePhone,
                         language = language,
                         advanced = advanced,
+                        shortcutPad = shortcutPad,
                         openAgentPane = openAgentPane,
                         onSetLanguage = { chosen ->
                             // Applied immediately (the composition provides
@@ -457,6 +464,10 @@ class MainActivity : FragmentActivity() {
                         onSetAdvanced = { settings ->
                             advanced = settings
                             advancedStore.save(settings)
+                        },
+                        onSetShortcutPad = { pad ->
+                            shortcutPad = pad
+                            shortcutPadStore.save(pad)
                         },
                     )
                 }
@@ -730,7 +741,7 @@ private class SessionUi {
 }
 
 /** The screens reachable from the Pair flow; the design shows back buttons. */
-private enum class Route { Main, Settings, Themes, Host, Sessions, StartSession, Resumed, Workspaces }
+private enum class Route { Main, Settings, Themes, Shortcuts, Host, Sessions, StartSession, Resumed, Workspaces }
 
 /** The words a resume or a prompt failure shows: typed refusals keep their
  *  exact message (the core's Display carries the reason), anything else
@@ -746,10 +757,12 @@ fun ConnectScreen(
     followThePhone: Boolean,
     language: AppLanguage,
     advanced: AdvancedSettings,
+    shortcutPad: ShortcutPad,
     onSetLanguage: (AppLanguage) -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     onSetFollowThePhone: (Boolean) -> Unit,
     onSetAdvanced: (AdvancedSettings) -> Unit,
+    onSetShortcutPad: (ShortcutPad) -> Unit,
     openAgentPane: androidx.compose.runtime.MutableState<String?>,
 ) {
     val screen = remember { ScreenState() }
@@ -1279,6 +1292,7 @@ fun ConnectScreen(
             connected = screen.ui is UiState.Connected,
             notificationsGranted = notificationsGranted,
             onOpenThemes = { route = Route.Themes },
+            onOpenShortcuts = { route = Route.Shortcuts },
             onToggleBiometric = { enabled ->
                 biometricEnabled = enabled
                 biometricStore.setEnabled(enabled)
@@ -1325,6 +1339,14 @@ fun ConnectScreen(
             current = appTheme,
             onSelect = onSelectTheme,
             // Board 06: the topbar's back returns to settings.
+            onBack = { route = Route.Settings },
+        )
+        return
+    }
+    if (route == Route.Shortcuts) {
+        ShortcutsScreen(
+            pad = shortcutPad,
+            onPadChange = onSetShortcutPad,
             onBack = { route = Route.Settings },
         )
         return
@@ -2924,6 +2946,7 @@ fun ConnectScreen(
                     cursorBlink = advanced.cursorBlink,
                     useComposer = advanced.useComposer,
                     sendOnEnter = advanced.sendOnEnter,
+                    shortcutPad = shortcutPad,
                 )
             }
         }
@@ -4692,11 +4715,13 @@ private fun ConnectScreenPreview() {
             followThePhone = false,
             language = AppLanguage.ENGLISH,
             advanced = AdvancedSettings(),
+            shortcutPad = ShortcutPad.DEFAULT,
             onSetLanguage = {},
             openAgentPane = androidx.compose.runtime.mutableStateOf<String?>(null),
             onSelectTheme = {},
             onSetFollowThePhone = {},
             onSetAdvanced = {},
+            onSetShortcutPad = {},
         )
     }
 }

@@ -107,6 +107,7 @@ fun SettingsScreen(
      *  `null` below Android 13, where there is nothing to deny. */
     notificationsGranted: Boolean?,
     onOpenThemes: () -> Unit,
+    onOpenShortcuts: () -> Unit,
     onToggleBiometric: (Boolean) -> Unit,
     onRevoke: () -> Unit,
     onDisconnect: () -> Unit,
@@ -329,6 +330,20 @@ fun SettingsScreen(
                 isMono = true,
                 onClick = { terminalFontPickerOpen = true },
                 trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        SettingsCard(
+            title = stringResource(R.string.set_area_shortcuts),
+            sub = stringResource(R.string.set_area_shortcuts_sub),
+            iconGlyph = "\u2318",
+        ) {
+            SettingRow(
+                name = stringResource(R.string.shortcuts_open),
+                sub = stringResource(R.string.shortcuts_intro),
+                onClick = onOpenShortcuts,
+                trailing = { Text("\u203A", color = p.muted, fontSize = 15.sp) },
             )
         }
 

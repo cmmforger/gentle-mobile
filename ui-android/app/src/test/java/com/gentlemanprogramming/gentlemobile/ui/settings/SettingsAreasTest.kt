@@ -22,6 +22,7 @@ class SettingsAreasTest {
                 SettingsArea.LANGUAGE,
                 SettingsArea.TYPEFACE,
                 SettingsArea.TERMINAL_FONT,
+                SettingsArea.SHORTCUTS,
                 SettingsArea.ADVANCED,
                 SettingsArea.ABOUT,
             ),

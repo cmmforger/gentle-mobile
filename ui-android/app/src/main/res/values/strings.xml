@@ -473,5 +473,32 @@
     <string name="err_transport">The connection to the host failed: %1$s</string>
     <string name="err_timeout">The host took too long to answer: %1$s</string>
 
+    <!-- Shortcuts (T52) -->
+    <string name="set_area_shortcuts">Shortcuts</string>
+    <string name="set_area_shortcuts_sub">The keys above the keyboard, their order and what each sends.</string>
+    <string name="shortcuts_title">Shortcuts</string>
+    <string name="shortcuts_intro">The pad sits above the keyboard in the terminal. You decide which keys show, in which order, and what each one does.</string>
+    <string name="shortcuts_preview">Preview</string>
+    <string name="shortcuts_preview_empty">Nothing is on the pad — the terminal shows no key row.</string>
+    <string name="shortcuts_joystick">Joystick</string>
+    <string name="shortcuts_joystick_sub">The arrows with Enter in the middle.</string>
+    <string name="shortcuts_on_pad">On the pad</string>
+    <string name="shortcuts_hidden">Hidden</string>
+    <string name="shortcuts_enable">Show this key</string>
+    <string name="shortcuts_disable">Hide this key</string>
+    <string name="shortcuts_drag">Drag to reorder</string>
+    <string name="shortcuts_add">Add key</string>
+    <string name="shortcuts_open">Edit the pad</string>
+    <string name="shortcuts_add_title">New key</string>
+    <string name="shortcuts_label_hint">What the chip reads</string>
+    <string name="shortcuts_action">Action</string>
+    <string name="shortcuts_action_key">Key</string>
+    <string name="shortcuts_action_text">Text</string>
+    <string name="shortcuts_text_hint">e.g. echo hola</string>
+    <string name="shortcuts_send_enter">Send Enter after it</string>
+    <string name="shortcuts_delete">Delete</string>
+    <string name="shortcuts_delete_cd">Delete %1$s</string>
+    <string name="shortcuts_delete_title">Delete this key?</string>
+    <string name="shortcuts_delete_body">%1$s leaves the pad for good.</string>
 
 </resources>

@@ -12,6 +12,7 @@ enum class SettingsArea {
     LANGUAGE,
     TYPEFACE,
     TERMINAL_FONT,
+    SHORTCUTS,
     ADVANCED,
     ABOUT,
 }
@@ -38,6 +39,7 @@ object SettingsAreas {
         SettingsArea.LANGUAGE,
         SettingsArea.TYPEFACE,
         SettingsArea.TERMINAL_FONT,
+        SettingsArea.SHORTCUTS,
         SettingsArea.ADVANCED,
         SettingsArea.ABOUT,
     )
