@@ -28,4 +28,16 @@ object ExtraKeyRowModel {
         Chip("down", "↓", Kind.MOMENTARY),
         Chip("c", "C", Kind.MOMENTARY),
     )
+
+    /** The real terminal's row (T46): the same row without the `C` chip —
+     *  Ctrl/Alt apply to the next character typed on the phone's keyboard,
+     *  so a dedicated `C` key is redundant. */
+    fun terminalChips(): List<Chip> = listOf(
+        Chip("esc", "Esc", Kind.MOMENTARY),
+        Chip("tab", "Tab", Kind.MOMENTARY),
+        Chip("ctrl", "Ctrl", Kind.STICKY),
+        Chip("alt", "Alt", Kind.STICKY),
+        Chip("up", "↑", Kind.MOMENTARY),
+        Chip("down", "↓", Kind.MOMENTARY),
+    )
 }

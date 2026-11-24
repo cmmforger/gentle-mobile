@@ -11,18 +11,18 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -46,6 +47,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,11 +64,12 @@ import kotlinx.coroutines.delay
 private val TERMINAL_FONT_SP = 14.sp
 
 /**
- * The real terminal (T42): the PTY's byte stream drawn as a cell grid, full
- * bleed. Top bar (back · panes · refresh, 44 dp) hides while the keyboard is
- * up; the key row above the terminal does the same. The soft keyboard sends
- * keystrokes straight to the PTY and the IME resize re-derives the grid and
- * re-asks the PTY (`window-change`).
+ * The real terminal (T46): the PTY's byte stream drawn as a cell grid, full
+ * bleed. The top bar (back · panes · refresh, 44 dp) stays tappable while
+ * the keyboard is up; the key row and the composer (field + send button)
+ * sit at the bottom above the IME. The soft keyboard sends keystrokes
+ * straight to the PTY — no capitalisation, autocorrect or suggestions — and
+ * the IME resize re-derives the grid and re-asks the PTY (`window-change`).
  */
 @Composable
 fun TerminalScreen(
@@ -85,8 +90,6 @@ fun TerminalScreen(
     var input by remember { mutableStateOf(TextFieldValue("")) }
     val composer = remember { TerminalComposer() }
 
-    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -94,12 +97,7 @@ fun TerminalScreen(
             .safeDrawingPadding()
             .imePadding(),
     ) {
-        if (!keyboardVisible) {
-            TerminalTopBar(title = title, onBack = onBack)
-        }
-        if (!keyboardVisible) {
-            TerminalKeyRow(onKey = { bytes -> session?.write(bytes) })
-        }
+        TerminalTopBar(title = title, onBack = onBack)
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
@@ -168,13 +166,22 @@ fun TerminalScreen(
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        TerminalInputField(
+        TerminalKeyRow(
+            composer = composer,
+            onKey = { bytes -> session?.write(bytes) },
+        )
+        TerminalComposerRow(
             enabled = session != null && !closed,
             value = input,
             onValueChange = { new ->
                 val delta = composer.commit(new.text)
                 if (delta.isNotEmpty()) session?.write(delta)
-                input = if (new.text.contains('\n')) TextFieldValue("") else new
+                input = if (composer.fieldText == new.text) new else TextFieldValue(composer.fieldText)
+            },
+            onSubmit = {
+                val delta = composer.submit()
+                if (delta.isNotEmpty()) session?.write(delta)
+                input = TextFieldValue(composer.fieldText)
             },
         )
     }
@@ -235,15 +242,13 @@ private fun TerminalTopBar(title: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun TerminalKeyRow(onKey: (ByteArray) -> Unit) {
-    var ctrlSticky by remember { mutableStateOf(false) }
-    var altSticky by remember { mutableStateOf(false) }
-
+private fun TerminalKeyRow(composer: TerminalComposer, onKey: (ByteArray) -> Unit) {
     fun press(id: String) {
-        val bytes = TerminalKeys.bytesFor(id, ctrlSticky, altSticky)
-        if (bytes.isNotEmpty()) onKey(bytes)
-        ctrlSticky = false
-        altSticky = false
+        val bytes = TerminalKeys.bytesFor(id, composer.ctrlSticky, composer.altSticky)
+        if (bytes.isNotEmpty()) {
+            onKey(bytes)
+            composer.disarm()
+        }
     }
 
     Row(
@@ -252,8 +257,9 @@ private fun TerminalKeyRow(onKey: (ByteArray) -> Unit) {
             .padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        ExtraKeyRowModel.chips().forEach { chip ->
-            val pressed = chip.id == "ctrl" && ctrlSticky || chip.id == "alt" && altSticky
+        ExtraKeyRowModel.terminalChips().forEach { chip ->
+            val pressed = chip.id == "ctrl" && composer.ctrlSticky ||
+                chip.id == "alt" && composer.altSticky
             TerminalKeyChip(
                 label = chip.label,
                 pressed = pressed,
@@ -261,8 +267,7 @@ private fun TerminalKeyRow(onKey: (ByteArray) -> Unit) {
             ) {
                 when (chip.kind) {
                     ExtraKeyRowModel.Kind.STICKY -> {
-                        if (chip.id == "ctrl") ctrlSticky = !ctrlSticky
-                        else altSticky = !altSticky
+                        if (chip.id == "ctrl") composer.toggleCtrl() else composer.toggleAlt()
                     }
                     ExtraKeyRowModel.Kind.MOMENTARY -> press(chip.id)
                 }
@@ -313,35 +318,65 @@ private fun TerminalKeyChip(
 }
 
 @Composable
-private fun TerminalInputField(
+private fun TerminalComposerRow(
     enabled: Boolean,
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
+    onSubmit: () -> Unit,
 ) {
     val palette = LocalPalette.current
-    Box(
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 6.dp)
-            .border(1.dp, palette.line, RoundedCornerShape(8.dp))
-            .background(palette.surfaceRaised, RoundedCornerShape(8.dp))
-            .height(44.dp)
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.CenterStart,
+            .padding(horizontal = 4.dp, vertical = 6.dp),
     ) {
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            enabled = enabled,
-            singleLine = false,
-            textStyle = TextStyle(
-                color = if (enabled) MaterialTheme.colorScheme.onBackground else palette.textDisabled,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.Monospace,
-            ),
-            keyboardOptions = KeyboardOptions(),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .weight(1f)
+                .height(44.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(palette.surfaceRaised, RoundedCornerShape(8.dp))
+                .border(1.dp, palette.line, RoundedCornerShape(8.dp))
+                .padding(horizontal = 12.dp),
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                enabled = enabled,
+                singleLine = true,
+                textStyle = TextStyle(
+                    color = if (enabled) MaterialTheme.colorScheme.onBackground else palette.textDisabled,
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.Monospace,
+                ),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrectEnabled = false,
+                    keyboardType = KeyboardType.Ascii,
+                    imeAction = ImeAction.Send,
+                ),
+                keyboardActions = KeyboardActions(onSend = { onSubmit() }),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(palette.accent)
+                .clickable(enabled = enabled, onClick = onSubmit),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_send),
+                contentDescription = stringResource(R.string.cd_send),
+                tint = palette.bg,
+                modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
 
