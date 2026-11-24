@@ -49,11 +49,6 @@
     <string name="pair_manual_label">Manual setup</string>
     <string name="pair_manual_hint">The phone\u2019s key, the host command and the gc:// link, for when there is no QR to scan.</string>
 
-    <!-- Manual setup (T50): the host command block, not a form -->
-    <string name="pair_host_block_title">On the computer</string>
-    <string name="pair_host_block_note">It prints a QR to scan with the phone — update it on the computer when the app updates.</string>
-    <string name="pair_phone_vpn">Phone: connect Tailscale (or any VPN) so it can reach the host.</string>
-
     <!-- Host key fingerprint carried by the link (S25-3): shown before connecting -->
     <string name="pair_fp_label">Host key fingerprint</string>
     <string name="pair_fp_hint">Compare it with what the host prints before connecting.</string>
@@ -349,6 +344,8 @@
     <string name="set_sort_sessions_by_name_sub">Sessions list by project name, not newest first.</string>
     <string name="set_area_about">About</string>
     <string name="set_area_about_sub">Version and what\u2019s new.</string>
+    <string name="set_area_hooks">Hooks</string>
+    <string name="set_area_hooks_sub">Install and connect this phone from your computer.</string>
 
     <string name="set_device_key">Device key</string>
     <string name="set_device_key_error">The identity could not be read.</string>
@@ -403,6 +400,33 @@
     <string name="set_confirm_revoke_title">Revoke on this device?</string>
     <string name="set_confirm_revoke_body">This wipes this phone\u2019s key and every saved host. The host still trusts the old key until you run gentle-mobile-pair --revoke on it — the app cannot run that for you: it holds only this phone\u2019s key, never a shell on the host.</string>
     <string name="set_confirm_revoke">Revoke</string>
+
+    <!-- Hooks screen (T55): the commands that really exist in this repo's
+         helper, this phone's key fingerprint, and the measured status. -->
+    <string name="hooks_title">Hooks</string>
+    <string name="hooks_open">Open</string>
+    <string name="hooks_open_sub">The commands to run, this phone\u2019s key, and the status.</string>
+    <string name="hooks_intro">Pair once from your computer and this phone can reach the host over SSH. The host keeps only this phone\u2019s key — nothing else is trusted.</string>
+    <string name="hooks_steps">Steps</string>
+    <string name="hooks_tab_mac_linux">macOS/Linux</string>
+    <string name="hooks_tab_windows">Windows</string>
+    <string name="hooks_mac_note">Pairing prints a QR; status lists trusted keys; revoke removes them.</string>
+    <string name="hooks_windows_note">The helper is a POSIX script — it runs under WSL or Git Bash; there is no native Windows path yet.</string>
+    <string name="hooks_identity_label">This phone\u2019s key</string>
+    <string name="hooks_identity_loading">Reading this phone\u2019s key\u2026</string>
+    <string name="hooks_identity_sub">The fingerprint of the key this phone signs in with.</string>
+    <string name="hooks_regenerate">Regenerate pairing</string>
+    <string name="hooks_regenerate_note">Regenerating invalidates the previous QR — pair again from the computer.</string>
+    <string name="hooks_regenerate_confirm_title">Regenerate pairing?</string>
+    <string name="hooks_regenerate_confirm_body">This phone gets a new key. The previous QR stops working and the host must trust the new key.</string>
+    <string name="hooks_status_label">Status</string>
+    <string name="hooks_status_check">Check</string>
+    <string name="hooks_status_checking">Checking\u2026</string>
+    <string name="hooks_status_connect_first">Connect first — the phone must be connected to ask the host.</string>
+    <string name="hooks_status_registered">Registered — the host trusts this phone\u2019s key.</string>
+    <string name="hooks_status_not_registered">Not registered — the host does not have this phone\u2019s key.</string>
+    <string name="hooks_status_cannot_tell">Cannot tell</string>
+    <string name="hooks_status_cannot_tell_reason">Cannot tell — %1$s</string>
 
     <!-- Theme picker -->
     <string name="theme_title">Theme</string>

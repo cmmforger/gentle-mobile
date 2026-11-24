@@ -153,6 +153,7 @@ import com.gentlemanprogramming.gentlemobile.core.TabDto
 import com.gentlemanprogramming.gentlemobile.core.TerminalSession
 import com.gentlemanprogramming.gentlemobile.core.UploadProgressListener
 import com.gentlemanprogramming.gentlemobile.core.composePrompt as coreComposePrompt
+import com.gentlemanprogramming.gentlemobile.core.checkDeviceKeyRegistered
 import com.gentlemanprogramming.gentlemobile.core.planUpload as corePlanUpload
 import com.gentlemanprogramming.gentlemobile.core.connect as coreConnect
 import com.gentlemanprogramming.gentlemobile.core.defaultSessionsDir
@@ -197,13 +198,13 @@ import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsModel
 import com.gentlemanprogramming.gentlemobile.ui.sessions.SessionsScreen
 import com.gentlemanprogramming.gentlemobile.ui.sessions.StartSessionScreen
 import com.gentlemanprogramming.gentlemobile.identity.DeviceIdentity
+import com.gentlemanprogramming.gentlemobile.identity.DeviceKeyFingerprint
 import com.gentlemanprogramming.gentlemobile.pair.ConnectValidator
 import com.gentlemanprogramming.gentlemobile.pair.FingerprintCheck
 import com.gentlemanprogramming.gentlemobile.pair.HostStore
 import com.gentlemanprogramming.gentlemobile.pair.HostsStore
 import com.gentlemanprogramming.gentlemobile.pair.KnownHostsFile
 import com.gentlemanprogramming.gentlemobile.pair.PairClient
-import com.gentlemanprogramming.gentlemobile.pair.PairCommand
 import com.gentlemanprogramming.gentlemobile.pair.PairLink
 import com.gentlemanprogramming.gentlemobile.pair.PairLinkResult
 import com.gentlemanprogramming.gentlemobile.pair.PairParams
@@ -215,7 +216,10 @@ import com.gentlemanprogramming.gentlemobile.security.BiometricUnlockStore
 import com.gentlemanprogramming.gentlemobile.security.biometricDecision
 import com.gentlemanprogramming.gentlemobile.security.parseHostSpec
 import com.gentlemanprogramming.gentlemobile.security.requireBiometricUnlock
+import com.gentlemanprogramming.gentlemobile.ui.settings.HooksScreen
+import com.gentlemanprogramming.gentlemobile.ui.settings.HooksStatus
 import com.gentlemanprogramming.gentlemobile.ui.settings.SettingsScreen
+import com.gentlemanprogramming.gentlemobile.ui.settings.mapHooksStatus
 import com.gentlemanprogramming.gentlemobile.ui.settings.AdvancedSettings
 import com.gentlemanprogramming.gentlemobile.ui.settings.AdvancedSettingsStore
 import com.gentlemanprogramming.gentlemobile.ui.settings.ShortcutPadStore
@@ -741,7 +745,7 @@ private class SessionUi {
 }
 
 /** The screens reachable from the Pair flow; the design shows back buttons. */
-private enum class Route { Main, Settings, Themes, Shortcuts, Host, Sessions, StartSession, Resumed, Workspaces }
+private enum class Route { Main, Settings, Themes, Shortcuts, Hooks, Host, Sessions, StartSession, Resumed, Workspaces }
 
 /** The words a resume or a prompt failure shows: typed refusals keep their
  *  exact message (the core's Display carries the reason), anything else
@@ -787,6 +791,11 @@ fun ConnectScreen(
     }
 
     var route by remember { mutableStateOf(Route.Main) }
+
+    // T55 (Hooks): the host's answer about this phone's key, and whether a
+    // check is in flight — re-asked on screen entry and on demand.
+    var hooksStatus by remember { mutableStateOf<HooksStatus?>(null) }
+    var hooksChecking by remember { mutableStateOf(false) }
 
     // S25: the form starts from the last connection (the optional Name
     // label travels with it, kept for the multi-host work), empty on
@@ -862,6 +871,37 @@ fun ConnectScreen(
         }
     }
 
+    /** T55 (Hooks): ask the host, over the pinned SFTP lane, whether this
+     *  phone's key is in its authorized_keys — a truthful word, never a
+     *  guess. Without a live connection there is nothing to ask. */
+    fun runHooksCheck() {
+        val profile = screen.profile
+        val line = identity?.publicKeyLine
+        if (screen.ui !is UiState.Connected || profile == null || line == null) {
+            hooksChecking = false
+            hooksStatus = HooksStatus.ConnectFirst
+            return
+        }
+        val keyType = DeviceKeyFingerprint.keyType(line) ?: return
+        val keyBlob = DeviceKeyFingerprint.keyBlob(line) ?: return
+        hooksChecking = true
+        hooksStatus = null
+        executor.execute {
+            try {
+                val registered = checkDeviceKeyRegistered(profile, keyType, keyBlob)
+                mainHandler.post {
+                    hooksChecking = false
+                    hooksStatus = mapHooksStatus(connected = true, registered = registered, error = null)
+                }
+            } catch (error: Exception) {
+                mainHandler.post {
+                    hooksChecking = false
+                    hooksStatus = mapHooksStatus(connected = true, registered = null, error = describe(context, error))
+                }
+            }
+        }
+    }
+
     // The biometric gate (T18): when the switch is on and the device can
     // enforce it, a BiometricPrompt stands between the user and the gated
     // action — opening a session, or an explicit connect, which is the
@@ -882,6 +922,9 @@ fun ConnectScreen(
     LaunchedEffect(route) {
         if (route == Route.Settings) {
             refreshBiometrics()
+        }
+        if (route == Route.Hooks) {
+            runHooksCheck()
         }
     }
 
@@ -1293,6 +1336,7 @@ fun ConnectScreen(
             notificationsGranted = notificationsGranted,
             onOpenThemes = { route = Route.Themes },
             onOpenShortcuts = { route = Route.Shortcuts },
+            onOpenHooks = { route = Route.Hooks },
             onToggleBiometric = { enabled ->
                 biometricEnabled = enabled
                 biometricStore.setEnabled(enabled)
@@ -1347,6 +1391,31 @@ fun ConnectScreen(
         ShortcutsScreen(
             pad = shortcutPad,
             onPadChange = onSetShortcutPad,
+            onBack = { route = Route.Settings },
+        )
+        return
+    }
+    if (route == Route.Hooks) {
+        HooksScreen(
+            fingerprint = identity?.publicKeyLine?.let { DeviceKeyFingerprint.fingerprint(it) },
+            status = hooksStatus,
+            checking = hooksChecking,
+            onCheckStatus = { runHooksCheck() },
+            onRegenerate = {
+                // T55: a new key means new trust — the previous QR stops
+                // working and the host must trust the new key.
+                executor.execute {
+                    try {
+                        val fresh = DeviceIdentity.regenerate(context)
+                        mainHandler.post {
+                            identity = fresh
+                            runHooksCheck()
+                        }
+                    } catch (error: Exception) {
+                        mainHandler.post { identityError = describe(context, error) }
+                    }
+                }
+            },
             onBack = { route = Route.Settings },
         )
         return
@@ -1657,7 +1726,6 @@ fun ConnectScreen(
     var pairLink by remember { mutableStateOf("") }
     var pairError by remember { mutableStateOf<String?>(null) }
     var cameraMessage by remember { mutableStateOf<String?>(null) }
-    var copiedCommand by remember { mutableStateOf(false) }
     // S25-1: per-field validation messages — one per field, set on submit.
     var hostError by remember { mutableStateOf<String?>(null) }
     var portError by remember { mutableStateOf<String?>(null) }
@@ -2484,53 +2552,6 @@ fun ConnectScreen(
                         fontSize = 11.sp,
                     )
                 }
-                Spacer(Modifier.height(12.dp))
-                Hairline()
-
-                // The host commands (T50): what runs on the PC — the real
-                // gentle-mobile pair in a mono block with a copy button,
-                // a note about keeping it current, and the phone-side line.
-                Spacer(Modifier.height(8.dp))
-                BlockLabel(stringResource(R.string.pair_host_block_title))
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text(
-                        text = PairCommand.pair(),
-                        color = MaterialTheme.colorScheme.onBackground,
-                        fontSize = 13.sp,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(LocalPalette.current.surfaceRaised, RoundedCornerShape(8.dp))
-                            .padding(12.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    GhostButton(
-                        label = stringResource(R.string.pair_copy),
-                        onClick = {
-                            clipboard.setText(AnnotatedString(PairCommand.pair()))
-                            copiedCommand = true
-                        },
-                    )
-                }
-                if (copiedCommand) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(R.string.pair_copied),
-                        color = LocalPalette.current.accent,
-                        fontSize = 11.sp,
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.pair_host_block_note),
-                    color = LocalPalette.current.muted,
-                    fontSize = 11.sp,
-                )
-                Text(
-                    text = stringResource(R.string.pair_phone_vpn),
-                    color = LocalPalette.current.muted,
-                    fontSize = 11.sp,
-                )
             }
 
             is UiState.Challenge -> {
@@ -3730,18 +3751,6 @@ private fun decodeThumbnail(context: android.content.Context, uri: Uri): ImageBi
 }
 
 @Composable
-private fun BlockLabel(text: String) {
-    // design/system.md: uppercase meta labels, one step smaller and muted.
-    Text(
-        text = text.uppercase(),
-        color = LocalPalette.current.muted,
-        fontSize = 11.sp,
-        letterSpacing = 0.8.sp,
-    )
-    Spacer(Modifier.height(6.dp))
-}
-
-@Composable
 private fun Hairline() {
     // 01-pair.html: blocks separated by a 1px line on the same surface —
     // never a nested card.
@@ -3753,26 +3762,6 @@ private fun Hairline() {
     )
     Spacer(Modifier.height(12.dp))
 }
-
-@Composable
-private fun GhostButton(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = modifier.height(44.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = MaterialTheme.colorScheme.onBackground,
-        ),
-    ) {
-        Text(label, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-
 
 @Composable
 private fun Notice(message: String, color: androidx.compose.ui.graphics.Color) {

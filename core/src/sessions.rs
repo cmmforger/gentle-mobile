@@ -849,6 +849,66 @@ async fn canonical_home(sftp: &russh_sftp::client::SftpSession) -> Result<String
         }))
 }
 
+/// True when an `authorized_keys` file carries this phone's key. The host's
+/// own "already trusted" check (the pairing listener) tests exactly
+/// `"{key_type} {key_blob}" in existing`, so the same substring semantic is
+/// used here — a comment that happens to contain the blob cannot change the
+/// answer, and the match is deliberately comment-insensitive (the host
+/// rewrites the trailing comment with its `gentle-mobile-…` marker).
+pub fn authorized_keys_contains_key(text: &str, key_type: &str, key_blob: &str) -> bool {
+    text.lines().any(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            return false;
+        }
+        let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+        // The type and the base64 blob are consecutive tokens; any options
+        // precede them, and a comment that names another key never counts.
+        tokens.windows(2).any(|pair| pair[0] == key_type && pair[1] == key_blob)
+    })
+}
+
+/// Ask the host, over the pinned one-shot SSH + SFTP lane (the same lane the
+/// lease and browse work uses — never the host's login shell), whether this
+/// phone's key is present in `~/.ssh/authorized_keys`. A missing file means
+/// nothing is trusted (not registered); a read failure is a typed error, so
+/// the UI can say "cannot tell" with the reason instead of guessing no.
+pub async fn check_device_key_registered_over_sftp(
+    profile: &HostProfile,
+    key_type: &str,
+    key_blob: &str,
+) -> Result<bool, HubError> {
+    let (ssh, sftp) = connect_sftp(profile).await?;
+    let outcome = async {
+        let home = canonical_home(&sftp).await?;
+        let path = format!("{home}/.ssh/authorized_keys");
+        let exists = sftp
+            .try_exists(&path)
+            .await
+            .map_err(|error| HubError::Request(RequestError::Transport {
+                detail: format!("the authorized_keys file could not be checked: {error}"),
+            }))?
+        ;
+        if !exists {
+            return Ok(false);
+        }
+        let bytes = sftp
+            .read(&path)
+            .await
+            .map_err(|error| HubError::Request(RequestError::Transport {
+                detail: format!("the authorized_keys file could not be read: {error}"),
+            }))?
+        ;
+        let text = String::from_utf8_lossy(&bytes);
+        Ok(authorized_keys_contains_key(&text, key_type, key_blob))
+    }
+    .await;
+    let _ = ssh
+        .disconnect(russh::Disconnect::ByApplication, "", "en")
+        .await;
+    outcome
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -876,6 +936,36 @@ mod tests {
         assert!(!is_session_file_name("leases.json"));
         assert!(!is_session_file_name("notes.txt"));
         assert!(!is_session_file_name("20261120_9f1c2f61.jsonl.bak"));
+    }
+
+    // --- authorized_keys_contains_key ----------------------------------------
+
+    #[test]
+    fn the_hosts_own_line_matches_regardless_of_comment() {
+        // The pairing listener rewrites the trailing comment with its own
+        // `gentle-mobile-<timestamp>` marker; the key type + blob is what
+        // decides trust, never the comment.
+        let file = "ssh-ed25519 AAAAk1 gentle-mobile-20261120-115353\n";
+        assert!(authorized_keys_contains_key(file, "ssh-ed25519", "AAAAk1"));
+    }
+
+    #[test]
+    fn a_different_key_or_type_does_not_match() {
+        let file = "ssh-ed25519 AAAAk1 gentle-mobile@phone\nssh-rsa BBBBk2 someone\n";
+        assert!(!authorized_keys_contains_key(file, "ssh-ed25519", "AAAAk9"));
+        assert!(!authorized_keys_contains_key(file, "ssh-rsa", "AAAAk1"));
+    }
+
+    #[test]
+    fn a_comment_containing_the_blob_is_not_a_match() {
+        // A malicious comment that names another key must not count as trust.
+        let file = "# ssh-ed25519 AAAAk1 not really a key\nssh-ed25519 BBBBk2 real\n";
+        assert!(!authorized_keys_contains_key(file, "ssh-ed25519", "AAAAk1"));
+    }
+
+    #[test]
+    fn an_empty_file_never_matches() {
+        assert!(!authorized_keys_contains_key("", "ssh-ed25519", "AAAAk1"));
     }
 
     // --- parse_session_file ---------------------------------------------------

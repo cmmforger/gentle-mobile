@@ -109,6 +109,7 @@ fun SettingsScreen(
     notificationsGranted: Boolean?,
     onOpenThemes: () -> Unit,
     onOpenShortcuts: () -> Unit,
+    onOpenHooks: () -> Unit,
     onToggleBiometric: (Boolean) -> Unit,
     onRevoke: () -> Unit,
     onDisconnect: () -> Unit,
@@ -248,6 +249,20 @@ fun SettingsScreen(
                     trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
                 )
             }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        SettingsCard(
+            title = stringResource(R.string.set_area_hooks),
+            sub = stringResource(R.string.set_area_hooks_sub),
+            iconGlyph = "\u2192",
+        ) {
+            SettingRow(
+                name = stringResource(R.string.hooks_open),
+                sub = stringResource(R.string.hooks_open_sub),
+                onClick = onOpenHooks,
+                trailing = { Text("›", color = p.muted, fontSize = 15.sp) },
+            )
         }
 
         Spacer(Modifier.height(12.dp))

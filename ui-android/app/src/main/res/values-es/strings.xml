@@ -50,11 +50,6 @@
     <string name="pair_manual_label">Configuración manual</string>
     <string name="pair_manual_hint">La clave del teléfono, el comando del host y el enlace gc://, para cuando no hay un QR para escanear.</string>
 
-    <!-- Configuración manual (T50): el bloque de comandos del host, no un formulario -->
-    <string name="pair_host_block_title">En la computadora</string>
-    <string name="pair_host_block_note">Imprime un QR para escanear con el teléfono — actualizalo en la computadora cuando se actualice la app.</string>
-    <string name="pair_phone_vpn">Teléfono: conectá Tailscale (u otra VPN) para llegar al host.</string>
-
     <!-- Huella de la clave del host que trae el enlace (S25-3): se muestra antes de conectar -->
     <string name="pair_fp_label">Huella de la clave del host</string>
     <string name="pair_fp_hint">Comparala con lo que imprime el host antes de conectar.</string>
@@ -350,6 +345,8 @@
     <string name="set_sort_sessions_by_name_sub">Las sesiones se listan por nombre de proyecto, no por las más nuevas.</string>
     <string name="set_area_about">Acerca de</string>
     <string name="set_area_about_sub">Versión y novedades.</string>
+    <string name="set_area_hooks">Hooks</string>
+    <string name="set_area_hooks_sub">Instalá y conectá este teléfono desde tu computadora.</string>
 
     <string name="set_device_key">Clave del dispositivo</string>
     <string name="set_device_key_error">No se pudo leer la identidad.</string>
@@ -404,6 +401,32 @@
     <string name="set_confirm_revoke_title">¿Revocar en este dispositivo?</string>
     <string name="set_confirm_revoke_body">Esto borra la clave de este teléfono y todos los hosts guardados. El host todavía confía en la clave vieja hasta que ejecutes gentle-mobile-pair --revoke ahí — la app no puede hacerlo por vos: solo tiene la clave de este teléfono, nunca una shell en el host.</string>
     <string name="set_confirm_revoke">Revocar</string>
+
+    <!-- Pantalla Hooks (T55) -->
+    <string name="hooks_title">Hooks</string>
+    <string name="hooks_open">Abrir</string>
+    <string name="hooks_open_sub">Los comandos para ejecutar, la clave de este teléfono y el estado.</string>
+    <string name="hooks_intro">Emparejá una vez desde tu computadora y este teléfono puede llegar al host por SSH. El host guarda solo la clave de este teléfono — y nada más.</string>
+    <string name="hooks_steps">Pasos</string>
+    <string name="hooks_tab_mac_linux">macOS/Linux</string>
+    <string name="hooks_tab_windows">Windows</string>
+    <string name="hooks_mac_note">Emparejar imprime un QR; status lista las claves confiadas; revoke las quita.</string>
+    <string name="hooks_windows_note">El helper es un script POSIX — corre bajo WSL o Git Bash; todavía no hay un camino nativo en Windows.</string>
+    <string name="hooks_identity_label">Clave de este teléfono</string>
+    <string name="hooks_identity_loading">Leyendo la clave de este teléfono\u2026</string>
+    <string name="hooks_identity_sub">La huella de la clave con la que entra este teléfono.</string>
+    <string name="hooks_regenerate">Regenerar emparejamiento</string>
+    <string name="hooks_regenerate_note">Regenerar invalida el QR anterior — emparejá de nuevo desde la computadora.</string>
+    <string name="hooks_regenerate_confirm_title">¿Regenerar emparejamiento?</string>
+    <string name="hooks_regenerate_confirm_body">Este teléfono genera una clave nueva. El QR anterior deja de funcionar y el host debe confiar en la clave nueva.</string>
+    <string name="hooks_status_label">Estado</string>
+    <string name="hooks_status_check">Verificar</string>
+    <string name="hooks_status_checking">Verificando\u2026</string>
+    <string name="hooks_status_connect_first">Conectate primero — el teléfono debe estar conectado para preguntarle al host.</string>
+    <string name="hooks_status_registered">Registrado — el host confía en la clave de este teléfono.</string>
+    <string name="hooks_status_not_registered">No registrado — el host no tiene la clave de este teléfono.</string>
+    <string name="hooks_status_cannot_tell">No se puede saber</string>
+    <string name="hooks_status_cannot_tell_reason">No se puede saber — %1$s</string>
 
     <!-- Selector de tema -->
     <string name="theme_title">Tema</string>

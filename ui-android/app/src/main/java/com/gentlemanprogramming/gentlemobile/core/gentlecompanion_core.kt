@@ -701,6 +701,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_acquire_lease(
     ): Int
+    external fun uniffi_gentlecompanion_core_checksum_func_check_device_key_registered(
+    ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_check_host_dir(
     ): Int
     external fun uniffi_gentlecompanion_core_checksum_func_compose_prompt(
@@ -924,6 +926,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_gentlecompanion_core_fn_func_acquire_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_gentlecompanion_core_fn_func_check_device_key_registered(`profile`: RustBuffer.ByValue,`keyType`: RustBuffer.ByValue,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     external fun uniffi_gentlecompanion_core_fn_func_check_host_dir(`profile`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_gentlecompanion_core_fn_func_compose_prompt(`text`: RustBuffer.ByValue,`imageSuffixes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1073,6 +1077,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_acquire_lease() and 0xFFFF) != 59390) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_gentlecompanion_core_checksum_func_check_device_key_registered() and 0xFFFF) != 41935) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_gentlecompanion_core_checksum_func_check_host_dir() and 0xFFFF) != 18356) {
@@ -6208,6 +6215,29 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
         FfiConverterString.lower(`sessionId`),
         FfiConverterString.lower(`deviceId`),
         FfiConverterString.lower(`token`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Whether the host's `~/.ssh/authorized_keys` already trusts this phone's
+         * key, read over the pinned one-shot SSH + SFTP lane (T55) — never the
+         * host's login shell. `key_type` + `key_blob` are the first two tokens of
+         * the phone's public line, so the answer is comment-insensitive (the host
+         * rewrites the trailing comment with its own marker). `Ok(false)` is the
+         * honest "not registered"; any read failure is a typed error so the UI
+         * says "cannot tell" with the reason instead of guessing no.
+         */
+    @Throws(CompanionException::class) fun `checkDeviceKeyRegistered`(`profile`: HostProfileDto, `keyType`: kotlin.String, `keyBlob`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCallWithError(CompanionException) { _status ->
+    UniffiLib.uniffi_gentlecompanion_core_fn_func_check_device_key_registered(
+    
+        
+        FfiConverterTypeHostProfileDto.lower(`profile`),
+        FfiConverterString.lower(`keyType`),
+        FfiConverterString.lower(`keyBlob`),_status)
 }
     )
     }

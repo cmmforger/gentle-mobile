@@ -1629,6 +1629,34 @@ pub fn check_host_dir(profile: HostProfileDto, path: String) -> Result<DirCheckD
     })
 }
 
+/// Whether the host's `~/.ssh/authorized_keys` already trusts this phone's
+/// key, read over the pinned one-shot SSH + SFTP lane (T55) — never the
+/// host's login shell. `key_type` + `key_blob` are the first two tokens of
+/// the phone's public line, so the answer is comment-insensitive (the host
+/// rewrites the trailing comment with its own marker). `Ok(false)` is the
+/// honest "not registered"; any read failure is a typed error so the UI
+/// says "cannot tell" with the reason instead of guessing no.
+#[uniffi::export]
+pub fn check_device_key_registered(
+    profile: HostProfileDto,
+    key_type: String,
+    key_blob: String,
+) -> Result<bool, CompanionError> {
+    let profile = profile.into_core();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| CompanionError::Transport {
+            detail: format!("the status runtime could not start: {error}"),
+        })?
+        .block_on(crate::sessions::check_device_key_registered_over_sftp(
+            &profile,
+            &key_type,
+            &key_blob,
+        ))
+        .map_err(CompanionError::from)
+}
+
 /// List the pinned hosts from the app's known_hosts store. Junk lines and
 /// hashed entries the core does not understand are skipped, never errors; a
 /// missing file is an empty list.
