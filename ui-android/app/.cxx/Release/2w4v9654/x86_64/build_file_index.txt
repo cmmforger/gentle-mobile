@@ -1,0 +1,6 @@
+/mnt/D-SSD/personal/projects/gentle-mobile/ui-android/app/src/main/cpp/CMakeLists.txt
+/mnt/D-SSD/personal/projects/gentle-mobile/ui-android/app/src/main/cpp/whisper/ggml/CMakeLists.txt
+/mnt/D-SSD/personal/projects/gentle-mobile/ui-android/app/src/main/cpp/whisper/ggml/cmake/common.cmake
+/mnt/D-SSD/personal/projects/gentle-mobile/ui-android/app/src/main/cpp/whisper/ggml/cmake/ggml-config.cmake.in
+/mnt/D-SSD/personal/projects/gentle-mobile/ui-android/app/src/main/cpp/whisper/ggml/src/CMakeLists.txt
+/mnt/D-SSD/personal/projects/gentle-mobile/ui-android/app/src/main/cpp/whisper/ggml/src/ggml-cpu/CMakeLists.txt

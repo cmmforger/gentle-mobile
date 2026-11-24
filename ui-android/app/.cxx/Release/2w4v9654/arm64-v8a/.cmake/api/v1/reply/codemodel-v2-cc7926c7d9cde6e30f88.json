@@ -1,0 +1,164 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-Release-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.6.0"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						3,
+						4
+					]
+				},
+				{
+					"build" : "ggml",
+					"childIndexes" : 
+					[
+						2
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-ggml-Release-5c312d2d1d6c65f162e8.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "whisper/ggml"
+				},
+				{
+					"build" : "ggml/src",
+					"childIndexes" : 
+					[
+						3
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-ggml.src-Release-96b923eb17d24a865980.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 1,
+					"projectIndex" : 1,
+					"source" : "whisper/ggml/src",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				},
+				{
+					"build" : "ggml/src/ggml-cpu",
+					"jsonFile" : "directory-ggml.src.ggml-cpu-Release-0deb80d7d1e969ee6277.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 2,
+					"projectIndex" : 1,
+					"source" : "whisper/ggml/src/ggml-cpu"
+				}
+			],
+			"name" : "Release",
+			"projects" : 
+			[
+				{
+					"childIndexes" : 
+					[
+						1
+					],
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "gentle_whisper",
+					"targetIndexes" : 
+					[
+						3,
+						4
+					]
+				},
+				{
+					"directoryIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"name" : "ggml",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-Release-3bbceeb20d68e6341cd8.json",
+					"name" : "ggml",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml-base::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-base-Release-ed66060bd6e297576d18.json",
+					"name" : "ggml-base",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml-cpu::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-cpu-Release-eb58abb80706fbe9692b.json",
+					"name" : "ggml-cpu",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "whisper::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-whisper-Release-5f3183770cf6c24d953b.json",
+					"name" : "whisper",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "whisper_jni::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-whisper_jni-Release-1b46a92623c9029860a4.json",
+					"name" : "whisper_jni",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/mnt/D-SSD/personal/projects/gentle-mobile/ui-android/app/.cxx/Release/2w4v9654/arm64-v8a",
+		"source" : "/mnt/D-SSD/personal/projects/gentle-mobile/ui-android/app/src/main/cpp"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}

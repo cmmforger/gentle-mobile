@@ -4433,7 +4433,7 @@ private fun SwipeRevealRow(
 ) {
     val p = LocalPalette.current
     val scope = rememberCoroutineScope()
-    val revealPx = with(LocalDensity.current) { 72.dp.toPx() }
+    val revealPx = with(LocalDensity.current) { 88.dp.toPx() }
     val thresholdPx = revealPx / 2f
     val offsetX = remember { Animatable(0f) }
     val deleteCd = stringResource(R.string.hosts_delete)
@@ -4453,26 +4453,35 @@ private fun SwipeRevealRow(
     }
 
     Box {
+        // T53: the reveal is a coloured panel with a trash icon at the row's
+        // leading edge — slide right to expose it, tap it to ask for the
+        // confirmation. A mail app's gesture, not a thin glyph.
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .background(p.error)
-                .padding(end = 24.dp),
-            contentAlignment = androidx.compose.ui.Alignment.CenterEnd,
+                .background(p.bg),
         ) {
             Box(
-                contentAlignment = androidx.compose.ui.Alignment.Center,
                 modifier = Modifier
-                    .size(44.dp)
-                    .semantics { contentDescription = deleteCd }
-                    .clickable(onClick = onDelete),
+                    .width(with(LocalDensity.current) { revealPx.toDp() })
+                    .fillMaxHeight()
+                    .background(p.error),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
             ) {
-                Text(
-                    text = "✕",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Box(
+                    contentAlignment = androidx.compose.ui.Alignment.Center,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .semantics { contentDescription = deleteCd }
+                        .clickable(onClick = onDelete),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_trash),
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
         Box(
@@ -4486,7 +4495,7 @@ private fun SwipeRevealRow(
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
                             scope.launch {
-                                offsetX.snapTo((offsetX.value + dragAmount).coerceIn(-revealPx, 0f))
+                                offsetX.snapTo((offsetX.value + dragAmount).coerceIn(0f, revealPx))
                             }
                         },
                     )
