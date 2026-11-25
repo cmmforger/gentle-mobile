@@ -1,15 +1,14 @@
 package com.gentlemanprogramming.gentlemobile.ui.hosts
 
-/** One entry of a host row's menu (T57): Conectar, Editar and Eliminar only.
- *  Duplicar and Reordenar are left out — they cannot be done well yet, and a
- *  dead entry is worse than an absent one. */
-enum class HostMenuEntry { CONNECT, EDIT, DELETE }
+/** One entry of a host row's menu (T58): Editar and Eliminar only. Conectar
+ *  is gone — tapping the row already connects — and Duplicar/Reordenar are
+ *  left out because they cannot be done well yet. */
+enum class HostMenuEntry { EDIT, DELETE }
 
 /** The host row's menu model: which entries exist, and which one is
  *  destructive (the one that asks for confirmation). */
 object HostMenuModel {
     fun entries(): List<HostMenuEntry> = listOf(
-        HostMenuEntry.CONNECT,
         HostMenuEntry.EDIT,
         HostMenuEntry.DELETE,
     )

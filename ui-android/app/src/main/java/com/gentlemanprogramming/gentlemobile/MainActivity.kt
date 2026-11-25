@@ -795,6 +795,9 @@ fun ConnectScreen(
     val screen = remember { ScreenState() }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    // The theme the app actually renders (follow-the-phone resolves it); the
+    // terminal palettes must match it, not the stored pin.
+    val effectiveTheme = resolvedTheme(appTheme, followThePhone, androidx.compose.foundation.isSystemInDarkTheme())
     // S24-1: the worker threads resolve their strings (errors, drop
     // reasons) through the application context, in the stored locale.
     screen.appContext = context.applicationContext
@@ -1472,6 +1475,7 @@ fun ConnectScreen(
             fingerprint = identity?.publicKeyLine?.let { DeviceKeyFingerprint.fingerprint(it) },
             status = hooksStatus,
             checking = hooksChecking,
+            theme = effectiveTheme,
             onRegenerate = {
                 // T55: a new key means new trust — the previous QR stops
                 // working and the host must trust the new key.
@@ -3029,7 +3033,6 @@ fun ConnectScreen(
         hostMenuTarget?.let { target ->
             HostMenuDialog(
                 entry = target,
-                onConnect = { entry -> connectTo(entry) },
                 onEdit = { entry ->
                     hostMenuTarget = null
                     editTarget = entry
@@ -4350,13 +4353,14 @@ private fun EditHostDialog(
     }
 }
 
-/** T57: the host row's menu — Conectar, Editar and Eliminar in the error
- *  colour with a trash icon. Duplicar and Reordenar are left out: they cannot
- *  be done well yet, and a dead entry is worse than an absent one. */
+/** T58: the host row's menu — Editar and Eliminar, the destructive one in
+ *  the error colour with a trash icon and its own confirmation. Conectar is
+ *  gone (tapping the row already connects) and Duplicar/Reordenar are left
+ *  out: they cannot be done well yet, and a dead entry is worse than an
+ *  absent one. */
 @Composable
 private fun HostMenuDialog(
     entry: SavedHostEntry,
-    onConnect: (SavedHostEntry) -> Unit,
     onEdit: (SavedHostEntry) -> Unit,
     onDelete: (SavedHostEntry) -> Unit,
     onDismiss: () -> Unit,
@@ -4378,12 +4382,10 @@ private fun HostMenuDialog(
             HostMenuModel.entries().forEach { item ->
                 val destructive = HostMenuModel.isDestructive(item)
                 val label = when (item) {
-                    HostMenuEntry.CONNECT -> stringResource(R.string.hosts_menu_connect)
                     HostMenuEntry.EDIT -> stringResource(R.string.hosts_menu_edit)
                     HostMenuEntry.DELETE -> stringResource(R.string.hosts_delete)
                 }
                 val action: () -> Unit = when (item) {
-                    HostMenuEntry.CONNECT -> { { onConnect(entry) } }
                     HostMenuEntry.EDIT -> { { onEdit(entry) } }
                     HostMenuEntry.DELETE -> { { onDelete(entry) } }
                 }

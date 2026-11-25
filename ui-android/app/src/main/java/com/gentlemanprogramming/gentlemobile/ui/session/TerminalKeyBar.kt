@@ -29,9 +29,11 @@ object TerminalKeyBar {
     )
 
     /** The pad's keys shown in the panel: the human's enabled keys, in their
-     *  order, minus what the bar and the fixed clusters already provide. */
+     *  order, minus what the bar and the cross (when the joystick switch is
+     *  on) already provide. */
     fun padKeys(pad: ShortcutPad): List<ShortcutKey> {
-        val provided = (barChips() + joystickKeys())
+        val cross = if (pad.joystickVisible) joystickKeys() else emptyList()
+        val provided = (barChips() + cross)
             .mapNotNull { (it.action as? ShortcutAction.Key)?.name }
             .toSet()
         return pad.visibleKeys.filterNot { key ->
@@ -39,10 +41,12 @@ object TerminalKeyBar {
         }
     }
 
-    /** The whole panel, in paint order: the cross, Delete and Clear, then the
-     *  pad's own keys. */
-    fun panelKeys(pad: ShortcutPad): List<ShortcutKey> =
-        joystickKeys() + extraKeys() + padKeys(pad)
+    /** The whole panel, in paint order: the cross (only when the joystick
+     *  switch is on), Delete and Clear, then the pad's own keys. */
+    fun panelKeys(pad: ShortcutPad): List<ShortcutKey> {
+        val cross = if (pad.joystickVisible) joystickKeys() else emptyList()
+        return cross + extraKeys() + padKeys(pad)
+    }
 
     /** The persisted `useComposer` setting is the input mode: on → composer,
      *  off → direct. */
@@ -50,4 +54,8 @@ object TerminalKeyBar {
         if (useComposer) InputMode.COMPOSER else InputMode.DIRECT
 
     fun useComposer(mode: InputMode): Boolean = mode == InputMode.COMPOSER
+
+    /** The composer field is visible only in composer mode (T58): direct mode
+     *  types straight into the PTY with no visible field. */
+    fun showsComposerField(mode: InputMode): Boolean = mode == InputMode.COMPOSER
 }

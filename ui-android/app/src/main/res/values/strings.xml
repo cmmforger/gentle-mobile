@@ -98,7 +98,6 @@
     <string name="hosts_rename_title">Name this host</string>
     <string name="hosts_rename_save">Save</string>
     <string name="hosts_empty">No hosts yet — add one to start.</string>
-    <string name="hosts_menu_connect">Connect</string>
     <string name="hosts_menu_edit">Edit</string>
     <string name="hosts_menu_more">More</string>
     <string name="hosts_edit_title">Edit host</string>
@@ -553,7 +552,18 @@
     <string name="voz_test_empty">Nothing was transcribed.</string>
     <string name="voz_test_no_model">Download a model first.</string>
     <string name="voz_test_result">%1$s · %2$d ms</string>
+    <string name="voz_test_phone">Phone dictation</string>
+    <string name="voz_test_local">Local model</string>
+    <string name="voz_test_result_phone">Phone · %1$s</string>
+    <string name="voz_test_result_local">Local · %1$s · %2$d ms</string>
     <string name="voz_models_label">Local model</string>
+    <string name="voz_models_english">English</string>
+    <string name="voz_models_multilingual">Spanish · Multilingual</string>
+    <string name="voz_model_weight">%1$s · %2$s</string>
+    <string name="voz_tradeoff_fastest">fastest, least accurate</string>
+    <string name="voz_tradeoff_fast">fast, good</string>
+    <string name="voz_tradeoff_excellent">slower, excellent</string>
+    <string name="voz_tradeoff_maximum">maximum accuracy</string>
     <string name="voz_download">Download</string>
     <string name="voz_cancel">Cancel</string>
     <string name="voz_use">Use</string>
@@ -567,6 +577,7 @@
     <string name="voz_replacements_sub">Applied to every transcript.</string>
     <string name="voz_replace_empty">No replacements — the transcript is used as-is.</string>
     <string name="voz_add_replacement">Add replacement</string>
+    <string name="voz_edit_replacement">Edit replacement</string>
     <string name="voz_replace_from_hint">Said</string>
     <string name="voz_replace_to_hint">Written</string>
     <string name="voz_delete_confirm_title">Delete this model?</string>

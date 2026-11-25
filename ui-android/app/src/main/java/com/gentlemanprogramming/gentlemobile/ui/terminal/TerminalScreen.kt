@@ -316,7 +316,7 @@ fun TerminalScreen(
             onUseComposerChange = onUseComposerChange,
             onKey = { bytes -> session?.write(bytes) },
         )
-        if (useComposer) {
+        if (TerminalKeyBar.showsComposerField(TerminalKeyBar.inputMode(useComposer))) {
             TerminalComposerRow(
                 enabled = session != null && !closed,
                 agentRunsHere = TerminalAttachments.offersCameraAndClip(agentRunsHere),
@@ -449,48 +449,48 @@ private fun TerminalKeyRow(
         }
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TerminalKeyBar.barChips().forEach { chip ->
-            val name = (chip.action as? ShortcutAction.Key)?.name
-            val pressed = name == "ctrl" && composer.ctrlSticky
-            TerminalKeyChip(
-                label = chip.label,
-                pressed = pressed,
-                modifier = Modifier.weight(1f),
-            ) { pressChip(chip) }
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TerminalKeyBar.barChips().forEach { chip ->
+                val name = (chip.action as? ShortcutAction.Key)?.name
+                val pressed = name == "ctrl" && composer.ctrlSticky
+                TerminalKeyChip(
+                    label = chip.label,
+                    pressed = pressed,
+                    modifier = Modifier.weight(1f),
+                ) { pressChip(chip) }
+            }
+            BarIcon(
+                drawable = R.drawable.ic_keys,
+                description = stringResource(R.string.cd_keys_panel),
+                selected = keysOpen,
+                onClick = { keysOpen = !keysOpen },
+            )
+            BarIcon(
+                drawable = R.drawable.ic_chat,
+                description = stringResource(R.string.cd_input_composer),
+                selected = useComposer,
+                onClick = { onUseComposerChange(true) },
+            )
+            BarIcon(
+                drawable = R.drawable.ic_keyboard,
+                description = stringResource(R.string.cd_input_direct),
+                selected = !useComposer,
+                onClick = { onUseComposerChange(false) },
+            )
         }
-        BarIcon(
-            drawable = R.drawable.ic_keys,
-            description = stringResource(R.string.cd_keys_panel),
-            selected = false,
-            onClick = { keysOpen = true },
-        )
-        BarIcon(
-            drawable = R.drawable.ic_chat,
-            description = stringResource(R.string.cd_input_composer),
-            selected = useComposer,
-            onClick = { onUseComposerChange(true) },
-        )
-        BarIcon(
-            drawable = R.drawable.ic_keyboard,
-            description = stringResource(R.string.cd_input_direct),
-            selected = !useComposer,
-            onClick = { onUseComposerChange(false) },
-        )
-    }
-
-    if (keysOpen) {
-        TerminalKeysPanel(
-            pad = pad,
-            composer = composer,
-            onKey = onKey,
-            onDismiss = { keysOpen = false },
-        )
+        if (keysOpen) {
+            TerminalKeysInlineRow(
+                pad = pad,
+                composer = composer,
+                onKey = onKey,
+            )
+        }
     }
 }
 
@@ -522,18 +522,16 @@ private fun BarIcon(
     }
 }
 
-/** The keys panel (T57): the joystick cross, Delete and Clear, and the pad's
- *  keys — the ones the human enabled, in their order. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+/** The inline keys row (T58): toggled by the keys icon — no sheet, no modal.
+ *  The joystick cross appears only when the pad's joystick switch is on, then
+ *  Delete and Clear, then the pad's own keys, in their order. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TerminalKeysPanel(
+private fun TerminalKeysInlineRow(
     pad: ShortcutPad,
     composer: TerminalComposer,
     onKey: (ByteArray) -> Unit,
-    onDismiss: () -> Unit,
 ) {
-    val palette = LocalPalette.current
-
     fun press(key: ShortcutKey) {
         val bytes = key.bytes(composer.ctrlSticky, composer.altSticky)
         if (bytes.isNotEmpty()) {
@@ -550,29 +548,21 @@ private fun TerminalKeysPanel(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = palette.bg) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.keys_panel_title),
-                color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(8.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        if (pad.joystickVisible) {
             TerminalJoystick(onPress = ::pressChip)
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                (TerminalKeyBar.extraKeys() + TerminalKeyBar.padKeys(pad)).forEach { key ->
-                    val name = (key.action as? ShortcutAction.Key)?.name
-                    val pressed = (name == "ctrl" && composer.ctrlSticky) ||
-                        (name == "alt" && composer.altSticky)
-                    PanelKeyChip(label = key.label, pressed = pressed) { pressChip(key) }
-                }
+            Spacer(Modifier.height(4.dp))
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            (TerminalKeyBar.extraKeys() + TerminalKeyBar.padKeys(pad)).forEach { key ->
+                val name = (key.action as? ShortcutAction.Key)?.name
+                val pressed = (name == "ctrl" && composer.ctrlSticky) ||
+                    (name == "alt" && composer.altSticky)
+                PanelKeyChip(label = key.label, pressed = pressed) { pressChip(key) }
             }
         }
     }
@@ -941,49 +931,39 @@ private fun ComposerIcon(drawable: Int, description: String, enabled: Boolean, o
 }
 
 /**
- * The direct input row (T50): with "use the field" off, keystrokes reach the
- * PTY the moment they are typed — the field never accumulates text. Enter
- * sends one CR through the keyboard's send action.
+ * The direct input row (T50, T58): with "use the field" off there is no
+ * visible composer — an invisible field keeps the IME up and every keystroke
+ * reaches the PTY the moment it is typed. Enter sends one CR through the
+ * keyboard's send action.
  */
 @Composable
 private fun TerminalDirectInputRow(enabled: Boolean, onBytes: (ByteArray) -> Unit) {
-    val palette = LocalPalette.current
     var value by remember { mutableStateOf(TextFieldValue("")) }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    BasicTextField(
+        value = value,
+        onValueChange = { new ->
+            val delta = TerminalKeys.forwardInput(value.text, new.text)
+            if (delta.isNotEmpty()) onBytes(delta)
+            value = TextFieldValue("")
+        },
+        enabled = enabled,
+        singleLine = true,
+        textStyle = TextStyle(
+            color = Color.Transparent,
+            fontSize = 13.sp,
+            fontFamily = FontFamily.Monospace,
+        ),
+        cursorBrush = SolidColor(Color.Transparent),
+        keyboardOptions = KeyboardOptions(
+            capitalization = KeyboardCapitalization.None,
+            imeAction = ImeAction.Send,
+        ),
+        keyboardActions = KeyboardActions(onSend = { onBytes(byteArrayOf(0x0D)) }),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-    ) {
-        BasicTextField(
-            value = value,
-            onValueChange = { new ->
-                val delta = TerminalKeys.forwardInput(value.text, new.text)
-                if (delta.isNotEmpty()) onBytes(delta)
-                value = TextFieldValue("")
-            },
-            enabled = enabled,
-            singleLine = true,
-            textStyle = TextStyle(
-                color = if (enabled) MaterialTheme.colorScheme.onBackground else palette.textDisabled,
-                fontSize = 13.sp,
-                fontFamily = FontFamily.Monospace,
-            ),
-            cursorBrush = SolidColor(palette.accent),
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.None,
-                imeAction = ImeAction.Send,
-            ),
-            keyboardActions = KeyboardActions(onSend = { onBytes(byteArrayOf(0x0D)) }),
-            modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 44.dp, max = 96.dp)
-                .clip(RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
-                .background(palette.surface, RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
-                .border(1.dp, palette.line, RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-        )
-    }
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+    )
 }
 
 @Composable

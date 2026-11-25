@@ -99,7 +99,6 @@
     <string name="hosts_rename_title">Poné un nombre a este host</string>
     <string name="hosts_rename_save">Guardar</string>
     <string name="hosts_empty">Todavía no hay equipos — agregá uno para empezar.</string>
-    <string name="hosts_menu_connect">Conectar</string>
     <string name="hosts_menu_edit">Editar</string>
     <string name="hosts_menu_more">Más</string>
     <string name="hosts_edit_title">Editar host</string>
@@ -553,7 +552,18 @@
     <string name="voz_test_empty">No se transcribió nada.</string>
     <string name="voz_test_no_model">Descarga un modelo primero.</string>
     <string name="voz_test_result">%1$s · %2$d ms</string>
+    <string name="voz_test_phone">Dictado del teléfono</string>
+    <string name="voz_test_local">Modelo local</string>
+    <string name="voz_test_result_phone">Teléfono · %1$s</string>
+    <string name="voz_test_result_local">Local · %1$s · %2$d ms</string>
     <string name="voz_models_label">Modelo local</string>
+    <string name="voz_models_english">Inglés</string>
+    <string name="voz_models_multilingual">Español · Multilingüe</string>
+    <string name="voz_model_weight">%1$s · %2$s</string>
+    <string name="voz_tradeoff_fastest">el más rápido, menor precisión</string>
+    <string name="voz_tradeoff_fast">rápido, buena precisión</string>
+    <string name="voz_tradeoff_excellent">más lento, excelente precisión</string>
+    <string name="voz_tradeoff_maximum">máxima precisión</string>
     <string name="voz_download">Descargar</string>
     <string name="voz_cancel">Cancelar</string>
     <string name="voz_use">Usar</string>
@@ -567,6 +577,7 @@
     <string name="voz_replacements_sub">Se aplican a cada transcripción.</string>
     <string name="voz_replace_empty">Sin reemplazos — la transcripción se usa tal cual.</string>
     <string name="voz_add_replacement">Agregar reemplazo</string>
+    <string name="voz_edit_replacement">Editar reemplazo</string>
     <string name="voz_replace_from_hint">Dicho</string>
     <string name="voz_replace_to_hint">Escrito</string>
     <string name="voz_delete_confirm_title">¿Borrar este modelo?</string>

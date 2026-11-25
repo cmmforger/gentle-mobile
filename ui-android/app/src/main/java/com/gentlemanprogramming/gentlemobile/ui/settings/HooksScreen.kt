@@ -46,6 +46,7 @@ import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.pair.HooksCommand
 import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
+import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 
 /** The two platform tabs the command block offers. */
@@ -64,13 +65,16 @@ fun HooksScreen(
     fingerprint: String?,
     status: HooksStatus?,
     checking: Boolean,
+    theme: AppTheme,
     onRegenerate: () -> Unit,
     onBack: () -> Unit,
 ) {
     val p = LocalPalette.current
     val clipboard = LocalClipboardManager.current
-    val terminalPrompt = Color(TerminalPalette.cute.colors[2])
-    val terminalText = Color(TerminalPalette.cute.foreground)
+    val term = remember(theme) { TerminalPalette.forTheme(theme) }
+    val terminalPrompt = Color(term.colors[2])
+    val terminalText = Color(term.foreground)
+    val terminalBackground = Color(term.background)
     var tab by remember { mutableStateOf(HooksPlatform.MAC_LINUX) }
     var copiedCommand by remember { mutableStateOf(false) }
     var copiedFingerprint by remember { mutableStateOf(false) }
@@ -138,7 +142,7 @@ fun HooksScreen(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(Air.RADIUS_FIELD_DP.dp))
-                        .background(p.terminal)
+                        .background(terminalBackground)
                         .padding(12.dp),
                 ) {
                     block.lines().forEach { line ->

@@ -21,14 +21,25 @@ class TerminalKeyBarTest {
     }
 
     @Test
-    fun `the keys panel is the joystick cross then Delete and Clear then the pad's keys`() {
-        val panel = TerminalKeyBar.panelKeys(ShortcutPad.DEFAULT)
+    fun `the keys panel is the cross then Delete and Clear then the pad's keys`() {
+        val panel = TerminalKeyBar.panelKeys(ShortcutPad.DEFAULT.withJoystick(true))
         assertEquals(listOf("joy_up", "joy_left", "joy_enter", "joy_right", "joy_down"), panel.subList(0, 5).map { it.id })
         assertEquals(listOf("delete", "clear"), panel.subList(5, 7).map { it.id })
         // The default pad's alt survives; esc/tab/ctrl live in the bar and
         // up/down already live in the cross, so they are not repeated.
         assertEquals(listOf("alt"), panel.subList(7, 8).map { it.id })
         assertEquals(8, panel.size)
+    }
+
+    @Test
+    fun `the joystick switch governs the cross`() {
+        val withCross = TerminalKeyBar.panelKeys(ShortcutPad.DEFAULT.withJoystick(true))
+        assertEquals(
+            listOf("joy_up", "joy_left", "joy_enter", "joy_right", "joy_down"),
+            withCross.take(5).map { it.id },
+        )
+        val withoutCross = TerminalKeyBar.panelKeys(ShortcutPad.DEFAULT)
+        assertTrue(withoutCross.none { it.id.startsWith("joy_") })
     }
 
     @Test
@@ -40,16 +51,22 @@ class TerminalKeyBarTest {
                 ShortcutKey("alt", "Alt", ShortcutAction.Key("alt")),
                 ShortcutKey("esc", "Esc", ShortcutAction.Key("esc")),
             ),
+            joystickVisible = true,
         )
         assertEquals(listOf("custom", "alt"), TerminalKeyBar.padKeys(pad).map { it.id })
     }
 
     @Test
-    fun `the joystick and extras are always present regardless of the pad`() {
+    fun `delete and clear are always present regardless of the pad`() {
         val emptyPad = ShortcutPad(keys = emptyList())
         val panel = TerminalKeyBar.panelKeys(emptyPad)
-        assertEquals(7, panel.size)
-        assertEquals(listOf("joy_up", "joy_left", "joy_enter", "joy_right", "joy_down", "delete", "clear"), panel.map { it.id })
+        assertEquals(listOf("delete", "clear"), panel.map { it.id })
+    }
+
+    @Test
+    fun `without the cross the pad's own arrows surface again`() {
+        val panel = TerminalKeyBar.panelKeys(ShortcutPad.DEFAULT)
+        assertEquals(listOf("delete", "clear", "alt", "up", "down"), panel.map { it.id })
     }
 
     @Test
@@ -58,5 +75,11 @@ class TerminalKeyBarTest {
         assertEquals(InputMode.DIRECT, TerminalKeyBar.inputMode(useComposer = false))
         assertTrue(TerminalKeyBar.useComposer(InputMode.COMPOSER))
         assertFalse(TerminalKeyBar.useComposer(InputMode.DIRECT))
+    }
+
+    @Test
+    fun `the composer field shows only in composer mode`() {
+        assertTrue(TerminalKeyBar.showsComposerField(InputMode.COMPOSER))
+        assertFalse(TerminalKeyBar.showsComposerField(InputMode.DIRECT))
     }
 }

@@ -24,7 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,13 +54,17 @@ import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.dictation.DictationEngineChoice
 import com.gentlemanprogramming.gentlemobile.dictation.LocalDictationState
 import com.gentlemanprogramming.gentlemobile.dictation.LocalWhisperDictation
+import com.gentlemanprogramming.gentlemobile.dictation.ModelSize
 import com.gentlemanprogramming.gentlemobile.dictation.ModelStatus
+import com.gentlemanprogramming.gentlemobile.dictation.ReplacementStore
 import com.gentlemanprogramming.gentlemobile.dictation.WhisperCatalogue
 import com.gentlemanprogramming.gentlemobile.dictation.WhisperModel
 import com.gentlemanprogramming.gentlemobile.dictation.WordReplacement
 import com.gentlemanprogramming.gentlemobile.dictation.VozSettings
 import com.gentlemanprogramming.gentlemobile.executor
 import com.gentlemanprogramming.gentlemobile.mainHandler
+import com.gentlemanprogramming.gentlemobile.ui.session.AndroidDictationEngine
+import com.gentlemanprogramming.gentlemobile.ui.session.DictationEngine
 import com.gentlemanprogramming.gentlemobile.ui.session.formatBytes
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
@@ -95,6 +101,13 @@ fun VozScreen(
     var confirmDelete by remember { mutableStateOf<WhisperModel?>(null) }
     var editingReplacement by remember { mutableStateOf<WordReplacement?>(null) }
 
+    // T58: the test transcription offers both paths — the phone's own
+    // recognizer and the local model — and each result says its source.
+    var phoneListening by remember { mutableStateOf(false) }
+    var phoneResult by remember { mutableStateOf<String?>(null) }
+    var phoneError by remember { mutableStateOf<String?>(null) }
+    var pendingTest by remember { mutableStateOf<VozTestPath?>(null) }
+
     val dictation = remember {
         LocalWhisperDictation(
             modelPathProvider = { activeModelPath },
@@ -121,16 +134,76 @@ fun VozScreen(
             }
         }
     }
+
+    val phoneEngine = remember { AndroidDictationEngine(context) }
+    DisposableEffect(phoneEngine) {
+        onDispose { phoneEngine.dispose() }
+    }
+    val phoneListener = remember(phoneEngine) {
+        object : DictationEngine.Listener {
+            override fun onPartial(text: String) {}
+
+            override fun onFinal(text: String) {
+                phoneListening = false
+                phoneResult = text
+                phoneError = null
+            }
+
+            override fun onError(message: String) {
+                phoneListening = false
+                phoneError = message
+            }
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) {
-            dictation.start(dictationListener)
-        } else {
-            testState = LocalDictationState.Error(
-                context.getString(R.string.dict_permission_refused),
-            )
+        when (pendingTest) {
+            VozTestPath.PHONE -> {
+                if (granted) {
+                    phoneListening = true
+                    phoneResult = null
+                    phoneError = null
+                    phoneEngine.start(phoneListener)
+                } else {
+                    phoneError = context.getString(R.string.dict_permission_refused)
+                }
+            }
+            VozTestPath.LOCAL -> {
+                if (granted) {
+                    dictation.start(dictationListener)
+                } else {
+                    testState = LocalDictationState.Error(
+                        context.getString(R.string.dict_permission_refused),
+                    )
+                }
+            }
+            null -> {}
         }
+        pendingTest = null
+    }
+
+    fun startPhoneTest() {
+        val reason = phoneEngine.availabilityReason()
+        if (reason != null) {
+            phoneError = reason
+            return
+        }
+        if (!hasMicPermission(context)) {
+            pendingTest = VozTestPath.PHONE
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        phoneListening = true
+        phoneResult = null
+        phoneError = null
+        phoneEngine.start(phoneListener)
+    }
+
+    fun stopPhoneTest() {
+        phoneEngine.stop()
+        phoneListening = false
     }
 
     Column(
@@ -212,74 +285,85 @@ fun VozScreen(
         Spacer(Modifier.height(12.dp))
         SectionLabel(stringResource(R.string.voz_test_label))
         Card {
-            val testEnabled = activeModelPath != null
-            val label = when (testState) {
-                is LocalDictationState.Listening -> stringResource(R.string.voz_test_listening)
-                is LocalDictationState.Transcribing -> stringResource(R.string.voz_test_transcribing)
-                else -> stringResource(R.string.voz_test_label)
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = Air.TOUCH_DP.dp)
-                    .clickable(enabled = testEnabled && testState !is LocalDictationState.Transcribing) {
-                        when (testState) {
-                            is LocalDictationState.Listening -> dictation.stop(dictationListener)
-                            else -> {
-                                if (hasMicPermission(context)) {
-                                    dictation.start(dictationListener)
-                                } else {
-                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            }
-                        }
-                    },
-            ) {
-                Text(
-                    text = label,
-                    color = if (testEnabled) p.accent else p.textDisabled,
-                    fontSize = Air.ROW_NAME_SP.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
+            TestRow(
+                label = if (phoneListening) {
+                    stringResource(R.string.voz_test_listening)
+                } else {
+                    stringResource(R.string.voz_test_phone)
+                },
+                enabled = true,
+                onClick = {
+                    if (phoneListening) stopPhoneTest() else startPhoneTest()
+                },
+            )
+            phoneError?.let { Note(it) }
+            phoneResult?.let { text ->
+                ResultLine(
+                    if (text.isBlank()) stringResource(R.string.voz_test_empty)
+                    else stringResource(R.string.voz_test_result_phone, text),
                 )
             }
-            if (!testEnabled) {
+            Hairline()
+            val localEnabled = activeModelPath != null
+            TestRow(
+                label = when (testState) {
+                    is LocalDictationState.Listening -> stringResource(R.string.voz_test_listening)
+                    is LocalDictationState.Transcribing -> stringResource(R.string.voz_test_transcribing)
+                    else -> stringResource(R.string.voz_test_local)
+                },
+                enabled = localEnabled,
+                onClick = {
+                    when (testState) {
+                        is LocalDictationState.Listening -> dictation.stop(dictationListener)
+                        is LocalDictationState.Transcribing -> Unit
+                        else -> {
+                            if (hasMicPermission(context)) {
+                                dictation.start(dictationListener)
+                            } else {
+                                pendingTest = VozTestPath.LOCAL
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        }
+                    }
+                },
+            )
+            if (!localEnabled) {
                 Note(stringResource(R.string.voz_test_no_model))
             }
             if (testState is LocalDictationState.Error) {
                 Note((testState as LocalDictationState.Error).message)
             }
             testResult?.let { text ->
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = if (text.isBlank()) {
-                        stringResource(R.string.voz_test_empty)
-                    } else {
-                        stringResource(R.string.voz_test_result, text, testElapsed)
-                    },
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = Air.COMMAND_SP.sp,
-                    fontFamily = FontFamily.Monospace,
+                ResultLine(
+                    if (text.isBlank()) stringResource(R.string.voz_test_empty)
+                    else stringResource(R.string.voz_test_result_local, text, testElapsed),
                 )
             }
         }
 
         Spacer(Modifier.height(12.dp))
         SectionLabel(stringResource(R.string.voz_models_label))
-        Card {
-            WhisperCatalogue.models.forEach { model ->
-                ModelRow(
-                    model = model,
-                    status = modelStatuses[model.id] ?: ModelStatus.NotInstalled,
-                    active = model.id == settings.activeModelId && modelStatuses[model.id] is ModelStatus.Installed,
-                    onDownload = { onDownload(model.id) },
-                    onCancel = { onCancelDownload(model.id) },
-                    onUse = { onUseModel(model.id) },
-                    onDelete = { confirmDelete = model },
-                )
-            }
-        }
+        ModelCard(
+            title = stringResource(R.string.voz_models_english),
+            models = WhisperCatalogue.english,
+            modelStatuses = modelStatuses,
+            activeModelId = settings.activeModelId,
+            onDownload = onDownload,
+            onCancelDownload = onCancelDownload,
+            onUseModel = onUseModel,
+            onDelete = { confirmDelete = it },
+        )
+        Spacer(Modifier.height(8.dp))
+        ModelCard(
+            title = stringResource(R.string.voz_models_multilingual),
+            models = WhisperCatalogue.multilingual,
+            modelStatuses = modelStatuses,
+            activeModelId = settings.activeModelId,
+            onDownload = onDownload,
+            onCancelDownload = onCancelDownload,
+            onUseModel = onUseModel,
+            onDelete = { confirmDelete = it },
+        )
 
         Spacer(Modifier.height(12.dp))
         SectionLabel(stringResource(R.string.voz_replacements_label))
@@ -316,7 +400,9 @@ fun VozScreen(
                         modifier = Modifier
                             .size(Air.TOUCH_DP.dp)
                             .clickable {
-                                onReplacementsChange(settings.replacements - replacement)
+                                onReplacementsChange(
+                                    ReplacementStore.remove(settings.replacements, replacement),
+                                )
                             }
                             .semantics { contentDescription = deleteCd },
                     ) {
@@ -367,11 +453,18 @@ fun VozScreen(
         )
     }
     if (editingReplacement != null) {
-        ReplacementDialog(
-            initial = editingReplacement!!,
+        val existing = editingReplacement!!
+        ReplacementSheet(
+            initial = existing,
             onSave = { replacement ->
-                val others = settings.replacements - editingReplacement!!
-                onReplacementsChange(others + replacement)
+                val base = if (existing.from.isBlank()) {
+                    settings.replacements
+                } else {
+                    ReplacementStore.remove(settings.replacements, existing)
+                }
+                onReplacementsChange(
+                    ReplacementStore.add(base, replacement.from, replacement.to),
+                )
                 editingReplacement = null
             },
             onDismiss = { editingReplacement = null },
@@ -429,7 +522,7 @@ private fun ModelRow(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = model.displayName,
+                    text = model.label,
                     color = MaterialTheme.colorScheme.onBackground,
                     fontSize = Air.ROW_NAME_SP.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -457,7 +550,11 @@ private fun ModelRow(
                         fontSize = Air.META_SP.sp,
                     )
                     else -> Text(
-                        text = model.sizeLabel,
+                        text = stringResource(
+                            R.string.voz_model_weight,
+                            model.sizeLabel,
+                            stringResource(tradeOffRes(model.size)),
+                        ),
                         color = p.muted,
                         fontSize = Air.META_SP.sp,
                     )
@@ -531,8 +628,9 @@ private fun MiniAction(label: String, tint: Color, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReplacementDialog(
+private fun ReplacementSheet(
     initial: WordReplacement,
     onSave: (WordReplacement) -> Unit,
     onDismiss: () -> Unit,
@@ -540,42 +638,137 @@ private fun ReplacementDialog(
     val p = LocalPalette.current
     var from by remember(initial) { mutableStateOf(initial.from) }
     var to by remember(initial) { mutableStateOf(initial.to) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.voz_add_replacement), fontWeight = FontWeight.SemiBold) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = from,
-                    onValueChange = { from = it },
-                    label = { Text(stringResource(R.string.voz_replace_from_hint)) },
-                    singleLine = true,
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = to,
-                    onValueChange = { to = it },
-                    label = { Text(stringResource(R.string.voz_replace_to_hint)) },
-                    singleLine = true,
-                )
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = p.surface) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Air.CARD_PADDING_DP.dp)
+                .padding(bottom = 24.dp),
+        ) {
+            Text(
+                text = stringResource(
+                    if (initial.from.isBlank()) R.string.voz_add_replacement
+                    else R.string.voz_edit_replacement,
+                ),
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = from,
+                onValueChange = { from = it },
+                label = { Text(stringResource(R.string.voz_replace_from_hint)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = to,
+                onValueChange = { to = it },
+                label = { Text(stringResource(R.string.voz_replace_to_hint)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.set_cancel), color = p.muted)
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = { onSave(WordReplacement(from = from.trim(), to = to)) },
+                    enabled = from.isNotBlank(),
+                ) {
+                    Text(
+                        text = stringResource(R.string.set_save),
+                        color = if (from.isNotBlank()) p.accent else p.textDisabled,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onSave(WordReplacement(from = from.trim(), to = to)) },
-                enabled = from.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.set_save), color = p.accent, fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.set_cancel), color = p.muted)
-            }
-        },
-        containerColor = p.surfaceRaised,
-        titleContentColor = MaterialTheme.colorScheme.onBackground,
-        textContentColor = p.muted,
+        }
+    }
+}
+
+private enum class VozTestPath { PHONE, LOCAL }
+
+/** The localised trade-off line's second half, keyed by model size. */
+private fun tradeOffRes(size: ModelSize): Int = when (size) {
+    ModelSize.TINY -> R.string.voz_tradeoff_fastest
+    ModelSize.BASE -> R.string.voz_tradeoff_fast
+    ModelSize.SMALL -> R.string.voz_tradeoff_excellent
+    ModelSize.TURBO -> R.string.voz_tradeoff_maximum
+}
+
+/** One model card (T58): a language label, then its rows — each carrying its
+ *  weight and its trade-off. */
+@Composable
+private fun ModelCard(
+    title: String,
+    models: List<WhisperModel>,
+    modelStatuses: Map<String, ModelStatus>,
+    activeModelId: String?,
+    onDownload: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
+    onUseModel: (String) -> Unit,
+    onDelete: (WhisperModel) -> Unit,
+) {
+    val p = LocalPalette.current
+    Card {
+        Text(
+            text = title,
+            color = p.muted,
+            fontSize = Air.SECTION_LABEL_SP.sp,
+            letterSpacing = Air.SECTION_TRACKING_SP.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        models.forEach { model ->
+            ModelRow(
+                model = model,
+                status = modelStatuses[model.id] ?: ModelStatus.NotInstalled,
+                active = model.id == activeModelId && modelStatuses[model.id] is ModelStatus.Installed,
+                onDownload = { onDownload(model.id) },
+                onCancel = { onCancelDownload(model.id) },
+                onUse = { onUseModel(model.id) },
+                onDelete = { onDelete(model) },
+            )
+        }
+    }
+}
+
+/** One test-transcription row: phone dictation or the local model. */
+@Composable
+private fun TestRow(label: String, enabled: Boolean, onClick: () -> Unit) {
+    val p = LocalPalette.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = Air.TOUCH_DP.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+    ) {
+        Text(
+            text = label,
+            color = if (enabled) p.accent else p.textDisabled,
+            fontSize = Air.ROW_NAME_SP.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** The test result line, in the command face — the source is already in the
+ *  string, so the person knows which path produced it. */
+@Composable
+private fun ResultLine(text: String) {
+    Spacer(Modifier.height(4.dp))
+    Text(
+        text = text,
+        color = MaterialTheme.colorScheme.onBackground,
+        fontSize = Air.COMMAND_SP.sp,
+        fontFamily = FontFamily.Monospace,
     )
 }
 
