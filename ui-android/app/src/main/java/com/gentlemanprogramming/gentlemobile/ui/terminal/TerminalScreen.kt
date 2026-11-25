@@ -9,6 +9,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -49,6 +51,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -56,6 +60,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -68,6 +74,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -92,6 +99,7 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.AppTheme
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalTerminalFace
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 private val TERMINAL_FONT_SP = 14.sp
@@ -119,7 +127,6 @@ fun TerminalScreen(
     session: TerminalSession?,
     starting: Boolean,
     error: String?,
-    agentRunsHere: Boolean,
     attachments: List<Attachment>,
     thumbnails: Map<Long, ImageBitmap>,
     paneRows: List<PaneSwitcherModel.Row>,
@@ -132,6 +139,7 @@ fun TerminalScreen(
     onPaneSelected: (PaneSwitcherModel.Row) -> Unit,
     onCamera: () -> Unit,
     onPickImage: () -> Unit,
+    onPickFile: () -> Unit,
     onRetryUpload: (Long) -> Unit,
     onRemoveAttachment: (Long) -> Unit,
     onAttachmentsConsumed: () -> Unit,
@@ -155,8 +163,14 @@ fun TerminalScreen(
     var input by remember { mutableStateOf(TextFieldValue("")) }
     val composer = remember { TerminalComposer() }
     var paneSheet by remember { mutableStateOf(false) }
+    var padOpen by remember { mutableStateOf(false) }
+    var linesOpen by remember { mutableStateOf(false) }
+    var padLocked by remember { mutableStateOf(false) }
+    var clipboardNotice by remember { mutableStateOf<String?>(null) }
     var blinkPhase by remember { mutableStateOf(0L) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val clipboardEmptyMessage = stringResource(R.string.cd_clipboard_empty)
 
     // T54 (S8): local dictation — record with the microphone, transcribe on
     // Stop, and land the text in the field (auto-sent only when the setting
@@ -218,6 +232,38 @@ fun TerminalScreen(
     }
     fun stopDictation() = whisperDictation.stop(dictationListener())
     fun cancelDictation() = whisperDictation.cancel(dictationListener())
+
+    fun pressKey(key: ShortcutKey) {
+        val bytes = key.bytes(composer.ctrlSticky, composer.altSticky)
+        if (bytes.isNotEmpty()) {
+            session?.write(bytes)
+            composer.disarm()
+        }
+    }
+
+    fun pressChip(key: ShortcutKey) {
+        when ((key.action as? ShortcutAction.Key)?.name) {
+            "ctrl" -> composer.toggleCtrl()
+            "alt" -> composer.toggleAlt()
+            else -> pressKey(key)
+        }
+    }
+
+    fun pasteClipboard() {
+        val text = clipboard.getText()?.text.orEmpty()
+        if (text.isEmpty()) {
+            clipboardNotice = clipboardEmptyMessage
+        } else {
+            session?.write(text.toByteArray(Charsets.UTF_8))
+        }
+    }
+
+    LaunchedEffect(clipboardNotice) {
+        if (clipboardNotice != null) {
+            delay(4000)
+            clipboardNotice = null
+        }
+    }
 
     LaunchedEffect(cursorBlink) {
         while (cursorBlink) {
@@ -308,18 +354,51 @@ fun TerminalScreen(
                 blinkPhase = blinkPhase,
                 modifier = Modifier.fillMaxSize(),
             )
+            if (clipboardNotice != null) {
+                Text(
+                    text = clipboardNotice.orEmpty(),
+                    color = palette.muted,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 4.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(palette.surfaceRaised.copy(alpha = 0.92f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+            if (padOpen) {
+                FloatingPad(
+                    locked = padLocked,
+                    onToggleLock = { padLocked = !padLocked },
+                    onDismiss = { padOpen = false },
+                    onKey = ::pressChip,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            }
         }
         TerminalKeyRow(
-            pad = shortcutPad,
             composer = composer,
             useComposer = useComposer,
+            padOpen = padOpen,
+            linesOpen = linesOpen,
             onUseComposerChange = onUseComposerChange,
+            onTogglePad = { padOpen = !padOpen },
+            onToggleLines = { linesOpen = !linesOpen },
+            onPasteClipboard = ::pasteClipboard,
             onKey = { bytes -> session?.write(bytes) },
         )
-        if (TerminalKeyBar.showsComposerField(TerminalKeyBar.inputMode(useComposer))) {
+        if (linesOpen) {
+            TerminalKeysInlineRow(
+                pad = shortcutPad,
+                composer = composer,
+                onKey = { bytes -> session?.write(bytes) },
+            )
+        }
+        if (useComposer) {
             TerminalComposerRow(
                 enabled = session != null && !closed,
-                agentRunsHere = TerminalAttachments.offersCameraAndClip(agentRunsHere),
                 attachments = attachments,
                 thumbnails = thumbnails,
                 value = input,
@@ -337,6 +416,7 @@ fun TerminalScreen(
                 onCancelDictation = { cancelDictation() },
                 onCamera = onCamera,
                 onPickImage = onPickImage,
+                onPickFile = onPickFile,
                 onRetryUpload = onRetryUpload,
                 onRemoveAttachment = onRemoveAttachment,
             )
@@ -425,14 +505,16 @@ private fun TerminalTopBar(title: String, onBack: () -> Unit, onOpenPanes: () ->
 
 @Composable
 private fun TerminalKeyRow(
-    pad: ShortcutPad,
     composer: TerminalComposer,
     useComposer: Boolean,
+    padOpen: Boolean,
+    linesOpen: Boolean,
     onUseComposerChange: (Boolean) -> Unit,
+    onTogglePad: () -> Unit,
+    onToggleLines: () -> Unit,
+    onPasteClipboard: () -> Unit,
     onKey: (ByteArray) -> Unit,
 ) {
-    var keysOpen by remember { mutableStateOf(false) }
-
     fun press(key: ShortcutKey) {
         val bytes = key.bytes(composer.ctrlSticky, composer.altSticky)
         if (bytes.isNotEmpty()) {
@@ -449,53 +531,55 @@ private fun TerminalKeyRow(
         }
     }
 
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TerminalKeyBar.barChips().forEach { chip ->
-                val name = (chip.action as? ShortcutAction.Key)?.name
-                val pressed = name == "ctrl" && composer.ctrlSticky
-                TerminalKeyChip(
-                    label = chip.label,
-                    pressed = pressed,
-                    modifier = Modifier.weight(1f),
-                ) { pressChip(chip) }
-            }
-            BarIcon(
-                drawable = R.drawable.ic_keys,
-                description = stringResource(R.string.cd_keys_panel),
-                selected = keysOpen,
-                onClick = { keysOpen = !keysOpen },
-            )
-            BarIcon(
-                drawable = R.drawable.ic_chat,
-                description = stringResource(R.string.cd_input_composer),
-                selected = useComposer,
-                onClick = { onUseComposerChange(true) },
-            )
-            BarIcon(
-                drawable = R.drawable.ic_keyboard,
-                description = stringResource(R.string.cd_input_direct),
-                selected = !useComposer,
-                onClick = { onUseComposerChange(false) },
-            )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TerminalKeyBar.barChips().forEach { chip ->
+            val name = (chip.action as? ShortcutAction.Key)?.name
+            val pressed = name == "ctrl" && composer.ctrlSticky
+            TerminalKeyChip(
+                label = chip.label,
+                pressed = pressed,
+                modifier = Modifier.weight(1f),
+            ) { pressChip(chip) }
         }
-        if (keysOpen) {
-            TerminalKeysInlineRow(
-                pad = pad,
-                composer = composer,
-                onKey = onKey,
-            )
-        }
+        BarIcon(
+            drawable = R.drawable.ic_arrows,
+            description = stringResource(R.string.cd_pad),
+            selected = padOpen,
+            onClick = onTogglePad,
+        )
+        BarIcon(
+            drawable = R.drawable.ic_lines,
+            description = stringResource(R.string.cd_lines),
+            selected = linesOpen,
+            onClick = onToggleLines,
+        )
+        BarIcon(
+            drawable = R.drawable.ic_clipboard,
+            description = stringResource(R.string.cd_clipboard),
+            selected = false,
+            onClick = onPasteClipboard,
+        )
+        BarIcon(
+            drawable = R.drawable.ic_chat,
+            description = stringResource(R.string.cd_input_composer),
+            selected = useComposer,
+            onClick = { onUseComposerChange(!useComposer) },
+        )
+        BarIcon(
+            drawable = R.drawable.ic_keyboard,
+            description = stringResource(R.string.cd_input_direct),
+            selected = !useComposer,
+            onClick = { onUseComposerChange(false) },
+        )
     }
 }
 
-/** One bottom-bar icon: the keys panel, the chat bubble (composer) or the
- *  keyboard (direct). The chosen input mode is marked in the accent. */
+/** One 44 dp icon of the bar; the selected surface is marked in the accent. */
 @Composable
 private fun BarIcon(
     drawable: Int,
@@ -522,9 +606,8 @@ private fun BarIcon(
     }
 }
 
-/** The inline keys row (T58): toggled by the keys icon — no sheet, no modal.
- *  The joystick cross appears only when the pad's joystick switch is on, then
- *  Delete and Clear, then the pad's own keys, in their order. */
+/** The inline keys row (T59): toggled by the lines icon — the shortcut
+ *  pad's own keys, in their order. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TerminalKeysInlineRow(
@@ -548,22 +631,17 @@ private fun TerminalKeysInlineRow(
         }
     }
 
-    Column(
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp),
     ) {
-        if (pad.joystickVisible) {
-            TerminalJoystick(onPress = ::pressChip)
-            Spacer(Modifier.height(4.dp))
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            (TerminalKeyBar.extraKeys() + TerminalKeyBar.padKeys(pad)).forEach { key ->
-                val name = (key.action as? ShortcutAction.Key)?.name
-                val pressed = (name == "ctrl" && composer.ctrlSticky) ||
-                    (name == "alt" && composer.altSticky)
-                PanelKeyChip(label = key.label, pressed = pressed) { pressChip(key) }
-            }
+        TerminalKeyBar.inlineKeys(pad).forEach { key ->
+            val name = (key.action as? ShortcutAction.Key)?.name
+            val pressed = (name == "ctrl" && composer.ctrlSticky) ||
+                (name == "alt" && composer.altSticky)
+            PanelKeyChip(label = key.label, pressed = pressed) { pressChip(key) }
         }
     }
 }
@@ -594,53 +672,6 @@ private fun PanelKeyChip(label: String, pressed: Boolean, onPress: () -> Unit) {
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
         )
-    }
-}
-
-/** The joystick cluster (T52): up, left, Enter, right, down as its own unit. */
-@Composable
-private fun TerminalJoystick(onPress: (ShortcutKey) -> Unit) {
-    fun at(id: String): ShortcutKey = ShortcutPad.JOYSTICK.first { it.id == id }
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 4.dp),
-    ) {
-        JoystickCell(at("joy_up"), onPress)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            JoystickCell(at("joy_left"), onPress)
-            JoystickCell(at("joy_enter"), onPress)
-            JoystickCell(at("joy_right"), onPress)
-        }
-        JoystickCell(at("joy_down"), onPress)
-    }
-}
-
-@Composable
-private fun JoystickCell(key: ShortcutKey, onPress: (ShortcutKey) -> Unit) {
-    val palette = LocalPalette.current
-    Box(
-        modifier = Modifier.size(44.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(30.dp)
-                .border(1.dp, palette.line, RoundedCornerShape(8.dp))
-                .background(palette.surfaceRaised, RoundedCornerShape(8.dp))
-                .clickable { onPress(key) },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = key.label,
-                color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-            )
-        }
     }
 }
 
@@ -703,7 +734,6 @@ private fun TerminalKeyChip(
 @Composable
 private fun TerminalComposerRow(
     enabled: Boolean,
-    agentRunsHere: Boolean,
     attachments: List<Attachment>,
     thumbnails: Map<Long, ImageBitmap>,
     value: TextFieldValue,
@@ -717,10 +747,12 @@ private fun TerminalComposerRow(
     onCancelDictation: () -> Unit,
     onCamera: () -> Unit,
     onPickImage: () -> Unit,
+    onPickFile: () -> Unit,
     onRetryUpload: (Long) -> Unit,
     onRemoveAttachment: (Long) -> Unit,
 ) {
     val palette = LocalPalette.current
+    var attachmentsSheet by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -763,14 +795,12 @@ private fun TerminalComposerRow(
                     .border(1.dp, palette.line, RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
                     .padding(horizontal = 2.dp),
             ) {
-                if (agentRunsHere) {
-                    ComposerIcon(
-                        drawable = R.drawable.ic_camera,
-                        description = stringResource(R.string.cd_camera),
-                        enabled = enabled,
-                        onClick = onCamera,
-                    )
-                }
+                ComposerIcon(
+                    drawable = R.drawable.ic_attach,
+                    description = stringResource(R.string.cd_attach),
+                    enabled = enabled,
+                    onClick = { attachmentsSheet = true },
+                )
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -795,14 +825,6 @@ private fun TerminalComposerRow(
                         .weight(1f)
                         .padding(vertical = 12.dp),
                 )
-                if (agentRunsHere) {
-                    ComposerIcon(
-                        drawable = R.drawable.ic_clip,
-                        description = stringResource(R.string.cd_clip),
-                        enabled = enabled,
-                        onClick = onPickImage,
-                    )
-                }
             }
             Spacer(Modifier.width(8.dp))
             ComposerCircle(
@@ -815,6 +837,23 @@ private fun TerminalComposerRow(
                 onStopDictation = onStopDictation,
             )
         }
+    }
+    if (attachmentsSheet) {
+        TerminalAttachmentsSheet(
+            onDismiss = { attachmentsSheet = false },
+            onCamera = {
+                attachmentsSheet = false
+                onCamera()
+            },
+            onPickImage = {
+                attachmentsSheet = false
+                onPickImage()
+            },
+            onPickFile = {
+                attachmentsSheet = false
+                onPickFile()
+            },
+        )
     }
 }
 
@@ -930,6 +969,198 @@ private fun ComposerIcon(drawable: Int, description: String, enabled: Boolean, o
     }
 }
 
+/** The floating key pad (T59): a cross of big keys over the terminal with a
+ *  transparent surround, a drag handle and a lock toggle. Locked it stays;
+ *  unlocked it can be dragged lower and dismissed. */
+@Composable
+private fun FloatingPad(
+    locked: Boolean,
+    onToggleLock: () -> Unit,
+    onDismiss: () -> Unit,
+    onKey: (ShortcutKey) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalPalette.current
+    var offsetY by remember { mutableStateOf(0f) }
+    val dismissThresholdPx = with(LocalDensity.current) { 120.dp.toPx() }
+    val lockDescription = stringResource(if (locked) R.string.cd_unlock_pad else R.string.cd_lock_pad)
+    Box(modifier = modifier) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .offset { IntOffset(0, offsetY.roundToInt()) }
+                .padding(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clickable(onClick = onToggleLock)
+                        .semantics { contentDescription = lockDescription },
+                ) {
+                    Icon(
+                        painter = painterResource(if (locked) R.drawable.ic_lock else R.drawable.ic_lock_open),
+                        contentDescription = null,
+                        tint = palette.text,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .width(120.dp)
+                        .height(32.dp)
+                        .pointerInput(locked) {
+                            if (!locked) {
+                                detectVerticalDragGestures(
+                                    onDragEnd = {
+                                        if (offsetY > dismissThresholdPx) onDismiss() else offsetY = 0f
+                                    },
+                                    onVerticalDrag = { change, dragAmount ->
+                                        change.consume()
+                                        offsetY = (offsetY + dragAmount).coerceAtLeast(0f)
+                                    },
+                                )
+                            }
+                        },
+                ) {
+                    Box(
+                        Modifier
+                            .width(36.dp)
+                            .height(4.dp)
+                            .clip(CircleShape)
+                            .background(if (locked) palette.muted else palette.text),
+                    )
+                }
+                Spacer(Modifier.width(44.dp))
+            }
+            PadCross(onKey = onKey)
+        }
+    }
+}
+
+/** The pad's fixed cross: backspace, up, clear on top; left, Enter, right in
+ *  the middle; down at the bottom — the seven keys in row-major order. */
+@Composable
+private fun PadCross(onKey: (ShortcutKey) -> Unit) {
+    val keys = TerminalKeyBar.padKeys()
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PadKey(keys[0], onKey)
+            PadKey(keys[1], onKey)
+            PadKey(keys[2], onKey)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PadKey(keys[3], onKey)
+            PadKey(keys[4], onKey)
+            PadKey(keys[5], onKey)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.size(56.dp))
+            PadKey(keys[6], onKey)
+            Spacer(Modifier.size(56.dp))
+        }
+    }
+}
+
+/** One big key of the floating pad: a filled plate, never a bare glyph on
+ *  the transparent surround. */
+@Composable
+private fun PadKey(key: ShortcutKey, onKey: (ShortcutKey) -> Unit) {
+    val palette = LocalPalette.current
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .padding(3.dp)
+            .size(50.dp)
+            .border(1.dp, palette.line, RoundedCornerShape(10.dp))
+            .background(palette.surfaceRaised, RoundedCornerShape(10.dp))
+            .clickable { onKey(key) },
+    ) {
+        when (key.id) {
+            "pad_backspace" -> Icon(
+                painter = painterResource(R.drawable.ic_backspace),
+                contentDescription = key.label,
+                tint = palette.text,
+                modifier = Modifier.size(22.dp),
+            )
+            "pad_clear" -> Icon(
+                painter = painterResource(R.drawable.ic_broom),
+                contentDescription = key.label,
+                tint = palette.text,
+                modifier = Modifier.size(22.dp),
+            )
+            else -> Text(
+                text = key.label,
+                color = palette.text,
+                fontSize = 16.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** The attachment sheet (T59): Cámara, Foto o video, Archivo — the three
+ *  upload sources behind the composer's `+`. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TerminalAttachmentsSheet(
+    onDismiss: () -> Unit,
+    onCamera: () -> Unit,
+    onPickImage: () -> Unit,
+    onPickFile: () -> Unit,
+) {
+    val p = LocalPalette.current
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = p.surface,
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            TerminalKeyBar.attachmentRows().forEach { kind ->
+                val drawable = when (kind) {
+                    TerminalKeyBar.AttachmentKind.CAMERA -> R.drawable.ic_camera
+                    TerminalKeyBar.AttachmentKind.GALLERY -> R.drawable.ic_clip
+                    TerminalKeyBar.AttachmentKind.FILE -> R.drawable.ic_file
+                }
+                val label = when (kind) {
+                    TerminalKeyBar.AttachmentKind.CAMERA -> R.string.att_camera
+                    TerminalKeyBar.AttachmentKind.GALLERY -> R.string.att_gallery
+                    TerminalKeyBar.AttachmentKind.FILE -> R.string.att_file
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .clickable {
+                            when (kind) {
+                                TerminalKeyBar.AttachmentKind.CAMERA -> onCamera()
+                                TerminalKeyBar.AttachmentKind.GALLERY -> onPickImage()
+                                TerminalKeyBar.AttachmentKind.FILE -> onPickFile()
+                            }
+                        },
+                ) {
+                    Icon(
+                        painter = painterResource(drawable),
+                        contentDescription = null,
+                        tint = p.text,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = stringResource(label),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 15.sp,
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
 /**
  * The direct input row (T50, T58): with "use the field" off there is no
  * visible composer — an invisible field keeps the IME up and every keystroke
@@ -939,6 +1170,11 @@ private fun ComposerIcon(drawable: Int, description: String, enabled: Boolean, o
 @Composable
 private fun TerminalDirectInputRow(enabled: Boolean, onBytes: (ByteArray) -> Unit) {
     var value by remember { mutableStateOf(TextFieldValue("")) }
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(100)
+        focusRequester.requestFocus()
+    }
     BasicTextField(
         value = value,
         onValueChange = { new ->
@@ -960,6 +1196,7 @@ private fun TerminalDirectInputRow(enabled: Boolean, onBytes: (ByteArray) -> Uni
         ),
         keyboardActions = KeyboardActions(onSend = { onBytes(byteArrayOf(0x0D)) }),
         modifier = Modifier
+            .focusRequester(focusRequester)
             .fillMaxWidth()
             .heightIn(min = 44.dp)
             .padding(horizontal = 12.dp, vertical = 12.dp),

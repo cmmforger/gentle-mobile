@@ -190,6 +190,7 @@
     <string name="session_pane_truncated">The host left out older rows.</string>
     <string name="session_no_camera_app">no camera app is available on this device</string>
     <string name="session_no_gallery_app">no gallery app is available on this device</string>
+    <string name="session_no_file_app">no file app is available on this device</string>
     <string name="session_reason_link_down">the connection was down while the app was away</string>
     <string name="session_reason_host_closed">the host closed the connection</string>
     <!-- Composer -->
@@ -209,10 +210,20 @@
     <string name="cd_keys_panel">Keys</string>
     <string name="cd_input_composer">Type in the composer</string>
     <string name="cd_input_direct">Type straight into the terminal</string>
+    <string name="cd_pad">Open the floating key pad</string>
+    <string name="cd_lines">Show the shortcut keys</string>
+    <string name="cd_clipboard">Paste from the clipboard</string>
+    <string name="cd_clipboard_empty">The clipboard is empty.</string>
+    <string name="cd_attach">Attach a photo, image or file</string>
+    <string name="cd_lock_pad">Lock the pad in place</string>
+    <string name="cd_unlock_pad">Unlock the pad so it can be dragged</string>
 
     <string name="keys_panel_title">Keys</string>
 
     <!-- Attachments -->
+    <string name="att_camera">Camera</string>
+    <string name="att_gallery">Photo or video</string>
+    <string name="att_file">File</string>
     <string name="att_preview_of">Preview of %1$s</string>
     <string name="att_uploading">uploading \u00B7 %1$d %% \u00B7 %2$s / %3$s</string>
     <string name="att_uploaded">\u2713 uploaded \u00B7 %1$s \u00B7 %2$s</string>

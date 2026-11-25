@@ -2874,6 +2874,11 @@ fun ConnectScreen(
                         startAttachmentUpload(context, current.connection, sessionUi, uri)
                     }
                 }
+                val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                    if (uri != null) {
+                        startAttachmentUpload(context, current.connection, sessionUi, uri)
+                    }
+                }
                 fun openCamera() {
                     val dir = java.io.File(context.cacheDir, "attachments").apply { mkdirs() }
                     val file = java.io.File(dir, "camera-${System.currentTimeMillis()}.jpg")
@@ -2894,6 +2899,13 @@ fun ConnectScreen(
                         sessionUi.attachmentError = context.getString(R.string.session_no_gallery_app)
                     }
                 }
+                fun openFile() {
+                    try {
+                        fileLauncher.launch(arrayOf("*/*"))
+                    } catch (error: Exception) {
+                        sessionUi.attachmentError = context.getString(R.string.session_no_file_app)
+                    }
+                }
                 val paneRows = PaneSwitcherModel.rows(
                     panes = sessionUi.panes,
                     agents = sessionUi.agents,
@@ -2911,7 +2923,6 @@ fun ConnectScreen(
                     session = screen.terminalSession,
                     starting = screen.terminalStarting,
                     error = screen.terminalError,
-                    agentRunsHere = screen.terminalAgent,
                     attachments = sessionUi.attachments,
                     thumbnails = sessionUi.thumbnails,
                     paneRows = paneRows,
@@ -3001,6 +3012,7 @@ fun ConnectScreen(
                     },
                     onCamera = { openCamera() },
                     onPickImage = { openPicker() },
+                    onPickFile = { openFile() },
                     onRetryUpload = { id ->
                         val uri = sessionUi.attachmentUris[id]
                         if (uri != null) {

@@ -192,6 +192,7 @@
     <string name="session_pane_truncated">El host dejó fuera las filas más viejas.</string>
     <string name="session_no_camera_app">no hay una app de cámara en este dispositivo</string>
     <string name="session_no_gallery_app">no hay una app de galería en este dispositivo</string>
+    <string name="session_no_file_app">no hay una app de archivos en este dispositivo</string>
     <string name="session_reason_link_down">la conexión estaba cortada mientras la app estaba en segundo plano</string>
     <string name="session_reason_host_closed">el host cerró la conexión</string>
     <!-- Compositor -->
@@ -210,10 +211,20 @@
     <string name="cd_keys_panel">Teclas</string>
     <string name="cd_input_composer">Escribir en el campo</string>
     <string name="cd_input_direct">Escribir directo en la terminal</string>
+    <string name="cd_pad">Abrir el teclado flotante</string>
+    <string name="cd_lines">Mostrar las teclas rápidas</string>
+    <string name="cd_clipboard">Pegar desde el portapapeles</string>
+    <string name="cd_clipboard_empty">El portapapeles está vacío.</string>
+    <string name="cd_attach">Adjuntar una foto, imagen o archivo</string>
+    <string name="cd_lock_pad">Fijar el teclado en su lugar</string>
+    <string name="cd_unlock_pad">Desbloquear el teclado para moverlo</string>
 
     <string name="keys_panel_title">Teclas</string>
 
     <!-- Adjuntos -->
+    <string name="att_camera">Cámara</string>
+    <string name="att_gallery">Foto o video</string>
+    <string name="att_file">Archivo</string>
     <string name="att_preview_of">Vista previa de %1$s</string>
     <string name="att_uploading">subiendo \u00B7 %1$d %% \u00B7 %2$s / %3$s</string>
     <string name="att_uploaded">\u2713 subido \u00B7 %1$s \u00B7 %2$s</string>
