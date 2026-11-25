@@ -98,6 +98,10 @@
     <string name="hosts_rename_title">Name this host</string>
     <string name="hosts_rename_save">Save</string>
     <string name="hosts_empty">No hosts yet — add one to start.</string>
+    <string name="hosts_menu_connect">Connect</string>
+    <string name="hosts_menu_edit">Edit</string>
+    <string name="hosts_menu_more">More</string>
+    <string name="hosts_edit_title">Edit host</string>
     <string name="nodes_session_history">Session history</string>
     <string name="nodes_other_hosts">Other hosts</string>
     <string name="nodes_session_history_sub">Open a Gentle Shell session that already exists on the host.</string>
@@ -203,6 +207,11 @@
     <string name="cd_mic_permission">Dictate — waiting for the microphone permission</string>
     <string name="cd_mic">Dictate — speech becomes text</string>
     <string name="cd_mic_reason">Dictate — speech becomes text. %1$s</string>
+    <string name="cd_keys_panel">Keys</string>
+    <string name="cd_input_composer">Type in the composer</string>
+    <string name="cd_input_direct">Type straight into the terminal</string>
+
+    <string name="keys_panel_title">Keys</string>
 
     <!-- Attachments -->
     <string name="att_preview_of">Preview of %1$s</string>

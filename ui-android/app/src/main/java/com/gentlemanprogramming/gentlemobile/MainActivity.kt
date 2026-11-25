@@ -15,6 +15,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -185,10 +187,10 @@ import androidx.compose.ui.unit.IntOffset
 import com.gentlemanprogramming.gentlemobile.ui.sessions.ResumedSessionScreen
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel
 import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesScreen
-import com.gentlemanprogramming.gentlemobile.ui.hosts.HostRowSwipe
-import com.gentlemanprogramming.gentlemobile.ui.hosts.SwipeReveal
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostsModel
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostDeletion
+import com.gentlemanprogramming.gentlemobile.ui.hosts.HostMenuEntry
+import com.gentlemanprogramming.gentlemobile.ui.hosts.HostMenuModel
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostRowModel
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostScreenModel
 import com.gentlemanprogramming.gentlemobile.ui.hosts.HostScreenState
@@ -847,9 +849,14 @@ fun ConnectScreen(
     // S24-4: the saved host list lives beside the last-used form: the form
     // prefill stays, and the list is what the app opens on.
     val hostsStore = remember { HostsStore(SharedPreferencesStore(context)) }
-    // S26-5: the host being renamed, and the text being typed for it.
-    var renameTarget by remember { mutableStateOf<SavedHostEntry?>(null) }
-    var renameText by remember { mutableStateOf("") }
+    // T57: the host whose menu is open, and the host being edited with its
+    // typed name and address.
+    var hostMenuTarget by remember { mutableStateOf<SavedHostEntry?>(null) }
+    var editTarget by remember { mutableStateOf<SavedHostEntry?>(null) }
+    var editName by remember { mutableStateOf("") }
+    var editHost by remember { mutableStateOf("") }
+    var editPort by remember { mutableStateOf("") }
+    var editUser by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<SavedHostEntry?>(null) }
     var hostName by remember { mutableStateOf(savedForm.name) }
     var host by remember { mutableStateOf(savedForm.host) }
@@ -883,18 +890,39 @@ fun ConnectScreen(
         screen.hosts = hostsStore.load()
     }
 
-    /** Save a host under the name the human typed (S26-5). A blank name keeps
-     *  the one it had; nothing else about the host changes — not its pins, not
-     *  its port, not its user. */
-    fun applyRename() {
-        val entry = renameTarget ?: return
-        val wanted = renameText.trim().ifEmpty { entry.name }
-        hostsStore.save(entry.copy(name = wanted))
-        if (entry.host == host.trim() && entry.port.trim() == port.trim()) {
-            hostName = wanted
+    /** T57 (Editar): save the edited name and address. The address is the
+     *  host's identity, so a changed one drops the old row and its pin before
+     *  the new one is saved. Invalid fields never save. */
+    fun applyEditHost() {
+        val entry = editTarget ?: return
+        val name = editName.trim()
+        val h = editHost.trim()
+        val p = editPort.trim()
+        val u = editUser.trim()
+        if (ConnectValidator.host(h) != null ||
+            ConnectValidator.port(p) != null ||
+            ConnectValidator.user(u) != null
+        ) {
+            return
         }
-        renameTarget = null
-        renameText = ""
+        val addressChanged = !h.equals(entry.host, ignoreCase = true) || p != entry.port
+        if (addressChanged) {
+            hostsStore.remove(entry.host, entry.port)
+            val pinPath = File(context.filesDir, HostDeletion.pinFile(entry)).absolutePath
+            executor.execute {
+                runCatching {
+                    forgetHost(pinPath, entry.host, entry.port.trim().toIntOrNull()?.toUShort() ?: 0u)
+                }
+            }
+        }
+        hostsStore.save(SavedHostEntry(name.ifEmpty { "$u@$h" }, h, p, u))
+        if (entry.host.equals(host.trim(), ignoreCase = true) && entry.port.trim() == port.trim()) {
+            hostName = name
+            host = h
+            port = p
+            user = u
+        }
+        editTarget = null
         refreshSavedHosts()
     }
 
@@ -960,8 +988,9 @@ fun ConnectScreen(
     }
 
     // Settings reads live state on entry: the biometric capability is
-    // re-asked every time the screen opens (T18).
-    LaunchedEffect(route) {
+    // re-asked every time the screen opens (T18). Hooks re-checks when the
+    // screen opens or once the device key has loaded.
+    LaunchedEffect(route, identity) {
         if (route == Route.Settings) {
             refreshBiometrics()
         }
@@ -1443,7 +1472,6 @@ fun ConnectScreen(
             fingerprint = identity?.publicKeyLine?.let { DeviceKeyFingerprint.fingerprint(it) },
             status = hooksStatus,
             checking = hooksChecking,
-            onCheckStatus = { runHooksCheck() },
             onRegenerate = {
                 // T55: a new key means new trust — the previous QR stops
                 // working and the host must trust the new key.
@@ -2747,29 +2775,9 @@ fun ConnectScreen(
                                 route = Route.Host
                             }
                         },
-                        onRename = { entry ->
-                            renameTarget = entry
-                            renameText = entry.name
-                        },
-                        onDelete = { entry -> deleteTarget = entry },
+                        onMore = { entry -> hostMenuTarget = entry },
                     )
-                    // S26-5: one small surface for the new name.
-                    renameTarget?.let { target ->
-                            RenameHostDialog(
-                                title = stringResource(R.string.hosts_rename_title),
-                                value = renameText,
-                                fieldLabel = stringResource(R.string.pair_form_name),
-                                saveLabel = stringResource(R.string.hosts_rename_save),
-                                cancelLabel = stringResource(R.string.set_cancel),
-                                onValueChange = { renameText = it },
-                                onSave = { applyRename() },
-                                onCancel = {
-                                    renameTarget = null
-                                    renameText = ""
-                                },
-                            )
-                        }
-                        Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(24.dp))
                         // The one accent action of the list (S24-4): add a
                         // host. It opens the Pair/Connect screen; the new
                         // host is saved with its name on a successful
@@ -2821,28 +2829,8 @@ fun ConnectScreen(
                             liveState = HostScreenState.Unconnected,
                         ),
                         onOpen = { row -> connectTo(row.entry) },
-                        onRename = { entry ->
-                            renameTarget = entry
-                            renameText = entry.name
-                        },
-                        onDelete = { entry -> deleteTarget = entry },
+                        onMore = { entry -> hostMenuTarget = entry },
                     )
-                    // S26-5: the same one-surface rename, on this list too.
-                    renameTarget?.let { target ->
-                        RenameHostDialog(
-                            title = stringResource(R.string.hosts_rename_title),
-                            value = renameText,
-                            fieldLabel = stringResource(R.string.pair_form_name),
-                            saveLabel = stringResource(R.string.hosts_rename_save),
-                            cancelLabel = stringResource(R.string.set_cancel),
-                            onValueChange = { renameText = it },
-                            onSave = { applyRename() },
-                            onCancel = {
-                                renameTarget = null
-                                renameText = ""
-                            },
-                        )
-                    }
                 }
                 Spacer(Modifier.height(24.dp))
                 Button(
@@ -3027,6 +3015,7 @@ fun ConnectScreen(
                     cursorMode = advanced.cursorMode,
                     cursorBlink = advanced.cursorBlink,
                     useComposer = advanced.useComposer,
+                    onUseComposerChange = { onSetAdvanced(advanced.copy(useComposer = it)) },
                     sendOnEnter = advanced.sendOnEnter,
                     shortcutPad = shortcutPad,
                     dictationEnabled = resolvedEngine == DictationEngineChoice.LOCAL_WHISPER,
@@ -3035,6 +3024,45 @@ fun ConnectScreen(
                     replacements = voz.replacements,
                 )
             }
+        }
+
+        hostMenuTarget?.let { target ->
+            HostMenuDialog(
+                entry = target,
+                onConnect = { entry -> connectTo(entry) },
+                onEdit = { entry ->
+                    hostMenuTarget = null
+                    editTarget = entry
+                    editName = entry.name
+                    editHost = entry.host
+                    editPort = entry.port
+                    editUser = entry.user
+                },
+                onDelete = { entry ->
+                    hostMenuTarget = null
+                    deleteTarget = entry
+                },
+                onDismiss = { hostMenuTarget = null },
+            )
+        }
+
+        editTarget?.let { target ->
+            EditHostDialog(
+                title = stringResource(R.string.hosts_edit_title),
+                name = editName,
+                host = editHost,
+                port = editPort,
+                user = editUser,
+                hostError = ConnectValidator.host(editHost, fieldMessage),
+                portError = ConnectValidator.port(editPort, fieldMessage),
+                userError = ConnectValidator.user(editUser, fieldMessage),
+                onNameChange = { editName = it },
+                onHostChange = { editHost = it },
+                onPortChange = { editPort = it },
+                onUserChange = { editUser = it },
+                onSave = { applyEditHost() },
+                onCancel = { editTarget = null },
+            )
         }
 
         deleteTarget?.let { target ->
@@ -4210,16 +4238,23 @@ private fun InboxRow(
  * A row that explains itself (S24-3) passes `state = null` and shows none.
  * The live host's word reads in the accent colour (S24-4): the connected
  * machine is marked, never left looking like the rest. */
-/** Renaming a saved host (S26-5): one field, one save, one cancel. The text is
- *  the human's; nothing here touches the host's pins, port or user. */
+/** T57 (Editar): the host's name and address — four fields, one save. The
+ *  address is the host's identity, so it is editable here and saved by
+ *  [applyEditHost]; a field that does not validate stays red and never saves. */
 @Composable
-private fun RenameHostDialog(
+private fun EditHostDialog(
     title: String,
-    value: String,
-    fieldLabel: String,
-    saveLabel: String,
-    cancelLabel: String,
-    onValueChange: (String) -> Unit,
+    name: String,
+    host: String,
+    port: String,
+    user: String,
+    hostError: String?,
+    portError: String?,
+    userError: String?,
+    onNameChange: (String) -> Unit,
+    onHostChange: (String) -> Unit,
+    onPortChange: (String) -> Unit,
+    onUserChange: (String) -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -4237,16 +4272,51 @@ private fun RenameHostDialog(
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(12.dp))
+            val fieldColors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = LocalPalette.current.accent,
+                unfocusedBorderColor = LocalPalette.current.line,
+                errorBorderColor = LocalPalette.current.error,
+            )
             OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
+                value = name,
+                onValueChange = onNameChange,
                 singleLine = true,
-                label = { Text(fieldLabel) },
+                label = { Text(stringResource(R.string.pair_form_name)) },
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = LocalPalette.current.accent,
-                    unfocusedBorderColor = LocalPalette.current.line,
-                ),
+                colors = fieldColors,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = host,
+                onValueChange = onHostChange,
+                singleLine = true,
+                label = { Text(stringResource(R.string.pair_form_host)) },
+                isError = hostError != null,
+                supportingText = hostError?.let { { Text(it) } },
+                modifier = Modifier.fillMaxWidth(),
+                colors = fieldColors,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = port,
+                onValueChange = onPortChange,
+                singleLine = true,
+                label = { Text(stringResource(R.string.pair_form_port)) },
+                isError = portError != null,
+                supportingText = portError?.let { { Text(it) } },
+                modifier = Modifier.fillMaxWidth(),
+                colors = fieldColors,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = user,
+                onValueChange = onUserChange,
+                singleLine = true,
+                label = { Text(stringResource(R.string.pair_form_user)) },
+                isError = userError != null,
+                supportingText = userError?.let { { Text(it) } },
+                modifier = Modifier.fillMaxWidth(),
+                colors = fieldColors,
             )
             Spacer(Modifier.height(16.dp))
             Row(
@@ -4254,7 +4324,7 @@ private fun RenameHostDialog(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = cancelLabel,
+                    text = stringResource(R.string.set_cancel),
                     color = LocalPalette.current.muted,
                     fontSize = 13.sp,
                     modifier = Modifier
@@ -4263,13 +4333,87 @@ private fun RenameHostDialog(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = saveLabel,
-                    color = LocalPalette.current.accent,
+                    text = stringResource(R.string.hosts_rename_save),
+                    color = if (hostError == null && portError == null && userError == null) {
+                        LocalPalette.current.accent
+                    } else {
+                        LocalPalette.current.textDisabled
+                    },
                     fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .clickable(onClick = onSave)
                         .padding(horizontal = 12.dp, vertical = 12.dp),
                 )
+            }
+        }
+    }
+}
+
+/** T57: the host row's menu — Conectar, Editar and Eliminar in the error
+ *  colour with a trash icon. Duplicar and Reordenar are left out: they cannot
+ *  be done well yet, and a dead entry is worse than an absent one. */
+@Composable
+private fun HostMenuDialog(
+    entry: SavedHostEntry,
+    onConnect: (SavedHostEntry) -> Unit,
+    onEdit: (SavedHostEntry) -> Unit,
+    onDelete: (SavedHostEntry) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val p = LocalPalette.current
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(p.surface, RoundedCornerShape(16.dp))
+                .padding(8.dp),
+        ) {
+            Text(
+                text = entry.name,
+                color = p.muted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+            HostMenuModel.entries().forEach { item ->
+                val destructive = HostMenuModel.isDestructive(item)
+                val label = when (item) {
+                    HostMenuEntry.CONNECT -> stringResource(R.string.hosts_menu_connect)
+                    HostMenuEntry.EDIT -> stringResource(R.string.hosts_menu_edit)
+                    HostMenuEntry.DELETE -> stringResource(R.string.hosts_delete)
+                }
+                val action: () -> Unit = when (item) {
+                    HostMenuEntry.CONNECT -> { { onConnect(entry) } }
+                    HostMenuEntry.EDIT -> { { onEdit(entry) } }
+                    HostMenuEntry.DELETE -> { { onDelete(entry) } }
+                }
+                Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .clickable {
+                            onDismiss()
+                            action()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    if (destructive) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_trash),
+                            contentDescription = null,
+                            tint = p.error,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Text(
+                        text = label,
+                        color = if (destructive) p.error else MaterialTheme.colorScheme.onBackground,
+                        fontSize = 15.sp,
+                        fontWeight = if (destructive) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
             }
         }
     }
@@ -4332,6 +4476,7 @@ private fun DeleteHostDialog(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NodeRow(
     name: String,
@@ -4339,16 +4484,14 @@ private fun NodeRow(
     meta: String,
     onOpen: () -> Unit,
     stateAccent: Boolean = false,
-    renameLabel: String? = null,
-    onRename: (() -> Unit)? = null,
-    deleteLabel: String? = null,
-    onDelete: (() -> Unit)? = null,
+    moreLabel: String? = null,
+    onMore: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clickable(onClick = onOpen),
+            .combinedClickable(onClick = onOpen, onLongClick = { onMore?.invoke() }),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -4382,33 +4525,20 @@ private fun NodeRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        // S26-5: renaming a saved host is its own target, not a long press —
-        // with several machines the name is how the human tells them apart.
-        // T53: a visible delete, not only the swipe — the human should not
-        // have to discover a gesture to remove a host.
-        if (onDelete != null && !deleteLabel.isNullOrBlank()) {
+        // T57: the ⋯ affordance opens the host's menu; a long press does too.
+        if (onMore != null && !moreLabel.isNullOrBlank()) {
             Box(
                 modifier = Modifier
                     .size(Air.TOUCH_DP.dp)
-                    .clickable(onClick = onDelete)
-                    .semantics { contentDescription = deleteLabel },
+                    .clickable(onClick = onMore)
+                    .semantics { contentDescription = moreLabel },
                 contentAlignment = androidx.compose.ui.Alignment.Center,
             ) {
-                Text("\u2715", color = LocalPalette.current.error, fontSize = 15.sp)
+                Text("\u22EF", color = LocalPalette.current.muted, fontSize = 18.sp)
             }
+        } else {
+            Text(text = "›", color = LocalPalette.current.muted, fontSize = 15.sp)
         }
-        if (onRename != null && !renameLabel.isNullOrBlank()) {
-            Text(
-                text = renameLabel,
-                color = LocalPalette.current.muted,
-                fontSize = 11.sp,
-                modifier = Modifier
-                    .clickable(onClick = onRename)
-                    .padding(start = 12.dp, top = 12.dp, bottom = 12.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-        }
-        Text(text = "›", color = LocalPalette.current.muted, fontSize = 15.sp)
     }
 }
 
@@ -4424,138 +4554,33 @@ private fun RowHairline() {
     )
 }
 
-/** The hosts list's rows (S34, T50/T51): one row per host, a hairline
- *  between rows (board 02), the state as one word — connected and
- *  interrupted in the accent, saved quiet. Swiping a row slides it to reveal
- *  a delete icon at the trailing edge (Outlook's shape, never a full-width
- *  block); tapping the icon opens the confirmation. One row open at a time. */
+/** The hosts list's rows (T57): one row per host, a hairline between rows,
+ *  the state as one word, and a ⋯ affordance — or a long press on the row —
+ *  that opens the host's menu. Never a swipe. */
 @Composable
 private fun HostRows(
     rows: List<HostRowModel>,
     onOpen: (HostRowModel) -> Unit,
-    onRename: (SavedHostEntry) -> Unit,
-    onDelete: (SavedHostEntry) -> Unit,
+    onMore: (SavedHostEntry) -> Unit,
 ) {
-    var openRowId by remember { mutableStateOf<String?>(null) }
     rows.forEachIndexed { index, row ->
-        val rowId = "${row.entry.host}:${row.entry.port}"
         key(row.entry.host, row.entry.port) {
-            SwipeRevealRow(
-                open = openRowId == rowId,
-                onOpenChanged = { isOpen -> openRowId = if (isOpen) rowId else null },
-                onDelete = {
-                    openRowId = null
-                    onDelete(row.entry)
+            NodeRow(
+                name = row.entry.name,
+                state = when (row.state) {
+                    HostRowState.Connected -> stringResource(R.string.nodes_state_row_connected)
+                    HostRowState.Interrupted -> stringResource(R.string.nodes_state_row_interrupted)
+                    HostRowState.Saved -> stringResource(R.string.nodes_state_row_saved)
                 },
-            ) {
-                NodeRow(
-                    name = row.entry.name,
-                    state = when (row.state) {
-                        HostRowState.Connected -> stringResource(R.string.nodes_state_row_connected)
-                        HostRowState.Interrupted -> stringResource(R.string.nodes_state_row_interrupted)
-                        HostRowState.Saved -> stringResource(R.string.nodes_state_row_saved)
-                    },
-                    meta = HostsModel.address(row.entry),
-                    stateAccent = row.state != HostRowState.Saved,
-                    onOpen = { onOpen(row) },
-                    renameLabel = stringResource(R.string.hosts_rename),
-                    onRename = { onRename(row.entry) },
-                    deleteLabel = stringResource(R.string.hosts_delete),
-                    onDelete = {
-                        openRowId = null
-                        onDelete(row.entry)
-                    },
-                )
-            }
+                meta = HostsModel.address(row.entry),
+                stateAccent = row.state != HostRowState.Saved,
+                onOpen = { onOpen(row) },
+                moreLabel = stringResource(R.string.hosts_menu_more),
+                onMore = { onMore(row.entry) },
+            )
         }
         if (index < rows.size - 1) {
             RowHairline()
-        }
-    }
-}
-
-/** T51: the swipe reveal behind one host row. The row slides left to expose
- *  a delete icon at the trailing edge; the icon is the affordance and asks
- *  for confirmation on tap. A drag past the half-way point settles open, a
- *  small drag or the opposite swipe settles back closed. */
-@Composable
-private fun SwipeRevealRow(
-    open: Boolean,
-    onOpenChanged: (Boolean) -> Unit,
-    onDelete: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
-    val revealPx = with(LocalDensity.current) { 88.dp.toPx() }
-    val thresholdPx = revealPx / 2f
-    val offsetX = remember { Animatable(0f) }
-    val deleteCd = stringResource(R.string.hosts_delete)
-
-    // An external open/close (tapping the icon closes, opening another row
-    // closes this one) animates the row back to rest; the drag's own settle
-    // below covers the small-drag snap-back where `open` did not change.
-    LaunchedEffect(open) {
-        offsetX.animateTo(
-            HostRowSwipe.offset(if (open) SwipeReveal.OPEN else SwipeReveal.CLOSED, revealPx),
-        )
-    }
-
-    fun settle(target: SwipeReveal) {
-        scope.launch { offsetX.animateTo(HostRowSwipe.offset(target, revealPx)) }
-        onOpenChanged(target == SwipeReveal.OPEN)
-    }
-
-    Box {
-        // T53: the reveal is a coloured panel with a trash icon at the row's
-        // leading edge — slide right to expose it, tap it to ask for the
-        // confirmation. A mail app's gesture, not a thin glyph.
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(p.bg),
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(with(LocalDensity.current) { revealPx.toDp() })
-                    .fillMaxHeight()
-                    .background(p.error),
-                contentAlignment = androidx.compose.ui.Alignment.Center,
-            ) {
-                Box(
-                    contentAlignment = androidx.compose.ui.Alignment.Center,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .semantics { contentDescription = deleteCd }
-                        .clickable(onClick = onDelete),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_trash),
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            }
-        }
-        Box(
-            modifier = Modifier
-                .background(p.bg)
-                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                .pointerInput(open) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = { settle(HostRowSwipe.settle(offsetX.value, thresholdPx)) },
-                        onDragCancel = { settle(if (open) SwipeReveal.OPEN else SwipeReveal.CLOSED) },
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            scope.launch {
-                                offsetX.snapTo((offsetX.value + dragAmount).coerceIn(0f, revealPx))
-                            }
-                        },
-                    )
-                },
-        ) {
-            content()
         }
     }
 }
@@ -4699,8 +4724,7 @@ private fun HostsPreview() {
                 liveState = HostScreenState.Connected,
             ),
             onOpen = {},
-            onRename = {},
-            onDelete = {},
+            onMore = {},
         )
         Spacer(Modifier.height(24.dp))
         HostScreen(

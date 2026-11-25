@@ -32,11 +32,11 @@ object TerminalCursor {
         else (elapsedMs / periodMs) % 2L == 0L
 }
 
-/** The picker's preview of a cursor shape (T51): it always blinks, so the
- *  preview shows the motion — independent of the stored blink setting. */
+/** The picker's preview of a cursor shape (T57): the blink switch drives it
+ *  — on, the shape blinks on the same duty cycle; off, it is steady. */
 object CursorPreview {
     const val PERIOD_MS = 530L
 
-    fun blink(elapsedMs: Long, periodMs: Long = PERIOD_MS): Boolean =
-        TerminalCursor.visible(cursorOn = true, blink = true, elapsedMs = elapsedMs, periodMs = periodMs)
+    fun visible(blink: Boolean, elapsedMs: Long, periodMs: Long = PERIOD_MS): Boolean =
+        TerminalCursor.visible(cursorOn = true, blink = blink, elapsedMs = elapsedMs, periodMs = periodMs)
 }

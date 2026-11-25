@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.pair.HooksCommand
+import com.gentlemanprogramming.gentlemobile.ui.terminal.TerminalPalette
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 
@@ -64,12 +64,13 @@ fun HooksScreen(
     fingerprint: String?,
     status: HooksStatus?,
     checking: Boolean,
-    onCheckStatus: () -> Unit,
     onRegenerate: () -> Unit,
     onBack: () -> Unit,
 ) {
     val p = LocalPalette.current
     val clipboard = LocalClipboardManager.current
+    val terminalPrompt = Color(TerminalPalette.cute.colors[2])
+    val terminalText = Color(TerminalPalette.cute.foreground)
     var tab by remember { mutableStateOf(HooksPlatform.MAC_LINUX) }
     var copiedCommand by remember { mutableStateOf(false) }
     var copiedFingerprint by remember { mutableStateOf(false) }
@@ -133,17 +134,32 @@ fun HooksScreen(
         }
         Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = block,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = Air.COMMAND_SP.sp,
-                    lineHeight = (Air.COMMAND_SP * Air.BODY_LINE_HEIGHT).sp,
-                    fontFamily = FontFamily.Monospace,
+                Column(
                     modifier = Modifier
                         .weight(1f)
-                        .background(p.surfaceRaised, RoundedCornerShape(Air.RADIUS_FIELD_DP.dp))
+                        .clip(RoundedCornerShape(Air.RADIUS_FIELD_DP.dp))
+                        .background(p.terminal)
                         .padding(12.dp),
-                )
+                ) {
+                    block.lines().forEach { line ->
+                        Row {
+                            Text(
+                                text = "$ ",
+                                color = terminalPrompt,
+                                fontSize = Air.COMMAND_SP.sp,
+                                lineHeight = (Air.COMMAND_SP * Air.BODY_LINE_HEIGHT).sp,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                            Text(
+                                text = line,
+                                color = terminalText,
+                                fontSize = Air.COMMAND_SP.sp,
+                                lineHeight = (Air.COMMAND_SP * Air.BODY_LINE_HEIGHT).sp,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.width(8.dp))
                 CopyAction(
                     label = stringResource(R.string.pair_copy),
@@ -228,45 +244,34 @@ fun HooksScreen(
         Spacer(Modifier.height(12.dp))
         SectionLabel(stringResource(R.string.hooks_status_label))
         Card {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    val line = when {
-                        checking -> stringResource(R.string.hooks_status_checking)
-                        status == null -> stringResource(R.string.hooks_status_checking)
-                        status is HooksStatus.ConnectFirst ->
-                            stringResource(R.string.hooks_status_connect_first)
-                        status is HooksStatus.Registered ->
-                            stringResource(R.string.hooks_status_registered)
-                        status is HooksStatus.NotRegistered ->
-                            stringResource(R.string.hooks_status_not_registered)
-                        status is HooksStatus.CannotTell ->
-                            if (status.reason.isBlank()) {
-                                stringResource(R.string.hooks_status_cannot_tell)
-                            } else {
-                                stringResource(R.string.hooks_status_cannot_tell_reason, status.reason)
-                            }
-                        else -> stringResource(R.string.hooks_status_cannot_tell)
+            val line = when {
+                checking -> stringResource(R.string.hooks_status_checking)
+                status == null -> stringResource(R.string.hooks_status_checking)
+                status is HooksStatus.ConnectFirst ->
+                    stringResource(R.string.hooks_status_connect_first)
+                status is HooksStatus.Registered ->
+                    stringResource(R.string.hooks_status_registered)
+                status is HooksStatus.NotRegistered ->
+                    stringResource(R.string.hooks_status_not_registered)
+                status is HooksStatus.CannotTell ->
+                    if (status.reason.isBlank()) {
+                        stringResource(R.string.hooks_status_cannot_tell)
+                    } else {
+                        stringResource(R.string.hooks_status_cannot_tell_reason, status.reason)
                     }
-                    Text(
-                        text = line,
-                        color = when {
-                            checking || status == null -> p.muted
-                            status is HooksStatus.Registered -> p.accent
-                            else -> MaterialTheme.colorScheme.onBackground
-                        },
-                        fontSize = Air.ROW_NAME_SP.sp,
-                        lineHeight = (Air.ROW_NAME_SP * Air.ROW_NAME_LINE_HEIGHT).sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                if (!checking && status !is HooksStatus.ConnectFirst) {
-                    Spacer(Modifier.width(8.dp))
-                    CheckAction(
-                        label = stringResource(R.string.hooks_status_check),
-                        onClick = onCheckStatus,
-                    )
-                }
+                else -> stringResource(R.string.hooks_status_cannot_tell)
             }
+            Text(
+                text = line,
+                color = when {
+                    checking || status == null -> p.muted
+                    status is HooksStatus.Registered -> p.accent
+                    else -> MaterialTheme.colorScheme.onBackground
+                },
+                fontSize = Air.ROW_NAME_SP.sp,
+                lineHeight = (Air.ROW_NAME_SP * Air.ROW_NAME_LINE_HEIGHT).sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
 
         Spacer(Modifier.height(24.dp))
@@ -370,24 +375,6 @@ private fun CopyAction(label: String, onClick: () -> Unit) {
             .padding(horizontal = 8.dp)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            color = p.accent,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-/** The "Check" action that re-asks the host. */
-@Composable
-private fun CheckAction(label: String, onClick: () -> Unit) {
-    val p = LocalPalette.current
-    OutlinedButton(
-        onClick = onClick,
-        modifier = Modifier.height(Air.TOUCH_DP.dp),
-        shape = RoundedCornerShape(Air.RADIUS_FIELD_DP.dp),
     ) {
         Text(
             text = label,

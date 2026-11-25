@@ -99,6 +99,10 @@
     <string name="hosts_rename_title">Poné un nombre a este host</string>
     <string name="hosts_rename_save">Guardar</string>
     <string name="hosts_empty">Todavía no hay equipos — agregá uno para empezar.</string>
+    <string name="hosts_menu_connect">Conectar</string>
+    <string name="hosts_menu_edit">Editar</string>
+    <string name="hosts_menu_more">Más</string>
+    <string name="hosts_edit_title">Editar host</string>
     <string name="nodes_session_history">Historial de sesiones</string>
     <string name="nodes_other_hosts">Otros equipos</string>
     <string name="nodes_session_history_sub">Abrí una sesión de Gentle Shell que ya existe en el host.</string>
@@ -204,6 +208,11 @@
     <string name="cd_mic_permission">Dictar — esperando el permiso del micrófono</string>
     <string name="cd_mic">Dictar — tu voz se convierte en texto</string>
     <string name="cd_mic_reason">Dictar — tu voz se convierte en texto. %1$s</string>
+    <string name="cd_keys_panel">Teclas</string>
+    <string name="cd_input_composer">Escribir en el campo</string>
+    <string name="cd_input_direct">Escribir directo en la terminal</string>
+
+    <string name="keys_panel_title">Teclas</string>
 
     <!-- Adjuntos -->
     <string name="att_preview_of">Vista previa de %1$s</string>

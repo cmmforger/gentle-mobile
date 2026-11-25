@@ -408,22 +408,16 @@ fun SettingsScreen(
                             .heightIn(min = Air.TOUCH_DP.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (chosen) p.selection else p.surfaceRaised)
-                            .clickable { onSetAdvanced(advanced.copy(cursorMode = mode)) }
-                            .padding(horizontal = 8.dp),
+                            .clickable { onSetAdvanced(advanced.copy(cursorMode = mode)) },
+                        horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         CursorPreviewCell(
                             mode = mode,
-                            visible = CursorPreview.blink(cursorBlinkPhase * CursorPreview.PERIOD_MS),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = cursorModeLabel(mode),
-                            color = if (chosen) p.accent else p.text,
-                            fontSize = 13.sp,
-                            fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            visible = CursorPreview.visible(
+                                blink = advanced.cursorBlink,
+                                elapsedMs = cursorBlinkPhase * CursorPreview.PERIOD_MS,
+                            ),
                         )
                     }
                 }
@@ -704,15 +698,8 @@ fun SettingsScreen(
     }
 }
 
-@Composable
-private fun cursorModeLabel(mode: CursorMode): String = when (mode) {
-    CursorMode.BLOCK -> stringResource(R.string.set_cursor_mode_block)
-    CursorMode.UNDERLINE -> stringResource(R.string.set_cursor_mode_underline)
-    CursorMode.BAR -> stringResource(R.string.set_cursor_mode_bar)
-}
-
 /** One cursor preview in the picker: a single character cell with the
- *  cursor's shape drawn over it, blinking on the cursor duty cycle. */
+ *  cursor's shape drawn over it, steady or blinking on the switch. */
 @Composable
 private fun CursorPreviewCell(mode: CursorMode, visible: Boolean) {
     val p = LocalPalette.current
