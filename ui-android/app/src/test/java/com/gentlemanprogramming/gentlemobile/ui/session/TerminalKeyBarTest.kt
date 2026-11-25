@@ -5,9 +5,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** T59 (the key bar): the bar's eight items in order, the pad's fixed cross,
- *  the attachment sheet's three rows, and the mode transitions — pure, pinned
- *  here, never read from the composable. */
+/** T59/T60 (the key bar): the bar's eight items in order, the pad's fixed
+ *  cross, the attachment sheet's three rows, the icon set, the field's
+ *  reserved height, and the mode transitions — pure, pinned here, never read
+ *  from the composable. */
 class TerminalKeyBarTest {
 
     @Test
@@ -18,13 +19,43 @@ class TerminalKeyBarTest {
                 TerminalKeyBar.Item.ESC,
                 TerminalKeyBar.Item.TAB,
                 TerminalKeyBar.Item.ARROWS,
-                TerminalKeyBar.Item.LINES,
+                TerminalKeyBar.Item.BRANCHES,
                 TerminalKeyBar.Item.CLIPBOARD,
                 TerminalKeyBar.Item.BUBBLE,
                 TerminalKeyBar.Item.KEYBOARD,
             ),
             TerminalKeyBar.barOrder(),
         )
+    }
+
+    @Test
+    fun `the bar's five icons are the arrows branches clipboard bubble keyboard`() {
+        assertEquals(
+            listOf(
+                TerminalKeyBar.Icon.ARROWS,
+                TerminalKeyBar.Icon.BRANCHES,
+                TerminalKeyBar.Icon.CLIPBOARD,
+                TerminalKeyBar.Icon.BUBBLE,
+                TerminalKeyBar.Icon.KEYBOARD,
+            ),
+            TerminalKeyBar.barIcons(),
+        )
+    }
+
+    @Test
+    fun `the icon set is the six reference shapes, the pad's brush last`() {
+        assertEquals(
+            listOf(
+                TerminalKeyBar.Icon.ARROWS,
+                TerminalKeyBar.Icon.BRANCHES,
+                TerminalKeyBar.Icon.CLIPBOARD,
+                TerminalKeyBar.Icon.BUBBLE,
+                TerminalKeyBar.Icon.KEYBOARD,
+                TerminalKeyBar.Icon.BRUSH,
+            ),
+            TerminalKeyBar.iconSet(),
+        )
+        assertEquals(6, TerminalKeyBar.iconSet().size)
     }
 
     @Test
@@ -68,19 +99,6 @@ class TerminalKeyBarTest {
     }
 
     @Test
-    fun `the inline row is the shortcut pad's own keys in their order`() {
-        val pad = ShortcutPad(
-            keys = listOf(
-                ShortcutKey("esc", "Esc", ShortcutAction.Key("esc")),
-                ShortcutKey("hidden", "Hidden", ShortcutAction.Text("x", false), visible = false),
-                ShortcutKey("tab", "Tab", ShortcutAction.Key("tab")),
-                ShortcutKey("up", "\u2191", ShortcutAction.Key("up")),
-            ),
-        )
-        assertEquals(listOf("esc", "tab", "up"), TerminalKeyBar.inlineKeys(pad).map { it.id })
-    }
-
-    @Test
     fun `the attachment sheet has camera, gallery and file in that order`() {
         assertEquals(
             listOf(
@@ -97,16 +115,22 @@ class TerminalKeyBarTest {
         assertTrue(TerminalKeyBar.showsComposerField(InputMode.COMPOSER))
         assertFalse(TerminalKeyBar.showsComposerField(InputMode.DIRECT))
     }
+
+    @Test
+    fun `the composer field reserves 44 dp and direct mode reserves nothing`() {
+        assertEquals(44, TerminalKeyBar.fieldReservedDp(InputMode.COMPOSER))
+        assertEquals(0, TerminalKeyBar.fieldReservedDp(InputMode.DIRECT))
+    }
 }
 
-/** T59: the mode transitions and the pad's lock/drag state. */
+/** T59/T60: the mode transitions and the pad's lock/drag/anchor state. */
 class KeyBarStateTest {
 
     @Test
     fun `the surfaces shown for each state follow the three toggles`() {
         assertEquals(
-            setOf(KeyBarState.Surface.FIELD, KeyBarState.Surface.PAD, KeyBarState.Surface.INLINE),
-            KeyBarState(useComposer = true, padOpen = true, linesOpen = true).visibleSurfaces(),
+            setOf(KeyBarState.Surface.FIELD, KeyBarState.Surface.PAD, KeyBarState.Surface.SIDEBAR),
+            KeyBarState(useComposer = true, padOpen = true, sidebarOpen = true).visibleSurfaces(),
         )
         assertEquals(
             setOf(KeyBarState.Surface.FIELD),
@@ -117,8 +141,8 @@ class KeyBarStateTest {
             KeyBarState(padOpen = true).visibleSurfaces(),
         )
         assertEquals(
-            setOf(KeyBarState.Surface.INLINE),
-            KeyBarState(linesOpen = true).visibleSurfaces(),
+            setOf(KeyBarState.Surface.SIDEBAR),
+            KeyBarState(sidebarOpen = true).visibleSurfaces(),
         )
         assertTrue(KeyBarState().visibleSurfaces().isEmpty())
     }
@@ -143,15 +167,20 @@ class KeyBarStateTest {
     }
 
     @Test
-    fun `the lines toggle the inline row`() {
-        assertTrue(KeyBarState().tapLines().linesOpen)
-        assertFalse(KeyBarState(linesOpen = true).tapLines().linesOpen)
+    fun `the branches toggle the sidebar`() {
+        assertTrue(KeyBarState().tapBranches().sidebarOpen)
+        assertFalse(KeyBarState(sidebarOpen = true).tapBranches().sidebarOpen)
     }
 
     @Test
     fun `the lock toggle flips the pad between locked and unlocked`() {
         assertTrue(KeyBarState().tapLock().padLocked)
         assertFalse(KeyBarState(padLocked = true).tapLock().padLocked)
+    }
+
+    @Test
+    fun `the pad anchors just above the bar by default, never the top`() {
+        assertEquals(KeyBarState.PadAnchor.ABOVE_BAR, KeyBarState().padAnchor)
     }
 
     @Test

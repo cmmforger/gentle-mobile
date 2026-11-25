@@ -2928,6 +2928,10 @@ fun ConnectScreen(
                     paneRows = paneRows,
                     tabRows = tabRows,
                     tabError = sessionUi.tabError,
+                    workspaces = screen.workspaces ?: emptyList(),
+                    agents = sessionUi.agents,
+                    currentWorkspaceId = current.agent.workspaceId,
+                    currentPaneId = current.agent.paneId,
                     onStart = { cols, rows ->
                         if (profile != null && screen.terminalSession == null && !screen.terminalStarting) {
                             screen.terminalStarting = true
@@ -3034,7 +3038,7 @@ fun ConnectScreen(
                     onUseComposerChange = { onSetAdvanced(advanced.copy(useComposer = it)) },
                     sendOnEnter = advanced.sendOnEnter,
                     shortcutPad = shortcutPad,
-                    dictationEnabled = resolvedEngine == DictationEngineChoice.LOCAL_WHISPER,
+                    dictationEngine = resolvedEngine,
                     autoSend = voz.autoSend,
                     activeModelPath = activeModelPath,
                     replacements = voz.replacements,

@@ -50,9 +50,17 @@ class TerminalKeysTest {
     @Test
     fun forward_input_sends_append_delete_and_enter() {
         assertArrayEquals("a".toByteArray(), TerminalKeys.forwardInput("", "a"))
-        assertArrayEquals(byteArrayOf(0x08), TerminalKeys.forwardInput("ab", "a"))
+        assertArrayEquals(byteArrayOf(0x7F), TerminalKeys.forwardInput("ab", "a"))
         assertArrayEquals(byteArrayOf(0x0D), TerminalKeys.forwardInput("a", "a\n"))
-        assertArrayEquals(byteArrayOf(0x08, 0x08) + "x".toByteArray(), TerminalKeys.forwardInput("ab", "x"))
+        assertArrayEquals(byteArrayOf(0x7F, 0x7F) + "x".toByteArray(), TerminalKeys.forwardInput("ab", "x"))
+    }
+
+    @Test
+    fun a_deletion_in_direct_mode_sends_the_delete_byte_not_backspace() {
+        // T60: backspace held on the phone keyboard must erase on the host,
+        // and the PTY's erase character is DEL (0x7F), never 0x08.
+        assertArrayEquals(byteArrayOf(0x7F), TerminalKeys.forwardInput("echo", "ech"))
+        assertArrayEquals(byteArrayOf(0x7F, 0x7F, 0x7F), TerminalKeys.forwardInput("abc", ""))
     }
 
     @Test

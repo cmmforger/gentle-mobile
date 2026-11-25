@@ -212,7 +212,9 @@
     <string name="cd_input_composer">Escribir en el campo</string>
     <string name="cd_input_direct">Escribir directo en la terminal</string>
     <string name="cd_pad">Abrir el teclado flotante</string>
-    <string name="cd_lines">Mostrar las teclas rápidas</string>
+    <string name="cd_branches">Mostrar los espacios de trabajo del host</string>
+    <string name="cd_sidebar_title">Espacios de trabajo</string>
+    <string name="cd_sidebar_readonly">Cambiar de espacio de trabajo alteraría la sesión de escritorio — esta lista es de solo lectura.</string>
     <string name="cd_clipboard">Pegar desde el portapapeles</string>
     <string name="cd_clipboard_empty">El portapapeles está vacío.</string>
     <string name="cd_attach">Adjuntar una foto, imagen o archivo</string>

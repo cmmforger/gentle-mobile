@@ -66,13 +66,14 @@ object TerminalKeys {
 
     /** The byte delta from one input-field value to the next, so keystrokes
      *  reach the PTY the moment they are typed: appended text is sent as-is
-     *  (a newline mapped to CR), deletions send one backspace each, and an
-     *  unchanged value sends nothing. */
+     *  (a newline mapped to CR), deletions send one delete byte (0x7F) each —
+     *  the terminal's erase character — and an unchanged value sends
+     *  nothing. */
     fun forwardInput(old: String, new: String): ByteArray = when {
         new == old -> ByteArray(0)
         new.length > old.length && new.startsWith(old) -> encode(new.substring(old.length))
-        old.length > new.length && old.startsWith(new) -> ByteArray(old.length - new.length) { 0x08 }
-        else -> ByteArray(old.length) { 0x08 } + encode(new)
+        old.length > new.length && old.startsWith(new) -> ByteArray(old.length - new.length) { 0x7F }
+        else -> ByteArray(old.length) { 0x7F } + encode(new)
     }
 
     private fun encode(text: String): ByteArray =

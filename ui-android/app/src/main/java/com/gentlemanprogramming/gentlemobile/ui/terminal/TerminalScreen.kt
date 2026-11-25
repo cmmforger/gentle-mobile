@@ -19,10 +19,10 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -79,19 +80,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.gentlemanprogramming.gentlemobile.R
+import com.gentlemanprogramming.gentlemobile.core.AgentDto
 import com.gentlemanprogramming.gentlemobile.core.TerminalSession
+import com.gentlemanprogramming.gentlemobile.core.WorkspaceRowDto
+import com.gentlemanprogramming.gentlemobile.dictation.DictationEngineChoice
 import com.gentlemanprogramming.gentlemobile.dictation.LocalDictationState
 import com.gentlemanprogramming.gentlemobile.dictation.LocalWhisperDictation
 import com.gentlemanprogramming.gentlemobile.dictation.WordReplacement
 import com.gentlemanprogramming.gentlemobile.executor
 import com.gentlemanprogramming.gentlemobile.mainHandler
+import com.gentlemanprogramming.gentlemobile.ui.session.AndroidDictationEngine
 import com.gentlemanprogramming.gentlemobile.ui.session.Attachment
 import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentState
+import com.gentlemanprogramming.gentlemobile.ui.session.DictationEngine
+import com.gentlemanprogramming.gentlemobile.ui.session.InputMode
 import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
 import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutAction
 import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutKey
 import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutPad
 import com.gentlemanprogramming.gentlemobile.ui.session.TerminalKeyBar
+import com.gentlemanprogramming.gentlemobile.ui.session.TerminalSidebar
 import com.gentlemanprogramming.gentlemobile.ui.session.bytes
 import com.gentlemanprogramming.gentlemobile.ui.session.formatBytes
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
@@ -132,6 +140,10 @@ fun TerminalScreen(
     paneRows: List<PaneSwitcherModel.Row>,
     tabRows: List<PaneSwitcherModel.TabRow>,
     tabError: String?,
+    workspaces: List<WorkspaceRowDto>,
+    agents: List<AgentDto>,
+    currentWorkspaceId: String,
+    currentPaneId: String,
     onStart: (cols: Int, rows: Int) -> Unit,
     onBack: () -> Unit,
     onCreateTab: () -> Unit,
@@ -149,7 +161,7 @@ fun TerminalScreen(
     onUseComposerChange: (Boolean) -> Unit,
     sendOnEnter: Boolean,
     shortcutPad: ShortcutPad,
-    dictationEnabled: Boolean,
+    dictationEngine: DictationEngineChoice,
     autoSend: Boolean,
     activeModelPath: String?,
     replacements: List<WordReplacement>,
@@ -164,7 +176,7 @@ fun TerminalScreen(
     val composer = remember { TerminalComposer() }
     var paneSheet by remember { mutableStateOf(false) }
     var padOpen by remember { mutableStateOf(false) }
-    var linesOpen by remember { mutableStateOf(false) }
+    var sidebarOpen by remember { mutableStateOf(false) }
     var padLocked by remember { mutableStateOf(false) }
     var clipboardNotice by remember { mutableStateOf<String?>(null) }
     var blinkPhase by remember { mutableStateOf(0L) }
@@ -172,10 +184,12 @@ fun TerminalScreen(
     val clipboard = LocalClipboardManager.current
     val clipboardEmptyMessage = stringResource(R.string.cd_clipboard_empty)
 
-    // T54 (S8): local dictation — record with the microphone, transcribe on
+    // T54/T60 (S8): dictation — record with the microphone, transcribe on
     // Stop, and land the text in the field (auto-sent only when the setting
-    // says so). The mic is offered only when local Whisper is the resolved
-    // engine; otherwise the phone keyboard's own voice input applies.
+    // says so). The composer's mic uses the resolved engine: local Whisper
+    // when Voz is set to it, otherwise the phone's own recognizer — the same
+    // two paths the Voz screen's test row drives.
+    val localEngineActive = dictationEngine == DictationEngineChoice.LOCAL_WHISPER
     var dictationState by remember { mutableStateOf<LocalDictationState>(LocalDictationState.Idle) }
     val whisperDictation = remember(activeModelPath) {
         LocalWhisperDictation(
@@ -188,6 +202,13 @@ fun TerminalScreen(
     DisposableEffect(whisperDictation) {
         onDispose { whisperDictation.dispose() }
     }
+    val phoneEngine = remember { AndroidDictationEngine(context) }
+    DisposableEffect(phoneEngine) {
+        onDispose { phoneEngine.dispose() }
+    }
+    var phoneListening by remember { mutableStateOf(false) }
+    var phoneError by remember { mutableStateOf<String?>(null) }
+    var pendingDictation by remember { mutableStateOf<DictationPath?>(null) }
     fun submitNow() {
         val suffixes = attachments.mapNotNull {
             (it.state as? AttachmentState.Uploaded)?.promptSuffix
@@ -210,28 +231,94 @@ fun TerminalScreen(
             }
         }
     }
+    val phoneListener = remember(phoneEngine) {
+        object : DictationEngine.Listener {
+            override fun onPartial(text: String) {}
+
+            override fun onFinal(text: String) {
+                phoneListening = false
+                phoneError = null
+                if (text.isNotBlank()) {
+                    input = TextFieldValue(mergeDictated(input.text, text))
+                }
+            }
+
+            override fun onError(message: String) {
+                phoneListening = false
+                phoneError = message
+            }
+        }
+    }
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) {
-            whisperDictation.start(dictationListener())
-        } else {
-            dictationState = LocalDictationState.Error(
-                context.getString(R.string.dict_permission_refused),
-            )
+        when (pendingDictation) {
+            DictationPath.LOCAL -> {
+                if (granted) {
+                    whisperDictation.start(dictationListener())
+                } else {
+                    dictationState = LocalDictationState.Error(
+                        context.getString(R.string.dict_permission_refused),
+                    )
+                }
+            }
+            DictationPath.PHONE -> {
+                if (granted) {
+                    phoneListening = true
+                    phoneError = null
+                    phoneEngine.start(phoneListener)
+                } else {
+                    phoneError = context.getString(R.string.dict_permission_refused)
+                }
+            }
+            null -> {}
         }
+        pendingDictation = null
     }
     fun startDictation() {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+        if (localEngineActive) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                whisperDictation.start(dictationListener())
+            } else {
+                pendingDictation = DictationPath.LOCAL
+                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+            return
+        }
+        phoneError = null
+        val reason = phoneEngine.availabilityReason()
+        if (reason != null) {
+            phoneError = reason
+            return
+        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) {
-            whisperDictation.start(dictationListener())
-        } else {
+            pendingDictation = DictationPath.PHONE
             micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        phoneListening = true
+        phoneEngine.start(phoneListener)
+    }
+    fun stopDictation() {
+        if (localEngineActive) {
+            whisperDictation.stop(dictationListener())
+        } else {
+            phoneEngine.stop()
+            phoneListening = false
         }
     }
-    fun stopDictation() = whisperDictation.stop(dictationListener())
-    fun cancelDictation() = whisperDictation.cancel(dictationListener())
+    fun cancelDictation() {
+        if (localEngineActive) {
+            whisperDictation.cancel(dictationListener())
+        } else {
+            phoneEngine.cancel()
+            phoneListening = false
+        }
+    }
 
     fun pressKey(key: ShortcutKey) {
         val bytes = key.bytes(composer.ctrlSticky, composer.altSticky)
@@ -272,14 +359,17 @@ fun TerminalScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(palette.bg)
-            .safeDrawingPadding()
-            .imePadding(),
+            .background(palette.bg),
     ) {
-        TerminalTopBar(title = title, onBack = onBack, onOpenPanes = { paneSheet = true })
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding(),
+        ) {
+            TerminalTopBar(title = title, onBack = onBack, onOpenPanes = { paneSheet = true })
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
@@ -374,7 +464,7 @@ fun TerminalScreen(
                     onToggleLock = { padLocked = !padLocked },
                     onDismiss = { padOpen = false },
                     onKey = ::pressChip,
-                    modifier = Modifier.align(Alignment.TopCenter),
+                    modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
         }
@@ -382,20 +472,13 @@ fun TerminalScreen(
             composer = composer,
             useComposer = useComposer,
             padOpen = padOpen,
-            linesOpen = linesOpen,
+            sidebarOpen = sidebarOpen,
             onUseComposerChange = onUseComposerChange,
             onTogglePad = { padOpen = !padOpen },
-            onToggleLines = { linesOpen = !linesOpen },
+            onToggleSidebar = { sidebarOpen = !sidebarOpen },
             onPasteClipboard = ::pasteClipboard,
             onKey = { bytes -> session?.write(bytes) },
         )
-        if (linesOpen) {
-            TerminalKeysInlineRow(
-                pad = shortcutPad,
-                composer = composer,
-                onKey = { bytes -> session?.write(bytes) },
-            )
-        }
         if (useComposer) {
             TerminalComposerRow(
                 enabled = session != null && !closed,
@@ -403,8 +486,9 @@ fun TerminalScreen(
                 thumbnails = thumbnails,
                 value = input,
                 sendOnEnter = sendOnEnter,
-                dictationEnabled = dictationEnabled,
                 dictationState = dictationState,
+                phoneListening = phoneListening,
+                phoneError = phoneError,
                 onValueChange = { new ->
                     val delta = composer.commit(new.text)
                     if (delta.isNotEmpty()) session?.write(delta)
@@ -424,6 +508,16 @@ fun TerminalScreen(
             TerminalDirectInputRow(
                 enabled = session != null && !closed,
                 onBytes = { bytes -> session?.write(bytes) },
+            )
+        }
+        }
+        if (sidebarOpen) {
+            TerminalWorkspacesSidebar(
+                workspaces = workspaces,
+                agents = agents,
+                currentWorkspaceId = currentWorkspaceId,
+                currentPaneId = currentPaneId,
+                onDismiss = { sidebarOpen = false },
             )
         }
     }
@@ -508,10 +602,10 @@ private fun TerminalKeyRow(
     composer: TerminalComposer,
     useComposer: Boolean,
     padOpen: Boolean,
-    linesOpen: Boolean,
+    sidebarOpen: Boolean,
     onUseComposerChange: (Boolean) -> Unit,
     onTogglePad: () -> Unit,
-    onToggleLines: () -> Unit,
+    onToggleSidebar: () -> Unit,
     onPasteClipboard: () -> Unit,
     onKey: (ByteArray) -> Unit,
 ) {
@@ -553,10 +647,10 @@ private fun TerminalKeyRow(
             onClick = onTogglePad,
         )
         BarIcon(
-            drawable = R.drawable.ic_lines,
-            description = stringResource(R.string.cd_lines),
-            selected = linesOpen,
-            onClick = onToggleLines,
+            drawable = R.drawable.ic_branches,
+            description = stringResource(R.string.cd_branches),
+            selected = sidebarOpen,
+            onClick = onToggleSidebar,
         )
         BarIcon(
             drawable = R.drawable.ic_clipboard,
@@ -606,75 +700,6 @@ private fun BarIcon(
     }
 }
 
-/** The inline keys row (T59): toggled by the lines icon — the shortcut
- *  pad's own keys, in their order. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun TerminalKeysInlineRow(
-    pad: ShortcutPad,
-    composer: TerminalComposer,
-    onKey: (ByteArray) -> Unit,
-) {
-    fun press(key: ShortcutKey) {
-        val bytes = key.bytes(composer.ctrlSticky, composer.altSticky)
-        if (bytes.isNotEmpty()) {
-            onKey(bytes)
-            composer.disarm()
-        }
-    }
-
-    fun pressChip(key: ShortcutKey) {
-        when ((key.action as? ShortcutAction.Key)?.name) {
-            "ctrl" -> composer.toggleCtrl()
-            "alt" -> composer.toggleAlt()
-            else -> press(key)
-        }
-    }
-
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-    ) {
-        TerminalKeyBar.inlineKeys(pad).forEach { key ->
-            val name = (key.action as? ShortcutAction.Key)?.name
-            val pressed = (name == "ctrl" && composer.ctrlSticky) ||
-                (name == "alt" && composer.altSticky)
-            PanelKeyChip(label = key.label, pressed = pressed) { pressChip(key) }
-        }
-    }
-}
-
-/** A fixed-size chip in the keys panel (no weight: the panel flows). */
-@Composable
-private fun PanelKeyChip(label: String, pressed: Boolean, onPress: () -> Unit) {
-    val palette = LocalPalette.current
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .padding(2.dp)
-            .height(40.dp)
-            .widthIn(min = 52.dp)
-            .border(
-                1.dp,
-                if (pressed) palette.accentEdge else palette.line,
-                RoundedCornerShape(8.dp),
-            )
-            .background(if (pressed) palette.selection else palette.surfaceRaised, RoundedCornerShape(8.dp))
-            .clickable(onClick = onPress)
-            .padding(horizontal = 10.dp),
-    ) {
-        Text(
-            text = label,
-            color = if (pressed) palette.accentEdge else MaterialTheme.colorScheme.onBackground,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-        )
-    }
-}
-
 @Composable
 private fun TerminalKeyChip(
     label: String,
@@ -720,16 +745,13 @@ private fun TerminalKeyChip(
 
 /**
  * The terminal composer (T49): the app's rounded field with its side
- * margins and the send button beside it, exactly the session composer's
- * shape (defect: it had lost its border and run edge to edge). When the
- * terminal runs an agent, the field carries camera and clip inside; a bare
- * shell keeps a plain field, because nothing would receive an attachment.
+ * margins and, beside it, the mic and the send action. The mic dictates
+ * into the field with the resolved Voz engine (local Whisper or the phone's
+ * recognizer); the send action sends. When the terminal runs an agent, the
+ * field carries camera and clip inside; a bare shell keeps a plain field.
  *
- * T54 (S8): when local Whisper is the resolved engine, the circle is the
- * microphone while the field is empty (and Stop while listening), and a
- * one-line status above the field reports listening, transcribing or the
- * honest error. Otherwise the circle stays send and the phone keyboard's
- * own voice input types into the field.
+ * T60 (S8): the mic is its own 44 dp target next to send, never a swap —
+ * the person speaks, corrects and sends.
  */
 @Composable
 private fun TerminalComposerRow(
@@ -738,8 +760,9 @@ private fun TerminalComposerRow(
     thumbnails: Map<Long, ImageBitmap>,
     value: TextFieldValue,
     sendOnEnter: Boolean,
-    dictationEnabled: Boolean,
     dictationState: LocalDictationState,
+    phoneListening: Boolean,
+    phoneError: String?,
     onValueChange: (TextFieldValue) -> Unit,
     onSubmit: () -> Unit,
     onStartDictation: () -> Unit,
@@ -753,25 +776,27 @@ private fun TerminalComposerRow(
 ) {
     val palette = LocalPalette.current
     var attachmentsSheet by remember { mutableStateOf(false) }
+    val listening = dictationState is LocalDictationState.Listening || phoneListening
+    val transcribing = dictationState is LocalDictationState.Transcribing
+    val dictationError = (dictationState as? LocalDictationState.Error)?.message ?: phoneError
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
     ) {
-        when (val state = dictationState) {
-            is LocalDictationState.Listening -> DictationStatusLine(
+        when {
+            listening -> DictationStatusLine(
                 text = stringResource(R.string.comp_listening),
                 onStop = onStopDictation,
                 onCancel = onCancelDictation,
             )
-            is LocalDictationState.Transcribing -> DictationStatusLine(
+            transcribing -> DictationStatusLine(
                 text = stringResource(R.string.voz_test_transcribing),
             )
-            is LocalDictationState.Error -> DictationStatusLine(
-                text = state.message,
+            dictationError != null -> DictationStatusLine(
+                text = dictationError,
                 error = true,
             )
-            else -> {}
         }
         attachments.forEach { attachment ->
             TerminalAttachmentRow(
@@ -827,14 +852,17 @@ private fun TerminalComposerRow(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            ComposerCircle(
+            ComposerMicButton(
                 enabled = enabled,
-                dictationEnabled = dictationEnabled,
-                fieldEmpty = value.text.isBlank(),
-                dictationState = dictationState,
+                listening = listening,
+                transcribing = transcribing,
+                onStart = onStartDictation,
+                onStop = onStopDictation,
+            )
+            Spacer(Modifier.width(4.dp))
+            ComposerSendCircle(
+                enabled = enabled && value.text.isNotBlank(),
                 onSubmit = onSubmit,
-                onStartDictation = onStartDictation,
-                onStopDictation = onStopDictation,
             )
         }
     }
@@ -857,46 +885,58 @@ private fun TerminalComposerRow(
     }
 }
 
-/** The circle: mic while the field is empty and dictation is live, stop
- *  while listening, send otherwise. 44 dp, accent, Moshi's one control. */
+/** The mic: its own 44 dp target next to send (T60). Idle it starts the
+ *  dictation; listening it stops; transcribing it is quiet. */
 @Composable
-private fun ComposerCircle(
+private fun ComposerMicButton(
     enabled: Boolean,
-    dictationEnabled: Boolean,
-    fieldEmpty: Boolean,
-    dictationState: LocalDictationState,
-    onSubmit: () -> Unit,
-    onStartDictation: () -> Unit,
-    onStopDictation: () -> Unit,
+    listening: Boolean,
+    transcribing: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
 ) {
     val palette = LocalPalette.current
-    val listening = dictationState is LocalDictationState.Listening
-    val transcribing = dictationState is LocalDictationState.Transcribing
-    val showMic = dictationEnabled && (listening || (fieldEmpty && !transcribing))
-    val clickable = enabled && if (showMic) !transcribing else true
-    val onClick = when {
-        !showMic -> onSubmit
-        listening -> onStopDictation
-        else -> onStartDictation
-    }
-    val description = when {
-        listening -> stringResource(R.string.cd_mic_stop)
-        showMic -> stringResource(R.string.cd_mic)
-        else -> stringResource(R.string.cd_send)
-    }
+    val description = if (listening) stringResource(R.string.cd_mic_stop) else stringResource(R.string.cd_mic)
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .size(44.dp)
             .clip(CircleShape)
-            .background(palette.accent)
-            .clickable(enabled = clickable, onClick = onClick)
+            .background(if (listening) palette.accent else Color.Transparent)
+            .clickable(enabled = enabled && !transcribing, onClick = { if (listening) onStop() else onStart() })
             .semantics { contentDescription = description },
     ) {
         Icon(
-            painter = painterResource(if (showMic) R.drawable.ic_mic else R.drawable.ic_send),
+            painter = painterResource(R.drawable.ic_mic),
             contentDescription = null,
-            tint = palette.bg,
+            tint = if (listening) palette.bg else palette.text,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/** The send action: the accent circle with the paper-plane, enabled once the
+ *  field has text. */
+@Composable
+private fun ComposerSendCircle(
+    enabled: Boolean,
+    onSubmit: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    val description = stringResource(R.string.cd_send)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(if (enabled) palette.accent else palette.accentPressed)
+            .clickable(enabled = enabled, onClick = onSubmit)
+            .semantics { contentDescription = description },
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_send),
+            contentDescription = null,
+            tint = palette.bg.copy(alpha = if (enabled) 1f else 0.6f),
             modifier = Modifier.size(20.dp),
         )
     }
@@ -969,9 +1009,10 @@ private fun ComposerIcon(drawable: Int, description: String, enabled: Boolean, o
     }
 }
 
-/** The floating key pad (T59): a cross of big keys over the terminal with a
- *  transparent surround, a drag handle and a lock toggle. Locked it stays;
- *  unlocked it can be dragged lower and dismissed. */
+/** The floating key pad (T59/T60): a cross of big keys anchored just above
+ *  the bar with a transparent surround, a drag handle and a lock toggle.
+ *  Locked it stays pinned and ignores the drag; unlocked it can be dragged
+ *  down and dismissed past the threshold. */
 @Composable
 private fun FloatingPad(
     locked: Boolean,
@@ -984,6 +1025,10 @@ private fun FloatingPad(
     var offsetY by remember { mutableStateOf(0f) }
     val dismissThresholdPx = with(LocalDensity.current) { 120.dp.toPx() }
     val lockDescription = stringResource(if (locked) R.string.cd_unlock_pad else R.string.cd_lock_pad)
+    // Locking pins the pad back to its anchor: any drag offset is dropped.
+    LaunchedEffect(locked) {
+        if (locked) offsetY = 0f
+    }
     Box(modifier = modifier) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1086,7 +1131,7 @@ private fun PadKey(key: ShortcutKey, onKey: (ShortcutKey) -> Unit) {
                 modifier = Modifier.size(22.dp),
             )
             "pad_clear" -> Icon(
-                painter = painterResource(R.drawable.ic_broom),
+                painter = painterResource(R.drawable.ic_brush),
                 contentDescription = key.label,
                 tint = palette.text,
                 modifier = Modifier.size(22.dp),
@@ -1162,10 +1207,11 @@ private fun TerminalAttachmentsSheet(
 }
 
 /**
- * The direct input row (T50, T58): with "use the field" off there is no
- * visible composer — an invisible field keeps the IME up and every keystroke
- * reaches the PTY the moment it is typed. Enter sends one CR through the
- * keyboard's send action.
+ * The direct input row (T50, T58, T60): with "use the field" off there is no
+ * visible composer — an invisible, zero-height field keeps the IME up and
+ * every keystroke reaches the PTY the moment it is typed, so nothing
+ * reserves the field's height while it is off screen. Enter sends one CR
+ * through the keyboard's send action.
  */
 @Composable
 private fun TerminalDirectInputRow(enabled: Boolean, onBytes: (ByteArray) -> Unit) {
@@ -1198,8 +1244,7 @@ private fun TerminalDirectInputRow(enabled: Boolean, onBytes: (ByteArray) -> Uni
         modifier = Modifier
             .focusRequester(focusRequester)
             .fillMaxWidth()
-            .heightIn(min = 44.dp)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .height(TerminalKeyBar.fieldReservedDp(InputMode.DIRECT).dp),
     )
 }
 
@@ -1448,6 +1493,134 @@ private fun paneStateWord(row: PaneSwitcherModel.Row): String = when (val state 
         WorkspacesModel.statusWordRes(state.status)?.let { stringResource(it) }
             ?: stringResource(R.string.status_unknown)
     PaneSwitcherModel.State.Shell -> stringResource(R.string.session_pane_shell)
+}
+
+/**
+ * The workspaces sidebar (T60): a slide-in panel from the left listing the
+ * host's workspaces and their agents, the current one marked. Read-only —
+ * entering another workspace focuses it in the shared daemon and would
+ * disturb the desktop session (L22–L25), so the note says exactly that.
+ */
+@Composable
+private fun TerminalWorkspacesSidebar(
+    workspaces: List<WorkspaceRowDto>,
+    agents: List<AgentDto>,
+    currentWorkspaceId: String,
+    currentPaneId: String,
+    onDismiss: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    val rows = TerminalSidebar.rows(workspaces, agents, currentWorkspaceId, currentPaneId)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.4f))
+            .clickable(onClick = onDismiss),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .widthIn(max = 300.dp)
+                .fillMaxWidth(0.78f)
+                .background(palette.surface)
+                .clickable(enabled = false) {}
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(vertical = 12.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Air.SIDE_DP.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.cd_sidebar_title),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clickable(onClick = onDismiss),
+                ) {
+                    Text("✕", color = palette.muted, fontSize = 15.sp)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.cd_sidebar_readonly),
+                color = palette.muted,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                modifier = Modifier.padding(horizontal = Air.SIDE_DP.dp, vertical = 4.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+            rows.forEach { row ->
+                when (row) {
+                    is TerminalSidebar.Row.Workspace -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = Air.TOUCH_DP.dp)
+                                .background(if (row.current) palette.selection else Color.Transparent)
+                                .padding(horizontal = Air.SIDE_DP.dp),
+                        ) {
+                            Text(
+                                text = row.label,
+                                color = if (row.current) palette.accent else MaterialTheme.colorScheme.onBackground,
+                                fontSize = Air.ROW_NAME_SP.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (row.branch != null) {
+                                Text(
+                                    text = row.branch,
+                                    color = palette.muted,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                    is TerminalSidebar.Row.Agent -> {
+                        val statusWord = WorkspacesModel.statusWordRes(row.agent.status)
+                            ?.let { stringResource(it) }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = Air.TOUCH_DP.dp)
+                                .padding(start = Air.SIDE_DP.dp * 2, end = Air.SIDE_DP.dp),
+                        ) {
+                            Text(
+                                text = row.title,
+                                color = if (row.current) palette.accent else palette.text,
+                                fontSize = Air.ROW_NAME_SP.sp,
+                                fontWeight = if (row.current) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (statusWord != null) {
+                                Text(
+                                    text = statusWord,
+                                    color = palette.muted,
+                                    fontSize = 11.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** The cell size the renderer paints at: measured at [fontSizePx] with the
@@ -1701,3 +1874,6 @@ private fun mergeDictated(base: String, spoken: String): String {
     if (baseTrimmed.isEmpty()) return spokenTrimmed
     return "$baseTrimmed $spokenTrimmed"
 }
+
+/** Which dictation engine the composer's mic drives (T60). */
+private enum class DictationPath { LOCAL, PHONE }

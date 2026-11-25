@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -42,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -54,6 +56,7 @@ import com.gentlemanprogramming.gentlemobile.R
 import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutAction
 import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutKey
 import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutPad
+import com.gentlemanprogramming.gentlemobile.ui.session.TerminalKeyBar
 import com.gentlemanprogramming.gentlemobile.ui.theme.Air
 import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 
@@ -113,15 +116,7 @@ fun ShortcutsScreen(
         Spacer(Modifier.height(12.dp))
 
         SectionLabel(stringResource(R.string.shortcuts_preview))
-        PadPreview(pad)
-        if (pad.visibleKeys.isEmpty() && !pad.joystickVisible) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = stringResource(R.string.shortcuts_preview_empty),
-                color = p.textDisabled,
-                fontSize = 11.sp,
-            )
-        }
+        TerminalChromePreview()
 
         Spacer(Modifier.height(12.dp))
         SectionLabel(stringResource(R.string.shortcuts_joystick))
@@ -312,13 +307,11 @@ private fun Card(content: @Composable () -> Unit) {
 }
 
 /**
- * The preview: the partner of [TerminalKeyRow]'s pad, drawn small. The
- * joystick cross above, the visible keys in their order below — when nothing
- * is set, an empty plate instead of a fake row.
+ * The preview (T60): the same bar and floating pad the terminal paints, drawn
+ * small and with the icons — so what the person sees here is what they get.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PadPreview(pad: ShortcutPad) {
+private fun TerminalChromePreview() {
     val p = LocalPalette.current
     Column(
         modifier = Modifier
@@ -328,39 +321,75 @@ private fun PadPreview(pad: ShortcutPad) {
             .border(Air.HAIRLINE_DP.dp, p.line, RoundedCornerShape(Air.RADIUS_TERMINAL_DP.dp))
             .padding(8.dp),
     ) {
-        if (pad.joystickVisible) {
-            JoystickPreview()
-            Spacer(Modifier.height(6.dp))
-        }
-        if (pad.visibleKeys.isNotEmpty()) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                pad.visibleKeys.forEach { key ->
-                    PreviewChip(key.label)
-                }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            TerminalKeyBar.barChips().forEach { chip ->
+                PreviewChip(chip.label)
+            }
+            Spacer(Modifier.weight(1f))
+            TerminalKeyBar.barIcons().forEach { icon ->
+                PreviewBarIcon(icon)
             }
         }
+        Spacer(Modifier.height(10.dp))
+        PreviewPadCross()
     }
 }
 
 @Composable
-private fun JoystickPreview() {
+private fun PreviewBarIcon(icon: TerminalKeyBar.Icon) {
     val p = LocalPalette.current
+    val drawable = when (icon) {
+        TerminalKeyBar.Icon.ARROWS -> R.drawable.ic_arrows
+        TerminalKeyBar.Icon.BRANCHES -> R.drawable.ic_branches
+        TerminalKeyBar.Icon.CLIPBOARD -> R.drawable.ic_clipboard
+        TerminalKeyBar.Icon.BUBBLE -> R.drawable.ic_chat
+        TerminalKeyBar.Icon.KEYBOARD -> R.drawable.ic_keyboard
+        TerminalKeyBar.Icon.BRUSH -> R.drawable.ic_brush
+    }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(width = 28.dp, height = 24.dp),
+    ) {
+        Icon(
+            painter = painterResource(drawable),
+            contentDescription = null,
+            tint = p.muted,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+@Composable
+private fun PreviewPadCross() {
+    val keys = TerminalKeyBar.padKeys()
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        PreviewKey("↑")
         Row {
-            PreviewKey("←")
-            PreviewKey("\u21B5")
-            PreviewKey("→")
+            PreviewPadKey(keys[0])
+            PreviewPadKey(keys[1])
+            PreviewPadKey(keys[2])
         }
-        PreviewKey("↓")
+        Row {
+            PreviewPadKey(keys[3])
+            PreviewPadKey(keys[4])
+            PreviewPadKey(keys[5])
+        }
+        Row {
+            Spacer(Modifier.width(30.dp))
+            PreviewPadKey(keys[6])
+            Spacer(Modifier.width(30.dp))
+        }
     }
 }
 
 @Composable
-private fun PreviewKey(label: String) {
+private fun PreviewPadKey(key: ShortcutKey) {
     val p = LocalPalette.current
     Box(
         contentAlignment = Alignment.Center,
@@ -376,7 +405,27 @@ private fun PreviewKey(label: String) {
                 .border(1.dp, p.line, RoundedCornerShape(5.dp))
                 .background(p.surfaceRaised, RoundedCornerShape(5.dp)),
         ) {
-            Text(text = label, color = p.muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            when (key.id) {
+                "pad_backspace" -> Icon(
+                    painter = painterResource(R.drawable.ic_backspace),
+                    contentDescription = null,
+                    tint = p.muted,
+                    modifier = Modifier.size(13.dp),
+                )
+                "pad_clear" -> Icon(
+                    painter = painterResource(R.drawable.ic_brush),
+                    contentDescription = null,
+                    tint = p.muted,
+                    modifier = Modifier.size(13.dp),
+                )
+                else -> Text(
+                    text = key.label,
+                    color = p.muted,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }

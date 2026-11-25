@@ -211,7 +211,9 @@
     <string name="cd_input_composer">Type in the composer</string>
     <string name="cd_input_direct">Type straight into the terminal</string>
     <string name="cd_pad">Open the floating key pad</string>
-    <string name="cd_lines">Show the shortcut keys</string>
+    <string name="cd_branches">Show the workspaces of the host</string>
+    <string name="cd_sidebar_title">Workspaces</string>
+    <string name="cd_sidebar_readonly">Switching workspaces would disturb the desktop session — this list is read-only.</string>
     <string name="cd_clipboard">Paste from the clipboard</string>
     <string name="cd_clipboard_empty">The clipboard is empty.</string>
     <string name="cd_attach">Attach a photo, image or file</string>
