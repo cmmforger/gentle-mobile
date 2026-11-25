@@ -1,11 +1,9 @@
 package com.gentlemanprogramming.gentlemobile.ui.terminal
 
-import android.graphics.Paint
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -52,15 +50,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
@@ -93,7 +85,6 @@ import com.gentlemanprogramming.gentlemobile.ui.session.AndroidDictationEngine
 import com.gentlemanprogramming.gentlemobile.ui.session.Attachment
 import com.gentlemanprogramming.gentlemobile.ui.session.AttachmentState
 import com.gentlemanprogramming.gentlemobile.ui.session.DictationEngine
-import com.gentlemanprogramming.gentlemobile.ui.session.InputMode
 import com.gentlemanprogramming.gentlemobile.ui.session.PaneSwitcherModel
 import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutAction
 import com.gentlemanprogramming.gentlemobile.ui.session.ShortcutKey
@@ -110,17 +101,13 @@ import com.gentlemanprogramming.gentlemobile.ui.workspaces.WorkspacesModel
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
-private val TERMINAL_FONT_SP = 14.sp
-
-/** The blink period in ms — the same 530 ms [TerminalCursor] expects. */
-private const val BLINK_PERIOD_MS = 530L
-
 /**
- * The only session view (T48): the PTY's byte stream drawn as a cell grid,
- * full bleed. The top bar (back · panes · refresh, 44 dp) stays tappable
- * while the keyboard is up; the key row and the composer sit at the bottom
- * above the IME. The panes button opens the workspace's pane/tab list with a
- * `+` to create a tab; picking one focuses it on the host.
+ * The only session view (T48/T61): the PTY's byte stream rendered by the
+ * vendored xterm.js engine in a WebView, full bleed. The top bar
+ * (back · panes · refresh, 44 dp) stays tappable while the keyboard is up;
+ * the key row and the composer sit at the bottom above the IME. The panes
+ * button opens the workspace's pane/tab list with a `+` to create a tab;
+ * picking one focuses it on the host.
  *
  * The composer is a normal field: the phone keyboard's own voice-to-text
  * types into it. When the terminal runs an agent (the app launched one), the
@@ -168,9 +155,12 @@ fun TerminalScreen(
 ) {
     val palette = LocalPalette.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
-    val terminalTypefaces = rememberTerminalTypefaces(LocalTerminalFace.current)
-    var emulator by remember { mutableStateOf<TerminalEmulator?>(null) }
-    var frameVersion by remember { mutableStateOf(0) }
+    val xtermTheme = remember(theme) { XtermTheme.from(terminalColors) }
+    val terminalFace = LocalTerminalFace.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val fontCss = remember(terminalFace) { terminalFontCss(context, terminalFace) }
+    val controller = remember { TerminalWebController() }
+    var rendererReady by remember { mutableStateOf(false) }
     var closed by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf(TextFieldValue("")) }
     val composer = remember { TerminalComposer() }
@@ -179,8 +169,6 @@ fun TerminalScreen(
     var sidebarOpen by remember { mutableStateOf(false) }
     var padLocked by remember { mutableStateOf(false) }
     var clipboardNotice by remember { mutableStateOf<String?>(null) }
-    var blinkPhase by remember { mutableStateOf(0L) }
-    val context = androidx.compose.ui.platform.LocalContext.current
     val clipboard = LocalClipboardManager.current
     val clipboardEmptyMessage = stringResource(R.string.cd_clipboard_empty)
 
@@ -352,13 +340,6 @@ fun TerminalScreen(
         }
     }
 
-    LaunchedEffect(cursorBlink) {
-        while (cursorBlink) {
-            kotlinx.coroutines.delay(530L)
-            blinkPhase++
-        }
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -375,75 +356,63 @@ fun TerminalScreen(
                 .fillMaxWidth()
                 .weight(1f),
         ) {
-            val density = LocalDensity.current
-            val fontSizePx = with(density) { TERMINAL_FONT_SP.toPx() }
-            // The cell size is measured at the paint size the renderer uses,
-            // so the derived grid is exactly the grid that is painted — the
-            // PTY, the buffer and the canvas can never disagree on rows.
-            val cell = rememberTerminalCellSize(terminalTypefaces, fontSizePx)
-            val grid = TerminalGeometry.derive(
-                constraints.maxWidth.toFloat(),
-                constraints.maxHeight.toFloat(),
-                cell.widthPx,
-                cell.heightPx,
-            )
-            // Start the PTY once a real grid exists, and keep the emulator
-            // and the PTY on the same geometry through every IME change.
-            LaunchedEffect(grid.cols, grid.rows, session) {
-                val e = emulator
-                if (e == null) {
-                    if (grid.rows >= 2 && grid.cols >= 20) {
-                        onStart(grid.cols, grid.rows)
-                        emulator = TerminalEmulator(grid.cols, grid.rows, terminalColors)
+            TerminalWebView(
+                theme = xtermTheme,
+                fontCss = fontCss,
+                cursorMode = cursorMode,
+                cursorBlink = cursorBlink,
+                controller = controller,
+                onData = { bytes -> session?.write(bytes) },
+                onResize = { cols, rows ->
+                    val s = session
+                    if (s == null) {
+                        onStart(cols, rows)
+                    } else {
+                        val grid = XtermResize.decide(s.cols().toInt(), s.rows().toInt(), cols, rows)
+                        if (grid != null) s.resize(grid.cols.toUInt(), grid.rows.toUInt())
                     }
-                    return@LaunchedEffect
-                }
-                if (e.cols != grid.cols || e.rows != grid.rows) {
-                    e.resize(grid.cols, grid.rows)
-                    // A resize must re-paint immediately, never wait for the
-                    // next PTY byte — the keyboard open/close redraws at once.
-                    frameVersion++
-                }
-                val s = session
-                if (s != null && (e.cols != s.cols().toInt() || e.rows != s.rows().toInt())) {
-                    s.resize(e.cols.toUInt(), e.rows.toUInt())
-                }
-            }
+                },
+                onReady = { rendererReady = true },
+                modifier = Modifier.fillMaxSize(),
+            )
             // Drain the PTY as bytes arrive; nothing is batched.
             LaunchedEffect(session) {
                 val s = session ?: return@LaunchedEffect
                 closed = false
                 while (true) {
                     val bytes = s.read(4096u)
-                    val e = emulator
-                    if (bytes.isNotEmpty() && e != null) {
-                        e.feed(bytes)
-                        frameVersion++
-                        val replies = e.drainReplies()
-                        if (replies.isNotEmpty()) runCatching { s.write(replies) }
-                    }
+                    if (bytes.isNotEmpty()) controller.write(bytes)
                     if (s.isClosed()) {
                         closed = true
                         break
                     }
                     delay(20)
                 }
-                frameVersion++
             }
-            TerminalCanvas(
-                emulator = emulator,
-                colors = terminalColors,
-                typefaces = terminalTypefaces,
-                fontSizePx = fontSizePx,
-                closed = closed,
-                starting = starting && emulator == null,
-                error = error,
-                frameVersion = frameVersion,
-                cursorMode = cursorMode,
-                cursorBlink = cursorBlink,
-                blinkPhase = blinkPhase,
-                modifier = Modifier.fillMaxSize(),
-            )
+            // Direct mode types into xterm's own textarea: focus it once the
+            // renderer is up and whenever the mode flips back to direct.
+            LaunchedEffect(useComposer, rendererReady) {
+                if (!useComposer && rendererReady) controller.focus()
+            }
+            val overlay = when {
+                error != null -> error
+                closed -> "The shell has ended."
+                starting -> "Starting the shell…"
+                else -> null
+            }
+            if (overlay != null) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = overlay,
+                        color = palette.muted,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
             if (clipboardNotice != null) {
                 Text(
                     text = clipboardNotice.orEmpty(),
@@ -503,11 +472,6 @@ fun TerminalScreen(
                 onPickFile = onPickFile,
                 onRetryUpload = onRetryUpload,
                 onRemoveAttachment = onRemoveAttachment,
-            )
-        } else {
-            TerminalDirectInputRow(
-                enabled = session != null && !closed,
-                onBytes = { bytes -> session?.write(bytes) },
             )
         }
         }
@@ -1206,48 +1170,6 @@ private fun TerminalAttachmentsSheet(
     }
 }
 
-/**
- * The direct input row (T50, T58, T60): with "use the field" off there is no
- * visible composer — an invisible, zero-height field keeps the IME up and
- * every keystroke reaches the PTY the moment it is typed, so nothing
- * reserves the field's height while it is off screen. Enter sends one CR
- * through the keyboard's send action.
- */
-@Composable
-private fun TerminalDirectInputRow(enabled: Boolean, onBytes: (ByteArray) -> Unit) {
-    var value by remember { mutableStateOf(TextFieldValue("")) }
-    val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        delay(100)
-        focusRequester.requestFocus()
-    }
-    BasicTextField(
-        value = value,
-        onValueChange = { new ->
-            val delta = TerminalKeys.forwardInput(value.text, new.text)
-            if (delta.isNotEmpty()) onBytes(delta)
-            value = TextFieldValue("")
-        },
-        enabled = enabled,
-        singleLine = true,
-        textStyle = TextStyle(
-            color = Color.Transparent,
-            fontSize = 13.sp,
-            fontFamily = FontFamily.Monospace,
-        ),
-        cursorBrush = SolidColor(Color.Transparent),
-        keyboardOptions = KeyboardOptions(
-            capitalization = KeyboardCapitalization.None,
-            imeAction = ImeAction.Send,
-        ),
-        keyboardActions = KeyboardActions(onSend = { onBytes(byteArrayOf(0x0D)) }),
-        modifier = Modifier
-            .focusRequester(focusRequester)
-            .fillMaxWidth()
-            .height(TerminalKeyBar.fieldReservedDp(InputMode.DIRECT).dp),
-    )
-}
-
 @Composable
 private fun TerminalAttachmentRow(
     attachment: Attachment,
@@ -1623,160 +1545,6 @@ private fun TerminalWorkspacesSidebar(
     }
 }
 
-/** The cell size the renderer paints at: measured at [fontSizePx] with the
- *  resolved terminal face, so the derived grid is the painted grid. */
-private class TerminalCellSize(val widthPx: Float, val heightPx: Float)
-
-@Composable
-private fun rememberTerminalCellSize(typefaces: TerminalTypefaces, fontSizePx: Float): TerminalCellSize {
-    return remember(typefaces, fontSizePx) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        paint.typeface = typefaces.regular ?: android.graphics.Typeface.DEFAULT
-        paint.textSize = fontSizePx
-        val fm = paint.fontMetrics
-        TerminalCellSize(paint.measureText("M"), fm.descent - fm.ascent)
-    }
-}
-
-@Composable
-private fun TerminalCanvas(
-    emulator: TerminalEmulator?,
-    colors: TermColors,
-    typefaces: TerminalTypefaces,
-    fontSizePx: Float,
-    closed: Boolean,
-    starting: Boolean,
-    error: String?,
-    frameVersion: Int,
-    cursorMode: CursorMode,
-    cursorBlink: Boolean,
-    blinkPhase: Long,
-    modifier: Modifier,
-) {
-    Canvas(modifier = modifier) {
-        @Suppress("UNUSED_EXPRESSION")
-        frameVersion
-        val e = emulator
-        if (e == null) {
-            val message = when {
-                starting -> "Starting the shell…"
-                error != null -> error
-                else -> "No terminal"
-            }
-            drawCenteredText(message)
-            return@Canvas
-        }
-        drawTerminal(e, colors, typefaces, fontSizePx, closed, cursorMode, cursorBlink, blinkPhase)
-        if (closed) {
-            drawCenteredText("The shell has ended.")
-        }
-    }
-}
-
-private fun DrawScope.drawCenteredText(text: String) {
-    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-    paint.color = 0xFFA78E9B.toInt()
-    paint.textSize = 14f
-    paint.textAlign = android.graphics.Paint.Align.CENTER
-    drawContext.canvas.nativeCanvas.drawText(text, size.width / 2f, size.height / 2f, paint)
-}
-
-private fun DrawScope.drawTerminal(
-    emulator: TerminalEmulator,
-    colors: TermColors,
-    typefaces: TerminalTypefaces,
-    fontSizePx: Float,
-    closed: Boolean,
-    cursorMode: CursorMode,
-    cursorBlink: Boolean,
-    blinkPhase: Long,
-) {
-    val canvas = drawContext.canvas.nativeCanvas
-    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-    paint.textSize = fontSizePx
-    paint.typeface = typefaces.regular ?: android.graphics.Typeface.DEFAULT
-    val fm = paint.fontMetrics
-    var cellWidth = paint.measureText("M")
-    var cellHeight = fm.descent - fm.ascent
-
-    val lines = emulator.screenLines()
-    val rows = lines.size
-    val cols = emulator.cols
-
-    // The grid was derived from this exact cell size, so this loop is only a
-    // safety net against a font engine that paints wider than it measures.
-    var guard = 0
-    while ((cellWidth * cols > size.width || cellHeight * rows > size.height) && guard < 4) {
-        val widthScale = if (cellWidth * cols > size.width) size.width / (cellWidth * cols) else 1f
-        val heightScale = if (cellHeight * rows > size.height) size.height / (cellHeight * rows) else 1f
-        paint.textSize *= minOf(widthScale, heightScale)
-        cellWidth = paint.measureText("M")
-        val fm2 = paint.fontMetrics
-        cellHeight = fm2.descent - fm2.ascent
-        guard++
-    }
-    val baseline = -paint.fontMetrics.ascent
-
-    drawRect(Color(colors.background), Offset.Zero, Size(size.width, size.height))
-
-    fun cellX(column: Int) = column * cellWidth
-    fun cellY(row: Int) = row * cellHeight
-
-    for ((row, line) in lines.withIndex()) {
-        for ((column, cell) in line.withIndex()) {
-            if (cell.cont) continue
-            if (cell.bg != colors.background) {
-                drawRect(
-                    Color(cell.bg),
-                    Offset(cellX(column), cellY(row)),
-                    Size(if (cell.wide) cellWidth * 2 else cellWidth, cellHeight),
-                )
-            }
-            if (cell.text.isNotEmpty() && cell.flags and TermFlags.HIDDEN == 0) {
-                val reversed = cell.flags and TermFlags.REVERSED != 0
-                paint.color = if (reversed) cell.bg else cell.fg
-                paint.alpha = if (cell.flags and TermFlags.DIM != 0) 158 else 255
-                paint.typeface = when {
-                    cell.flags and TermFlags.BOLD != 0 && cell.flags and TermFlags.ITALIC != 0 -> typefaces.boldItalic
-                    cell.flags and TermFlags.BOLD != 0 -> typefaces.bold
-                    cell.flags and TermFlags.ITALIC != 0 -> typefaces.italic
-                    else -> typefaces.regular
-                } ?: android.graphics.Typeface.DEFAULT
-                paint.isUnderlineText = cell.flags and TermFlags.UNDERLINE != 0
-                paint.isStrikeThruText = cell.flags and TermFlags.STRUCK != 0
-                canvas.drawText(cell.text, cellX(column), cellY(row) + baseline, paint)
-            }
-        }
-    }
-    paint.alpha = 255
-    paint.isUnderlineText = false
-    paint.isStrikeThruText = false
-
-    // Cursor on top, shaped by the Advanced choice and hidden on the blink's
-    // off phase. The block fills, underline and bar are fractions of the cell.
-    val paintCursor = TerminalCursor.visible(
-        emulator.cursorVisible,
-        cursorBlink,
-        blinkPhase * BLINK_PERIOD_MS,
-    )
-    if (paintCursor && !closed) {
-        val cx = emulator.cursorX
-        val cy = emulator.cursorY
-        if (cx < cols && cy < rows) {
-            val rect = TerminalCursor.rect(cursorMode)
-            val left = cellX(cx) + rect.left * cellWidth
-            val top = cellY(cy) + rect.top * cellHeight
-            val right = cellX(cx) + rect.right * cellWidth
-            val bottom = cellY(cy) + rect.bottom * cellHeight
-            drawRect(
-                Color(colors.foreground),
-                Offset(left, top),
-                Size(right - left, bottom - top),
-            )
-        }
-    }
-}
-
 /** A canned PTY stream for the offline fixture: a prompt, coloured `ls`,
  *  wide glyphs, 256-colour and truecolour — no SSH, no host. */
 fun fixtureTerminalBytes(): ByteArray = buildString {
@@ -1791,16 +1559,21 @@ fun fixtureTerminalBytes(): ByteArray = buildString {
     append("$ ")
 }.toByteArray(Charsets.UTF_8)
 
-/** The offline terminal proof (T42): the real renderer over a canned PTY
- *  stream, so colours, wide characters, the cursor and the four palettes
- *  can be seen without sshd. Launch with `--ez terminal_fixture true`. */
+/** The offline terminal proof (T61): the xterm.js WebView over a canned PTY
+ *  stream, so colours, wide characters and the four palettes can be seen
+ *  without sshd. Launch with `--ez terminal_fixture true`. */
 @Composable
 fun TerminalFixtureScreen(theme: AppTheme, onBack: () -> Unit) {
     val palette = LocalPalette.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val terminalColors = remember(theme) { TerminalPalette.forTheme(theme) }
-    val terminalTypefaces = rememberTerminalTypefaces(LocalTerminalFace.current)
-    val emulator = remember(theme) {
-        TerminalEmulator(64, 24, terminalColors).apply { feed(fixtureTerminalBytes()) }
+    val xtermTheme = remember(theme) { XtermTheme.from(terminalColors) }
+    val terminalFace = LocalTerminalFace.current
+    val fontCss = remember(terminalFace) { terminalFontCss(context, terminalFace) }
+    val controller = remember { TerminalWebController() }
+    var ready by remember { mutableStateOf(false) }
+    LaunchedEffect(ready) {
+        if (ready) controller.write(fixtureTerminalBytes())
     }
     Column(
         modifier = Modifier
@@ -1837,28 +1610,19 @@ fun TerminalFixtureScreen(theme: AppTheme, onBack: () -> Unit) {
                 maxLines = 1,
             )
         }
-        BoxWithConstraints(
+        TerminalWebView(
+            theme = xtermTheme,
+            fontCss = fontCss,
+            cursorMode = CursorMode.BLOCK,
+            cursorBlink = false,
+            controller = controller,
+            onData = {},
+            onResize = { _, _ -> },
+            onReady = { ready = true },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-        ) {
-            val density = LocalDensity.current
-            val fontSizePx = with(density) { TERMINAL_FONT_SP.toPx() }
-            TerminalCanvas(
-                emulator = emulator,
-                colors = terminalColors,
-                typefaces = terminalTypefaces,
-                fontSizePx = fontSizePx,
-                closed = false,
-                starting = false,
-                error = null,
-                frameVersion = 0,
-                cursorMode = CursorMode.BLOCK,
-                cursorBlink = false,
-                blinkPhase = 0,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+        )
     }
 }
 
