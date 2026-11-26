@@ -1,7 +1,12 @@
 //! Explicitly opt-in: never discovers or attaches to an existing daemon.
 //! The daemon under test is a POSIX process with a POSIX sandbox, so the whole
 //! harness compiles on Unix only.
-#![cfg(unix)]
+//!
+//! Behind the `live` feature, and currently unbuildable: it imports
+//! `test-support/sandbox.rs`, a shared harness this repository does not contain.
+//! Keeping it out of the default build is what makes `cargo test --workspace`
+//! run; restoring it means committing that harness.
+#![cfg(all(unix, feature = "live"))]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 #[path = "../../test-support/sandbox.rs"]
 mod sandbox;

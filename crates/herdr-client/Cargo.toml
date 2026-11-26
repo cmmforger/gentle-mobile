@@ -17,6 +17,10 @@ boat = ["cloud"]
 coder = ["cloud"]
 daytona = ["cloud"]
 railway = ["cloud"]
+# The `tests/live.rs` target drives a real daemon and needs the shared harness in
+# `test-support/sandbox.rs`. This repository has never contained that file, so the
+# target cannot build; it is opt-in to keep the default suite runnable.
+live = []
 
 [dependencies]
 crossbeam-channel.workspace = true
