@@ -50,14 +50,18 @@ bash "$HELPER" "$SANDBOX/trailing/" || { printf 'a trailing slash failed the scr
 [ -f "$SANDBOX/trailing/Core.kt" ] || { printf 'trailing-slash run lost the file\n' >&2; exit 1; }
 
 # 7. A find that fails is reported as a find failure, not as "nothing found".
-mkdir -p "$SANDBOX/unreadable"
-: > "$SANDBOX/unreadable/one.kt"
-chmod 000 "$SANDBOX/unreadable"
-out=$(bash "$HELPER" "$SANDBOX/unreadable" 2>&1) && { printf 'an unreadable directory should be refused\n' >&2; exit 1; }
-case "$out" in
-    *'cannot list'*) ;;
-    *) printf 'unreadable directory said: %s\n' "$out" >&2; exit 1 ;;
-esac
-chmod 755 "$SANDBOX/unreadable"
+# Root ignores the mode bits, so the case is meaningless there and would fail
+# spuriously; it is skipped rather than faked.
+if [ "$(id -u)" -ne 0 ]; then
+    mkdir -p "$SANDBOX/unreadable"
+    : > "$SANDBOX/unreadable/one.kt"
+    chmod 000 "$SANDBOX/unreadable"
+    out=$(bash "$HELPER" "$SANDBOX/unreadable" 2>&1) && { printf 'an unreadable directory should be refused\n' >&2; exit 1; }
+    case "$out" in
+        *'cannot list'*) ;;
+        *) printf 'unreadable directory said: %s\n' "$out" >&2; exit 1 ;;
+    esac
+    chmod 755 "$SANDBOX/unreadable"
+fi
 
 printf 'binding name: ok\n'

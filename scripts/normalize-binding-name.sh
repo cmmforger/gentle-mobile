@@ -19,10 +19,14 @@ dir="${dir%"${dir##*[!/]}"}"
 
 [ -d "$dir" ] || { printf 'not a directory: %s\n' "$dir" >&2; exit 1; }
 
-# Read the listing through a command whose status survives: a failing find must
-# be reported as itself, never as "nothing was generated".
-if ! listing=$(find "$dir" -maxdepth 1 -name '*.kt' -print 2>&1); then
-    printf 'cannot list %s: %s\n' "$dir" "$listing" >&2
+# Read the listing through a command whose status survives, and keep find's
+# diagnostics out of it: a failing find must report itself, and a find that ever
+# printed while succeeding must not contribute a line that looks like a filename.
+# 2>&1 would make those two streams indistinguishable.
+errfile=$(mktemp)
+trap 'rm -f -- "$errfile"' EXIT
+if ! listing=$(find "$dir" -maxdepth 1 -name '*.kt' -print 2>"$errfile"); then
+    printf 'cannot list %s: %s\n' "$dir" "$(cat "$errfile")" >&2
     exit 1
 fi
 
