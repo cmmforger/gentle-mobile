@@ -45,10 +45,22 @@ cargo run -q -p "$CRATE" --bin uniffi-bindgen -- generate \
     --config "core/uniffi.toml" \
     --language kotlin \
     --out-dir "$GEN_DIR"
+
+# uniffi names its output after the crate, so every crate rename becomes a
+# 6,000-line file move that a reviewer cannot see past. The committed binding
+# keeps a stable name instead: Kotlin does not care about the file name, and the
+# symbols inside still follow the crate, which is what the .so must match.
+BINDING_DIR="$GEN_DIR/com/gentlemanprogramming/gentlemobile/core"
+GEN_KT=$(find "$BINDING_DIR" -maxdepth 1 -name '*.kt' | head -n1)
+[ -n "$GEN_KT" ] || { echo "no Kotlin file in $BINDING_DIR" >&2; exit 1; }
+mv "$GEN_KT" "$BINDING_DIR/Core.kt"
+
 rm -rf "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile/core"
 mkdir -p "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile"
 cp -r "$GEN_DIR/com/gentlemanprogramming/gentlemobile/core" \
     "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile/"
+[ -f "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile/core/Core.kt" ] || {
+    echo "the committed binding is not named Core.kt" >&2; exit 1; }
 echo "   generated $(find "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile/core" -name '*.kt' | wc -l) Kotlin file(s)"
 
 echo "== 3/4 cross-compile: x86_64-linux-android (emulator) + aarch64-linux-android (phone)"
