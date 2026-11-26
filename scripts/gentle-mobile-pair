@@ -33,7 +33,12 @@ host_address() {
         ip=$(tailscale ip -4 2>/dev/null | head -n1 || true)
         if [ -n "${ip:-}" ]; then printf '%s' "$ip"; return; fi
     fi
-    ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}'
+    # `ip` is not everywhere (minimal containers): without this guard its
+    # 127 trips `pipefail` and the script dies silently before the `die`
+    # below. Missing or routeless, host_address returns empty so the caller
+    # reports the real cause.
+    command -v ip >/dev/null 2>&1 || return 0
+    ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}' || true
 }
 
 usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; }
@@ -89,7 +94,7 @@ case "${1:-}" in
     # the LAN address. GENTLE_MOBILE_PAIR_BIND pins one on multi-IP hosts —
     # loopback stays refused in every case.
     bind="${GENTLE_MOBILE_PAIR_BIND:-$(host_address)}"
-    [ -n "${bind:-}" ] || die "could not determine this machine's address"
+    [ -n "${bind:-}" ] || die "could not determine this machine's address (is 'ip' installed?) — set GENTLE_MOBILE_PAIR_BIND to the address the phone should reach"
     case "$bind" in
         127.*|::1) die "refusing to pair on a loopback address ($bind): the phone could not reach it" ;;
     esac
