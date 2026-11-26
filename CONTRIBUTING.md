@@ -9,25 +9,39 @@ before your first change.
 The **epic is the source of truth**: **#6**. It holds the architecture, the acceptance criteria, and the ordered
 checklist of child issues. If this file and the epic ever disagree, the epic wins.
 
-Open work is whatever the epic lists. Do not invent scope: if the change you want is not in an issue, open one first (or
-ask), so the reason is recorded.
+Open work is every open issue. The epic lists the **chained** ones and their order; everything else is unchained and free
+(see below). Do not invent scope: if the change you want is not in an issue, open one first (or ask), so the reason is
+recorded.
 
-## The designated order
+## Chained or unchained
 
-Take the child issues in this sequence. Each issue states its own position and what it waits for.
+There are exactly two kinds of issue here, and what separates them is **structural, not a naming convention**.
 
-| # | Issue | Waits for |
+| | Chained | Unchained |
 | --- | --- | --- |
-| 1 | #9 Secure pairing and connectivity | nothing — start here |
-| 2 | #10 Security hardening | nothing; two findings are manifest configuration |
-| 3 | #7 Workspace and panel management | nothing; produces the contract #8 and #12 consume |
-| 4 | #8 Multi-agent runtime integration | #7 |
-| 5 | #12 Settings ownership model | #7 and #9 |
-| 6 | #11 Desktop setup and onboarding | #9 |
+| What it is | a **sub-issue of an epic** | anything else |
+| How you tell | the issue page says *Sub-issue of #6* and the API returns the parent | it has no parent |
+| Order | the step stated in its body | none |
+| When to take it | in its step, once what that step waits for is done | between steps, one at a time |
+| Who decides its place | the maintainer, by linking it to the epic | nobody — it needs no place |
 
-The order is **designated, not enforced**. GitHub does not block anything. Respect the sequence because it is the one
-that avoids rework; if you believe a later step must come first, say so in that issue and wait for an answer before
-starting — do not silently reorder.
+In one line: **if it has a parent epic, respect its step; if it does not, it is free to develop now — but never in the middle of a chained step.**
+
+The current chained set is the checklist inside the epic (**#6**). It grows over time, and this file does not keep a copy of it: a copied list of numbers goes stale the moment the next issue is created. If this file and the epic ever disagree, the epic wins.
+
+### Why not a title prefix
+
+A `[EPIC]` prefix can be forgotten, and forgetting it would silently turn a sequenced issue into a free one — the failure mode where nobody notices. The parent link cannot be forgotten because it is created on purpose, and the default when nobody links an issue is "free", which is the safe direction: free work gets done, chained work gets done in an order that avoids rework.
+
+### Promotion
+
+An unchained issue stops being unchained the moment it **blocks a step**: link it to the epic, give it the step before the one it blocks, and say so in both issues. A blocker is never resolved by taking it out of order, and never deferred to the end of the queue.
+
+## Unchained does not mean first come, first served
+
+Defects such as **#2, #3, #4 and #5** are unchained and still wait. Take them **between** chained steps, one at a time, so the epic does not starve behind an endless stream of small fixes.
+
+The single exception is a defect that breaks the build or blocks a chained step — that one is **promoted**, not deferred.
 
 ## Taking one issue
 
