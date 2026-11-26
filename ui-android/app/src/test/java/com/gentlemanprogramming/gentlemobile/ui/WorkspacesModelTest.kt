@@ -74,7 +74,7 @@ class WorkspacesModelTest {
 
     @Test
     fun the_label_is_the_folder_name_not_the_path() {
-        assertEquals("t36-repo", WorkspacesModel.workspaceLabel("/mnt/WD-Black/test_tmp/gentle-companion/t36-repo"))
+        assertEquals("t36-repo", WorkspacesModel.workspaceLabel("/mnt/WD-Black/test_tmp/gentle-mobile/t36-repo"))
     }
 
     @Test

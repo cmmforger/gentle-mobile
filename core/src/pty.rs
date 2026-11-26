@@ -1029,12 +1029,12 @@ mod tests {
             user: process_env::var("GENTLE_SSH_USER").unwrap_or_else(|_| "erickfm".to_owned()),
             identity_path: PathBuf::from(
                 process_env::var("GENTLE_SSH_KEY").unwrap_or_else(|_| {
-                    "/mnt/WD-Black/test_tmp/gentle-companion/t26-probe-key".to_owned()
+                    "/mnt/WD-Black/test_tmp/gentle-mobile/t26-probe-key".to_owned()
                 }),
             ),
             known_hosts_path: PathBuf::from(
                 process_env::var("GENTLE_KNOWN_HOSTS").unwrap_or_else(|_| {
-                    "/mnt/WD-Black/test_tmp/gentle-companion/t8-known-hosts".to_owned()
+                    "/mnt/WD-Black/test_tmp/gentle-mobile/t8-known-hosts".to_owned()
                 }),
             ),
         };

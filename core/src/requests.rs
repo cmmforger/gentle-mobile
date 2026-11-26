@@ -610,7 +610,7 @@ impl RequestsHub {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
         let worker = std::thread::Builder::new()
-            .name("gentlecompanion-requests".to_owned())
+            .name("gentle-mobile-requests".to_owned())
             .spawn(move || worker_loop(receiver, worker_stop, profile, session))
             .map_err(Error::Io)?;
         Ok(Self { jobs: Some(jobs), stop: Some(stop), worker: Some(worker) })
@@ -1237,7 +1237,7 @@ fn workspace_created_response() -> Value {
                 "pane_id": "w1H:p1",
                 "workspace_id": "w1H",
                 "tab_id": "w1H:t1",
-                "cwd": "/mnt/WD-Black/test_tmp/gentle-companion/t36-repo"
+                "cwd": "/mnt/WD-Black/test_tmp/gentle-mobile/t36-repo"
             }
         }
     })

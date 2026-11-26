@@ -4,13 +4,13 @@
 //! (limit 16) on the same host, the same files and the same code path.
 //!
 //! ```sh
-//! GENTLE_SESSIONS_DIR=/mnt/WD-Black/test_tmp/gentle-companion/s24-sessions \
-//! cargo run -p gentlecompanion-core --example list_sessions
+//! GENTLE_SESSIONS_DIR=/mnt/WD-Black/test_tmp/gentle-mobile/s24-sessions \
+//! cargo run -p gentle-mobile-core --example list_sessions
 //! ```
 
 use std::{env, path::PathBuf};
 
-use gentlecompanion_core::{sessions::HostSession, HostProfile};
+use gentle_mobile_core::{sessions::HostSession, HostProfile};
 
 fn profile() -> HostProfile {
     HostProfile {
@@ -24,12 +24,12 @@ fn profile() -> HostProfile {
             .unwrap_or_else(|| env::var("USER").unwrap_or_default()),
         identity_path: PathBuf::from(
             env::var("GENTLE_SSH_KEY").unwrap_or_else(|_| {
-                "/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/client_ed25519".to_owned()
+                "/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/client_ed25519".to_owned()
             }),
         ),
         known_hosts_path: PathBuf::from(
             env::var("GENTLE_KNOWN_HOSTS").unwrap_or_else(|_| {
-                "/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/known_hosts".to_owned()
+                "/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/known_hosts".to_owned()
             }),
         ),
     }
@@ -40,7 +40,7 @@ async fn timed_listing(
 ) -> anyhow::Result<(std::time::Duration, usize, usize)> {
     let start = std::time::Instant::now();
     let sessions: Vec<HostSession> =
-        gentlecompanion_core::sessions::list_sessions_over_sftp_with_limit(
+        gentle_mobile_core::sessions::list_sessions_over_sftp_with_limit(
             &profile(),
             &env::var("GENTLE_SESSIONS_DIR").unwrap_or_default(),
             "dm-measurement",

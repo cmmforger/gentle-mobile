@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="design/gentle-companion/assets/connection-monitor-phone.png" alt="Gentle Mobile" width="140">
+  <img src="design/gentle-mobile/assets/connection-monitor-phone.png" alt="Gentle Mobile" width="140">
 </p>
 
 <h1 align="center">Gentle Mobile</h1>

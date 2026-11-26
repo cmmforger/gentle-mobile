@@ -40,7 +40,7 @@ import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
 
 /**
- * The Pair screen's QR affordance, per `design/gentle-companion/01-pair.html`:
+ * The Pair screen's QR affordance, per `design/gentle-mobile/01-pair.html`:
  * scan the host's `gc://host:port?user=…` QR with CameraX preview + the
  * bundled ML Kit barcode model. The caller owns the camera permission and
  * the fallback — a denied or missing camera never reaches this screen, the

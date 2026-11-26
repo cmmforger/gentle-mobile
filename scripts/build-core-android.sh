@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the gentlecompanion-core Android artifacts reproducibly:
+# Build the gentle-mobile-core Android artifacts reproducibly:
 #
 #   . scripts/android-env.sh   (the script sources it itself if not already)
 #   scripts/build-core-android.sh
@@ -26,8 +26,8 @@ if ! command -v cargo >/dev/null 2>&1 || [ -z "${ANDROID_NDK_HOME:-}" ]; then
     . scripts/android-env.sh
 fi
 
-CRATE="gentlecompanion-core"
-LIBNAME="libgentlecompanion_core.so"
+CRATE="gentle-mobile-core"
+LIBNAME="libgentle_mobile_core.so"
 JNILIBS="ui-android/app/src/main/jniLibs"
 KOTLIN_SRC="ui-android/app/src/main/java"
 GEN_DIR="$(mktemp -d)"

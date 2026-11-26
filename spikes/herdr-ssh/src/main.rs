@@ -42,7 +42,7 @@ fn main() -> Result<()> {
         env::var("SPIKE_SSH_USER").unwrap_or_else(|_| env::var("USER").unwrap_or_default());
     let session = env::var("SPIKE_SESSION").unwrap_or_else(|_| "default".to_owned());
     let key_path = env::var("SPIKE_SSH_KEY").map(PathBuf::from).unwrap_or_else(|_| {
-        PathBuf::from("/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/client_ed25519")
+        PathBuf::from("/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/client_ed25519")
     });
     let window = Duration::from_secs(
         env::var("SPIKE_EVENT_SECS")

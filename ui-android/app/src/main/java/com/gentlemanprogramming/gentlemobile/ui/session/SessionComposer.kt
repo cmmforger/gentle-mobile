@@ -51,7 +51,7 @@ import com.gentlemanprogramming.gentlemobile.ui.theme.LocalPalette
 import kotlinx.coroutines.delay
 
 /**
- * The session composer, per `design/gentle-companion/04-session.html`: one
+ * The session composer, per `design/gentle-mobile/04-session.html`: one
  * 44 px row — the field (8 px corners, no placeholder: the header already
  * names the agent) with a camera icon inside on the left and a clip icon
  * inside on the right, and outside on the far right a 44 px accent circle

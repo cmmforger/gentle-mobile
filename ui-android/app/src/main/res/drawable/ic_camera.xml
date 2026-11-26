@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Composer camera icon, per design/gentle-companion/04-session.html ("Take
+<!-- Composer camera icon, per design/gentle-mobile/04-session.html ("Take
      a photo"). Stroke follows the board's 1.7px 24x24 geometry; Icon tint
      supplies the colour. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"

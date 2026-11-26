@@ -1,4 +1,4 @@
-//! gentlecompanion-core: the Gentle Companion transport core.
+//! gentle-mobile-core: the Gentle Mobile transport core.
 //!
 //! Lane A is SSH: the phone connects to a host, execs
 //! `herdr --session <name> remote-client-bridge`, and speaks the vendored

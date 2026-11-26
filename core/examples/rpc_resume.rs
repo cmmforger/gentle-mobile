@@ -15,8 +15,8 @@
 
 use std::time::Duration;
 
-use gentlecompanion_core::rpc::{self, RpcCommand, RpcDeadlines, RpcError, RpcShared};
-use gentlecompanion_core::profile::HostProfile;
+use gentle_mobile_core::rpc::{self, RpcCommand, RpcDeadlines, RpcError, RpcShared};
+use gentle_mobile_core::profile::HostProfile;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();

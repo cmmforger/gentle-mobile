@@ -1,15 +1,15 @@
 //! End-to-end transport check against the throwaway sshd of the spike recipe:
-//! `/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/` (config, host key,
+//! `/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/` (config, host key,
 //! client key). Start that sshd first, then run this example. It connects,
 //! prints the snapshot summary, and disconnects cleanly.
 //!
 //! ```sh
-//! GENTLE_SSH_PORT=2424 cargo run -p gentlecompanion-core --example connect
+//! GENTLE_SSH_PORT=2424 cargo run -p gentle-mobile-core --example connect
 //! ```
 
 use std::{env, path::PathBuf, time::{Duration, Instant}};
 
-use gentlecompanion_core::{
+use gentle_mobile_core::{
     Connection, Error, Event, HostProfile, PinDecision, accept_host_key, fingerprint_of,
 };
 use herdr_client::ConnectOptions;
@@ -27,11 +27,11 @@ fn main() -> anyhow::Result<()> {
             .unwrap_or_else(|| env::var("USER").unwrap_or_default()),
         identity_path: PathBuf::from(
             env::var("GENTLE_SSH_KEY")
-                .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/client_ed25519".to_owned()),
+                .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/client_ed25519".to_owned()),
         ),
         known_hosts_path: PathBuf::from(
             env::var("GENTLE_KNOWN_HOSTS")
-                .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-companion/t8-known-hosts".to_owned()),
+                .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-mobile/t8-known-hosts".to_owned()),
         ),
     };
     let session = env::var("GENTLE_SESSION").unwrap_or_else(|_| "default".to_owned());
@@ -111,15 +111,15 @@ fn accept_fingerprint(profile: &HostProfile, fingerprint: &str) -> anyhow::Resul
     // host key. Verify the fingerprint matches the key on file before
     // accepting, then persist that key.
     let host_key_blob = std::fs::read_to_string(
-        "/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/host_ed25519.pub",
+        "/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/host_ed25519.pub",
     )?;
     let blob = host_key_blob.split_whitespace().nth(1).unwrap_or_default().to_owned();
     let key: PublicKey = parse_public_key_base64(&blob).map_err(|e| anyhow::anyhow!("{e}"))?;
     if fingerprint_of(&key) != fingerprint {
         anyhow::bail!("refusing to accept: presented fingerprint does not match the spike host key");
     }
-    match gentlecompanion_core::decide(
-        &gentlecompanion_core::parse_entries(&std::fs::read_to_string(&profile.known_hosts_path).unwrap_or_default()),
+    match gentle_mobile_core::decide(
+        &gentle_mobile_core::parse_entries(&std::fs::read_to_string(&profile.known_hosts_path).unwrap_or_default()),
         &profile.host,
         profile.port,
         &key,

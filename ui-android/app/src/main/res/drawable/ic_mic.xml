@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Composer microphone icon, per design/gentle-companion/04-session.html
+<!-- Composer microphone icon, per design/gentle-mobile/04-session.html
      ("Dictate — speech becomes text"). Stroke follows the board's 1.7px
      24x24 geometry; Icon tint supplies the colour. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
