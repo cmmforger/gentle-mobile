@@ -971,3 +971,18 @@ unless a documented exception names it) and `scripts/tests/pair-script-test.sh` 
 pre-rename keys the tool can no longer reach). The design boards landed from their own branch; the temporary exception
 that let the hygiene test ignore `design/` while that branch was unmerged has been removed, so the test now covers the
 whole tree.
+
+**L47 (the two follow-ups from L45 are closed):** Two small debts, both fixed and verified rather than deferred again.
+(1) **The workspace suite runs again.** `crates/herdr-client/tests/live.rs` imported `test-support/sandbox.rs`, a harness
+this repository has never contained, so the target could not build and `cargo test --workspace` failed for everyone. The
+target now sits behind an opt-in `live` feature (`crates/herdr-client/Cargo.toml`, `#![cfg(all(unix, feature = "live"))]`
+in the file): the harness was never committed, so the honest state is "opt-in and currently unbuildable", not "silently
+broken for all". Measured: `cargo test --workspace` → **503 passing, 3 ignored, 0 failed** (206 core + 272 herdr-client
++ 25 across the spikes); the RED was `couldn't find file .../test-support/sandbox.rs`. (2) **The committed binding has a
+stable name.** `scripts/build-core-android.sh` now renames uniffi's output to `Core.kt` before copying it into the app
+source set and fails loudly if the file is not there, because uniffi names its output after the crate — which is what
+turned the rename in T62 into a 6,507-line move and got the native review stopped twice on `lens_context_budget_exceeded`.
+The committed file is now `Core.kt`; the symbols inside still follow the crate, which is what the `.so` must match.
+Evidence: `scripts/build-core-android.sh` green end to end, Gradle `:app:testDebugUnitTest` BUILD SUCCESSFUL.
+`CONTRIBUTING.md` was corrected in the same change: it told contributors that `cargo test --workspace` fails, which is no
+longer true.

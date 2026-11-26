@@ -59,15 +59,15 @@ There is no CI in this repository. The PR will show *no checks*; the results you
 
 ```bash
 . scripts/android-env.sh
-cargo test -p gentle-mobile-core --lib          # expect ~206 passing, 3 ignored
+cargo test --workspace                        # expect ~503 passing, 3 ignored
 cd ui-android && . ../scripts/android-env.sh && ./gradlew :app:testDebugUnitTest
 ```
 
 Four traps, all pre-existing and none of them yours:
 
-- **`cargo test --workspace` currently fails.** `crates/herdr-client/tests/live.rs` imports
-  `../../test-support/sandbox.rs`, a file this repository never contained. Do not invent the file to make it green
-  unless the issue asks for it.
+- **The `live` probes are opt-in and currently unbuildable.** `crates/herdr-client/tests/live.rs` sits behind the `live`
+  feature and imports `test-support/sandbox.rs`, a shared harness this repository never contained. `cargo test
+  --workspace` covers everything else. Do not invent that harness unless the issue asks for it.
 - **If you touch `core/`, run `scripts/build-core-android.sh` before the Gradle build.** Otherwise the APK packages the
   old `.so` and the app misbehaves in ways unit tests will not show.
 - **`jniLibs/` and the committed UniFFI binding are generated.** `ui-android/.../core/gentle_mobile_core.kt` is output of
