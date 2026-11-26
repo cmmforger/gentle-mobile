@@ -1,4 +1,4 @@
-# Gentle Companion — design system
+# Gentle Mobile — design system
 
 Tokens captured from the real theme files that Gentle Shell and Herdr use on this machine.
 Nothing here is invented: every value names its source. Values the sources do not contain are

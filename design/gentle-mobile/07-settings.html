@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390">
+<title>Gentle Mobile — 07 Settings</title>
+<style>
+*{box-sizing:border-box}
+:root{
+--bg:#1A1218;--surface:#20161E;--surfaceRaised:#241822;--border:#342230;--borderSubtle:#342230;--terminal:#100A0F;
+--textPrimary:#F6EFF3;--textSecondary:#A78E9B;--textDisabled:#76616B;
+--accent:#FF76C3;--accentPressed:#5F1E3C;--accentEdge:#FF8ACE;
+--error:#FF718F;--selection:#342230;
+--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+--r-sm:8px;--r-md:12px;--r-lg:16px;--r-pill:999px;
+--t11:11px;--t13:13px;--t15:15px;--t18:18px;--t22:22px;
+--mono:"JetBrainsMono Nerd Font Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+--sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+/* every view follows the selected appearance; values captured in design/system.md */
+html[data-theme="sexy"]{
+--bg:#060407;--surface:#100A0F;--surfaceRaised:#2A1720;--border:#563040;--borderSubtle:#2A1720;--terminal:#100A0F;
+--textPrimary:#F6EFF3;--textSecondary:#A78E9B;--textDisabled:#76616B;
+--accent:#F43888;--accentPressed:#BF0F50;--accentEdge:#FF4F9A;--error:#FF718F;--selection:#4A1832}
+html[data-theme="gentle"]{
+--bg:#06080F;--surface:#0D0F14;--surfaceRaised:#161D2E;--border:#313342;--borderSubtle:#232A40;--terminal:#06080f;
+--textPrimary:#F3F6F9;--textSecondary:#A3B5D6;--textDisabled:#5C6170;
+--accent:#E0C15A;--accentPressed:#B5B2D0;--accentEdge:#7FB4CA;--error:#CB7C94;--selection:#232A40}
+.theme-bar{display:flex;gap:var(--s2);align-items:center;margin-bottom:var(--s4)}
+.theme-bar span{font-size:var(--t11);letter-spacing:.08em;text-transform:uppercase;color:var(--textSecondary)}
+.theme-bar button{min-height:44px;padding:0 var(--s4);border-radius:var(--r-pill);border:1px solid var(--borderSubtle);background:transparent;color:var(--textPrimary);font-size:var(--t13);cursor:pointer}
+.theme-bar button[aria-pressed="true"]{border-color:var(--accentEdge);color:var(--accentEdge)}
+html,body{margin:0}
+body{min-height:100vh;background:var(--bg);color:var(--textPrimary);font-family:var(--sans);font-size:var(--t15);line-height:1.35;display:flex;flex-direction:column;align-items:center;padding:var(--s6) var(--s4)}
+.caption{color:var(--textSecondary);font-size:var(--t13);text-align:center;max-width:70ch;margin-bottom:var(--s5)}
+.phone{width:390px;height:844px;flex:none;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;display:flex;flex-direction:column}
+.topbar{flex:none;display:grid;grid-template-columns:44px 1fr 44px;align-items:center;padding:var(--s2) var(--s3);border-bottom:1px solid var(--surfaceRaised)}
+.topbar-title{text-align:center;font-size:var(--t13);color:var(--textSecondary)}
+.screen{flex:1;min-height:0;display:flex;flex-direction:column;padding:var(--s3);overflow-y:auto;scrollbar-width:thin}
+.icon-btn{width:44px;height:44px;display:grid;place-items:center;background:transparent;border:0;color:var(--textPrimary);font:inherit;font-size:var(--t15);cursor:pointer;border-radius:var(--r-sm);padding:0}
+button{font:inherit}
+h1{font-size:var(--t22);line-height:1.2;margin:0 0 var(--s2);font-weight:700}
+.sect{font-size:var(--t11);letter-spacing:.08em;text-transform:uppercase;color:var(--textSecondary);margin:var(--s3) 0 var(--s1);font-weight:500}
+/* one surface: hairline rows, no per-row card fill */
+.row{display:grid;grid-template-columns:1fr auto;gap:var(--s3);align-items:center;width:100%;text-align:left;background:transparent;border:0;border-bottom:1px solid var(--borderSubtle);padding:var(--s2) 0;color:var(--textPrimary);min-height:44px}
+.row:last-of-type{border-bottom:0}
+.row-main{display:flex;flex-direction:column;gap:2px;min-width:0}
+.row-name{font-size:var(--t15);font-weight:500}
+.row-sub{font-size:var(--t13);color:var(--textSecondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-sub.mono{font-family:var(--mono);font-size:var(--t11)}
+.mini{min-height:44px;padding:0 var(--s2);border:0;background:transparent;color:var(--textPrimary);font-size:var(--t13);font-weight:600;cursor:pointer;border-radius:var(--r-sm)}
+.row-link{background:transparent;border:0;color:var(--textPrimary);cursor:pointer;padding:0;font:inherit;text-align:left}
+/* settings grouped into cards: one card per area, hairline rows inside */
+.card{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surfaceRaised);padding:0 var(--s3);margin:0 0 var(--s3)}
+.card-head{display:grid;grid-template-columns:24px 1fr;gap:var(--s2);align-items:start;padding:var(--s3) 0 var(--s1)}
+.card-ico{width:24px;height:24px;display:grid;place-items:center;color:var(--textSecondary);font-size:var(--t13);font-family:var(--mono)}
+.card-title{display:block;font-size:var(--t15);font-weight:600;line-height:1.3}
+.card-sub{display:block;font-size:var(--t13);color:var(--textSecondary);line-height:1.35}
+.card .row{border-bottom:1px solid var(--borderSubtle);padding:var(--s2) 0}
+.card .row:last-of-type{border-bottom:0}
+.card .seg{border-bottom:0;padding:0 0 var(--s2)}
+.card-foot{font-size:var(--t11);color:var(--textSecondary);line-height:1.4;padding:var(--s2) 0 var(--s3);border-top:1px solid var(--borderSubtle)}
+.switch{width:44px;height:44px;display:grid;place-items:center;background:transparent;border:0;cursor:pointer;padding:0}
+.switch i{width:44px;height:26px;border-radius:999px;background:var(--surfaceRaised);border:1px solid var(--border);display:block;position:relative}
+.switch i::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:var(--r-pill);background:var(--textSecondary)}
+.switch[aria-checked="true"] i{background:var(--accent);border-color:var(--accent)}
+.switch[aria-checked="true"] i::after{background:var(--bg);left:21px}
+.switch[aria-checked="true"].locked i{background:var(--surfaceRaised);border-color:var(--border)}
+.switch[aria-checked="true"].locked i::after{background:var(--textSecondary);left:21px}
+/* lane segmented control: the single accent of the screen */
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:var(--s1);padding:var(--s1) 0;border-bottom:1px solid var(--borderSubtle)}
+.seg button{min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:var(--s1) var(--s2);border-radius:var(--r-sm);border:1px solid var(--borderSubtle);background:transparent;color:var(--textPrimary);font-size:var(--t13);font-weight:600;cursor:pointer}
+.seg button small{font-size:var(--t11);font-weight:400;font-family:var(--mono);color:var(--textSecondary)}
+.seg button[aria-checked="true"]{border-color:var(--accentEdge);color:var(--accentEdge);background:var(--selection)}
+.btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);padding:0 var(--s4);border-radius:var(--r-md);border:1px solid transparent;font-size:var(--t15);cursor:pointer;width:100%}
+.btn-ghost{background:transparent;border-color:var(--border);color:var(--textPrimary)}
+.btn-danger{background:transparent;border-color:var(--error);color:var(--error)}
+.actions{margin-top:auto;display:flex;flex-direction:column;gap:var(--s2);padding-top:var(--s3)}
+:focus-visible{outline:2px solid var(--accentEdge);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<p class="caption"><b>07 · Settings — chrome reducido.</b> Cada área es una tarjeta con su encabezado (ícono, nombre y una línea que dice para qué sirve); adentro, filas separadas por línea fina, con el interruptor o el selector a la derecha. Un solo acento (la lane seleccionada) y un solo color de error (Revoke). El pinning de host-keys se explica en una línea. Cute y Sexy comparten superficies en los theme files de origen: cambia la familia del acento y el fondo de selección; Gentle es el único con superficies propias. La pantalla scrollea: el tablero muestra arriba Security, Appearance y Language; siguen Typeface, Terminal font, About y las dos acciones.</p>
+
+<div class="theme-bar" role="group" aria-label="Preview the settings screen in each appearance">
+  <span>Theme</span>
+  <button type="button" data-set="cute" aria-pressed="true">Cute</button>
+  <button type="button" data-set="sexy" aria-pressed="false">Sexy</button>
+  <button type="button" data-set="gentle" aria-pressed="false">Gentle</button>
+</div>
+
+<section class="phone" aria-label="Settings and security screen">
+  <header class="topbar">
+    <button class="icon-btn" type="button" aria-label="Back">←</button>
+    <span class="topbar-title">Settings</span>
+    <button class="icon-btn" type="button" aria-label="Help">?</button>
+  </header>
+  <main class="screen">
+    <h1>Settings</h1>
+
+    <section class="card" aria-label="Security">
+      <div class="card-head">
+        <span class="card-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg></span>
+        <span>
+          <span class="card-title">Security</span>
+          <span class="card-sub">The phone's key, the hosts it trusts.</span>
+        </span>
+      </div>
+      <div class="row">
+        <span class="row-main">
+          <span class="row-name">Device key</span>
+          <span class="row-sub mono">ed25519 · 5f:2a:9c:…:d1 · Keystore</span>
+        </span>
+        <button class="mini" type="button">Regenerate</button>
+      </div>
+      <div class="row">
+        <button class="row-link" type="button" style="display:contents">
+          <span class="row-main" style="cursor:pointer">
+            <span class="row-name">Known hosts</span>
+            <span class="row-sub mono">workspace · api-box · pi-lab — 3 pinned</span>
+          </span>
+        </button>
+        <button class="mini" type="button">Manage</button>
+      </div>
+      <div class="row">
+        <span class="row-main">
+          <span class="row-name">Biometric unlock</span>
+          <span class="row-sub">fingerprint before opening any session</span>
+        </span>
+        <button class="switch" type="button" role="switch" aria-checked="true" aria-label="Biometric unlock, on"><i></i></button>
+      </div>
+      <div class="row">
+        <span class="row-main">
+          <span class="row-name">Host-key pinning</span>
+          <span class="row-sub">Refuses a host whose SSH key changed.</span>
+        </span>
+        <button class="switch locked" type="button" role="switch" aria-checked="true" aria-disabled="true" aria-label="Host-key pinning, locked on"><i></i></button>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Appearance">
+      <div class="card-head">
+        <span class="card-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16"/><path d="M12 4a8 8 0 0 1 0 16" fill="currentColor" stroke="none"/></svg></span>
+        <span>
+          <span class="card-title">Appearance</span>
+          <span class="card-sub">Follow your phone, or pin one.</span>
+        </span>
+      </div>
+      <div class="row">
+        <span class="row-main">
+          <span class="row-name">Follow the phone</span>
+          <span class="row-sub">Cute when the phone is dark, Paper when it is light.</span>
+        </span>
+        <button class="switch" type="button" role="switch" aria-checked="false" aria-label="Follow the phone's light and dark setting"><i></i></button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;padding-top:var(--s2)">
+        <span class="row-name">Pinned theme</span>
+        <span class="row-sub">Used while Follow the phone is off.</span>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Pinned theme">
+        <button type="button" role="radio" aria-checked="true">Cute<small>default</small></button>
+        <button type="button" role="radio" aria-checked="false">Paper<small>new</small></button>
+        <button type="button" role="radio" aria-checked="false">Sexy<small>contrast</small></button>
+        <button type="button" role="radio" aria-checked="false">Gentle<small>warm</small></button>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Language">
+      <div class="card-head">
+        <span class="card-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><path d="M12 4c2.6 2.3 2.6 13.7 0 16M12 4c-2.6 2.3-2.6 13.7 0 16"/></svg></span>
+        <span>
+          <span class="card-title">Language</span>
+          <span class="card-sub">The terminal is never translated.</span>
+        </span>
+      </div>
+      <div class="row">
+        <span class="row-main">
+          <span class="row-name">English</span>
+          <span class="row-sub">Español is one tap away.</span>
+        </span>
+        <span class="chev" style="width:44px;height:44px;display:grid;place-items:center;color:var(--textSecondary)" aria-hidden="true">›</span>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Typeface">
+      <div class="card-head">
+        <span class="card-ico">Aa</span>
+        <span>
+          <span class="card-title">Typeface</span>
+          <span class="card-sub">The app's own face, on this device.</span>
+        </span>
+      </div>
+      <div class="row">
+        <span class="row-main">
+          <span class="row-name">Family</span>
+          <span class="row-sub">System</span>
+        </span>
+      </div>
+      <div class="card-foot">Your phone's UI font, with every weight it ships, so bold text stays bold.</div>
+    </section>
+
+    <section class="card" aria-label="Terminal font">
+      <div class="card-head">
+        <span class="card-ico">T</span>
+        <span>
+          <span class="card-title">Terminal font</span>
+          <span class="card-sub">The terminal and the draft field, on this device.</span>
+        </span>
+      </div>
+      <div class="row">
+        <span class="row-main">
+          <span class="row-name">Family</span>
+          <span class="row-sub mono">JetBrainsMono Nerd Font Mono</span>
+        </span>
+      </div>
+      <div class="card-foot">Bundled with the app, so icons and cell widths stay exact.</div>
+    </section>
+
+    <section class="card" aria-label="About">
+      <div class="card-head">
+        <span class="card-ico">i</span>
+        <span>
+          <span class="card-title">About</span>
+          <span class="card-sub">Version and what it speaks.</span>
+        </span>
+      </div>
+      <div class="row">
+        <span class="row-main">
+          <span class="row-name">Gentle Mobile 0.7.0</span>
+          <span class="row-sub mono">herdr 0.9.5 · protocol 22 · Apache-2.0</span>
+        </span>
+        <button class="mini" type="button">What's new</button>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button class="btn btn-ghost" type="button">Disconnect</button>
+      <button class="btn btn-danger" type="button">Revoke this device on all hosts</button>
+    </div>
+  </main>
+</section>
+<script>
+  const buttons = document.querySelectorAll('.theme-bar button');
+  for (const button of buttons) {
+    button.addEventListener('click', () => {
+      document.documentElement.dataset.theme = button.dataset.set;
+      for (const other of buttons) other.setAttribute('aria-pressed', String(other === button));
+    });
+  }
+</script>
+</body>
+</html>
