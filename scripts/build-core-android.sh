@@ -51,9 +51,7 @@ cargo run -q -p "$CRATE" --bin uniffi-bindgen -- generate \
 # keeps a stable name instead: Kotlin does not care about the file name, and the
 # symbols inside still follow the crate, which is what the .so must match.
 BINDING_DIR="$GEN_DIR/com/gentlemanprogramming/gentlemobile/core"
-GEN_KT=$(find "$BINDING_DIR" -maxdepth 1 -name '*.kt' | head -n1)
-[ -n "$GEN_KT" ] || { echo "no Kotlin file in $BINDING_DIR" >&2; exit 1; }
-mv "$GEN_KT" "$BINDING_DIR/Core.kt"
+scripts/normalize-binding-name.sh "$BINDING_DIR"
 
 rm -rf "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile/core"
 mkdir -p "$KOTLIN_SRC/com/gentlemanprogramming/gentlemobile"
