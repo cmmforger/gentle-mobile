@@ -961,3 +961,13 @@ conclusions worth keeping: a project rename that touches a large generated artif
 candidate, and the generated binding should not be named after the crate at all — a neutral committed file name
 (`Core.kt`) would make every future rename a small content diff instead of a 13k-line move. Recorded as a follow-up,
 not fixed here.
+
+**L46 (closed, with the disposition stated):** The human chose *"cerrar sin review nativa"* after two provider stops with
+`lens_context_budget_exceeded`, knowing the cause: 13,014 of the candidate's 15,110 projected lines are the generated
+binding counted as a delete plus an add. The rename therefore ships on the owner's explicit unreviewed disposition, not
+on a silent assumption. Verification standing behind it: 206 core tests, Gradle `:app:testDebugUnitTest` green with the
+regenerated bindings, plus two committed scripts — `scripts/tests/name-hygiene-test.sh` (no old name in any tracked path
+unless a documented exception names it) and `scripts/tests/pair-script-test.sh` (marker behaviour, including the
+pre-rename keys the tool can no longer reach). The design boards landed from their own branch; the temporary exception
+that let the hygiene test ignore `design/` while that branch was unmerged has been removed, so the test now covers the
+whole tree.

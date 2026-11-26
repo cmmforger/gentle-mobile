@@ -19,7 +19,7 @@ if [ -n "$paths" ]; then
     exit 1
 fi
 
-hits=$(git grep -inE "$PATTERN" -- . ':!odd/tasks/gentle-mobile.md' ':!design/' ':!scripts/tests/pair-script-test.sh' ':!scripts/tests/name-hygiene-test.sh' || true)
+hits=$(git grep -inE "$PATTERN" -- . ':!odd/tasks/gentle-mobile.md' ':!scripts/tests/pair-script-test.sh' ':!scripts/tests/name-hygiene-test.sh' || true)
 if [ -n "$hits" ]; then
     printf 'the old name is still in tracked content:\n%s\n' "$hits" >&2
     exit 1
