@@ -144,7 +144,7 @@ object XtermMessages {
     fun theme(themeJson: String): String = """{"type":"theme","theme":$themeJson}"""
 
     fun cursor(mode: String, blink: Boolean): String =
-        """{"type":"cursor","mode":"$mode","blink":$blink}"""
+        """{"type":"cursor","cursor":"$mode","blink":$blink}"""
 
     fun focus(): String = """{"type":"focus"}"""
 

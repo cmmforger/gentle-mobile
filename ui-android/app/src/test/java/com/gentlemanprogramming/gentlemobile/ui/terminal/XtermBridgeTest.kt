@@ -134,7 +134,7 @@ class XtermBridgeTest {
             XtermMessages.theme("""{"background":"#101010"}"""),
         )
         assertEquals(
-            """{"type":"cursor","mode":"bar","blink":true}""",
+            """{"type":"cursor","cursor":"bar","blink":true}""",
             XtermMessages.cursor("bar", true),
         )
         assertEquals("""{"type":"focus"}""", XtermMessages.focus())
