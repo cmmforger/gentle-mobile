@@ -43,4 +43,21 @@ if bash "$HELPER" "$SANDBOX/nope" 2>/dev/null; then
     printf 'a missing directory should be refused\n' >&2; exit 1
 fi
 
+# 6. A trailing slash names the same file and must not trip the same-file mv.
+mkdir -p "$SANDBOX/trailing"
+: > "$SANDBOX/trailing/Core.kt"
+bash "$HELPER" "$SANDBOX/trailing/" || { printf 'a trailing slash failed the script\n' >&2; exit 1; }
+[ -f "$SANDBOX/trailing/Core.kt" ] || { printf 'trailing-slash run lost the file\n' >&2; exit 1; }
+
+# 7. A find that fails is reported as a find failure, not as "nothing found".
+mkdir -p "$SANDBOX/unreadable"
+: > "$SANDBOX/unreadable/one.kt"
+chmod 000 "$SANDBOX/unreadable"
+out=$(bash "$HELPER" "$SANDBOX/unreadable" 2>&1) && { printf 'an unreadable directory should be refused\n' >&2; exit 1; }
+case "$out" in
+    *'cannot list'*) ;;
+    *) printf 'unreadable directory said: %s\n' "$out" >&2; exit 1 ;;
+esac
+chmod 755 "$SANDBOX/unreadable"
+
 printf 'binding name: ok\n'

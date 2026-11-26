@@ -11,9 +11,28 @@
 set -euo pipefail
 
 dir="${1:?usage: normalize-binding-name.sh <directory>}"
+# Normalize the caller's spelling once: a trailing slash would make the
+# same-file comparison below see two different strings for one file, and the
+# skip would turn into mv's same-file failure.
+dir="${dir%"${dir##*[!/]}"}"
+[ -n "$dir" ] || dir="/"
+
 [ -d "$dir" ] || { printf 'not a directory: %s\n' "$dir" >&2; exit 1; }
 
-mapfile -t generated < <(find "$dir" -maxdepth 1 -name '*.kt' -print)
+# Read the listing through a command whose status survives: a failing find must
+# be reported as itself, never as "nothing was generated".
+if ! listing=$(find "$dir" -maxdepth 1 -name '*.kt' -print 2>&1); then
+    printf 'cannot list %s: %s\n' "$dir" "$listing" >&2
+    exit 1
+fi
+
+generated=()
+while IFS= read -r entry; do
+    if [ -n "$entry" ]; then
+        generated+=("$entry")
+    fi
+done <<< "$listing"
+
 case "${#generated[@]}" in
     0) printf 'no Kotlin file was generated in %s\n' "$dir" >&2; exit 1 ;;
     1) ;;
@@ -23,8 +42,7 @@ case "${#generated[@]}" in
 esac
 
 target="$dir/Core.kt"
-# mv onto itself fails, and a generator that already picked the stable name is
-# a success, not an error.
+# A generator that already picked the stable name is a success, not an error.
 [ "${generated[0]}" = "$target" ] || mv -- "${generated[0]}" "$target"
 
 [ -f "$target" ] || { printf 'the binding is not named Core.kt in %s\n' "$dir" >&2; exit 1; }
