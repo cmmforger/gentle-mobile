@@ -10,19 +10,15 @@
 #
 # The listener is single use: one token, one key, a short TTL (default
 # 180 s), and it binds the LAN/Tailscale address — never loopback-only.
-# It never touches keys it did not add: everything carries the marker
-# below, so --revoke is exact and leaves other authorized keys alone. The
-# marker was renamed from gentle-companion to gentle-mobile before anything
-# shipped, so --revoke also cleans keys carrying the old marker — nothing
-# is orphaned.
+# It never touches keys it did not add: everything it writes carries the marker
+# below, so --revoke is exact and leaves other authorized keys alone. Keys
+# written by versions older than the rename carry a different marker and are
+# therefore NOT matched by --list or --revoke: remove those by hand.
 set -euo pipefail
 
 MARKER="gentle-mobile"
-# The pre-rename marker; --list still shows those keys and --revoke removes
-# them so nothing added under the old name is orphaned.
-LEGACY_MARKER="gentle-companion"
 AUTHORIZED="${AUTHORIZED_KEYS:-$HOME/.ssh/authorized_keys}"
-PORT="${GENTLE_COMPANION_PORT:-22}"
+PORT="${GENTLE_MOBILE_PORT:-22}"
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 
@@ -67,7 +63,7 @@ case "${1:-}" in
     found=0
     while IFS= read -r line; do
         case "$line" in
-            *"$MARKER-"*|*"$LEGACY_MARKER-"*)
+            *"$MARKER-"*)
                 printf '%s\n' "$line" | awk '{print $1, $2, $NF}'
                 found=1
                 ;;
@@ -78,10 +74,10 @@ case "${1:-}" in
 --revoke)
     [ -f "$AUTHORIZED" ] || die "no $AUTHORIZED"
     tmp=$(mktemp)
-    grep -vF -e "$MARKER-" -e "$LEGACY_MARKER-" "$AUTHORIZED" > "$tmp" || true
+    grep -vF -e "$MARKER-" "$AUTHORIZED" > "$tmp" || true
     cat "$tmp" > "$AUTHORIZED"
     rm -f "$tmp"
-    printf 'removed every key this tool added (including old gentle-companion markers); other keys untouched\n'
+    printf 'removed every key this tool added; other keys untouched\n'
     ;;
 -h|--help|help)
     usage
@@ -89,7 +85,7 @@ case "${1:-}" in
 "")
     # One-scan pairing: a single-use listener with a short TTL, advertising
     # everything the phone needs in one gc:// link.
-    user="${GENTLE_COMPANION_USER:-$(id -un)}"
+    user="${GENTLE_MOBILE_USER:-$(id -un)}"
     # Bind the LAN/Tailscale address: tailscale first (works off-LAN), then
     # the LAN address. GENTLE_MOBILE_PAIR_BIND pins one on multi-IP hosts —
     # loopback stays refused in every case.

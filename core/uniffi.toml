@@ -1,4 +1,4 @@
-# UniFFI binding configuration for gentlecompanion-core.
+# UniFFI binding configuration for gentle-mobile-core.
 #
 # The generated Kotlin lands in the app's source set and is committed; the
 # .so build output and its jniLibs copies are not (see .gitignore).

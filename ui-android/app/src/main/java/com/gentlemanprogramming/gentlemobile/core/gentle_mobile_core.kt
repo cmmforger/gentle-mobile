@@ -59,7 +59,7 @@ open class RustBuffer : Structure() {
     companion object {
         internal fun alloc(size: ULong = 0UL) = uniffiRustCall() { status ->
             // Note: need to convert the size to a `Long` value to make this work with JVM.
-            UniffiLib.ffi_gentlecompanion_core_rustbuffer_alloc(size.toLong(), status)
+            UniffiLib.ffi_gentle_mobile_core_rustbuffer_alloc(size.toLong(), status)
         }.also {
             if(it.data == null) {
                throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
@@ -75,7 +75,7 @@ open class RustBuffer : Structure() {
         }
 
         internal fun free(buf: RustBuffer.ByValue) = uniffiRustCall() { status ->
-            UniffiLib.ffi_gentlecompanion_core_rustbuffer_free(buf, status)
+            UniffiLib.ffi_gentle_mobile_core_rustbuffer_free(buf, status)
         }
     }
 
@@ -392,7 +392,7 @@ private fun findLibraryName(componentName: String): String {
     if (libOverride != null) {
         return libOverride
     }
-    return "gentlecompanion_core"
+    return "gentle_mobile_core"
 }
 
 // Define FFI callback types
@@ -691,125 +691,125 @@ internal open class UniffiVTableCallbackInterfaceUploadProgressListener(
 // We now use JNA's "direct mapping" - unclear if same considerations apply exactly.
 internal object IntegrityCheckingUniffiLib {
     init {
-        Native.register(IntegrityCheckingUniffiLib::class.java, findLibraryName(componentName = "gentlecompanion_core"))
+        Native.register(IntegrityCheckingUniffiLib::class.java, findLibraryName(componentName = "gentle_mobile_core"))
         uniffiCheckContractApiVersion(this)
         uniffiCheckApiChecksums(this)
     }
 
     internal fun ensureInitialized() = Unit
-    external fun uniffi_gentlecompanion_core_checksum_func_accept_host_key(
+    external fun uniffi_gentle_mobile_core_checksum_func_accept_host_key(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_acquire_lease(
+    external fun uniffi_gentle_mobile_core_checksum_func_acquire_lease(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_check_device_key_registered(
+    external fun uniffi_gentle_mobile_core_checksum_func_check_device_key_registered(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_check_host_dir(
+    external fun uniffi_gentle_mobile_core_checksum_func_check_host_dir(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_compose_prompt(
+    external fun uniffi_gentle_mobile_core_checksum_func_compose_prompt(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_connect(
+    external fun uniffi_gentle_mobile_core_checksum_func_connect(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_default_sessions_dir(
+    external fun uniffi_gentle_mobile_core_checksum_func_default_sessions_dir(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_forget_host(
+    external fun uniffi_gentle_mobile_core_checksum_func_forget_host(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_list_known_hosts(
+    external fun uniffi_gentle_mobile_core_checksum_func_list_known_hosts(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_list_sessions(
+    external fun uniffi_gentle_mobile_core_checksum_func_list_sessions(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_plan_upload(
+    external fun uniffi_gentle_mobile_core_checksum_func_plan_upload(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_refresh_lease(
+    external fun uniffi_gentle_mobile_core_checksum_func_refresh_lease(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_release_lease(
+    external fun uniffi_gentle_mobile_core_checksum_func_release_lease(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_resume_session(
+    external fun uniffi_gentle_mobile_core_checksum_func_resume_session(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_start_session_in_dir(
+    external fun uniffi_gentle_mobile_core_checksum_func_start_session_in_dir(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_func_start_terminal(
+    external fun uniffi_gentle_mobile_core_checksum_func_start_terminal(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_close_tab(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_close_tab(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_create_tab(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_create_tab(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_create_workspace(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_create_workspace(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_disconnect(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_pane(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_focus_pane(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_tab(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_focus_tab(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_workspace(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_focus_workspace(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_is_disconnected(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_latest_surface(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_latest_surface(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_list_disks(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_list_disks(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_list_folders(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_list_folders(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_list_workspaces(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_list_workspaces(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_probe_liveness(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_probe_liveness(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_prompt_agent(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_prompt_agent(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_read_pane(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_resize_surface(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_resize_surface(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_send_keys(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_send_keys(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_set_surface_active(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_set_surface_active(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_snapshot(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_companionconnection_upload_file(
+    external fun uniffi_gentle_mobile_core_checksum_method_companionconnection_upload_file(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_answer_dialog(
+    external fun uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_answer_dialog(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_close_session(
+    external fun uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_close_session(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_is_closed(
+    external fun uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_is_closed(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_last_error(
+    external fun uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_last_error(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_message_count(
+    external fun uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_message_count(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_pending_dialog(
+    external fun uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_pending_dialog(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_reclaimed(
+    external fun uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_reclaimed(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_send_prompt(
+    external fun uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_send_prompt(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_session_id(
+    external fun uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_session_id(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_transcript(
+    external fun uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_transcript(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_terminalsession_close_session(
+    external fun uniffi_gentle_mobile_core_checksum_method_terminalsession_close_session(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_terminalsession_cols(
+    external fun uniffi_gentle_mobile_core_checksum_method_terminalsession_cols(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_terminalsession_exit_status(
+    external fun uniffi_gentle_mobile_core_checksum_method_terminalsession_exit_status(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_terminalsession_is_closed(
+    external fun uniffi_gentle_mobile_core_checksum_method_terminalsession_is_closed(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_terminalsession_last_error(
+    external fun uniffi_gentle_mobile_core_checksum_method_terminalsession_last_error(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_terminalsession_read(
+    external fun uniffi_gentle_mobile_core_checksum_method_terminalsession_read(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_terminalsession_resize(
+    external fun uniffi_gentle_mobile_core_checksum_method_terminalsession_resize(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_terminalsession_rows(
+    external fun uniffi_gentle_mobile_core_checksum_method_terminalsession_rows(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_terminalsession_write(
+    external fun uniffi_gentle_mobile_core_checksum_method_terminalsession_write(
     ): Int
-    external fun uniffi_gentlecompanion_core_checksum_method_uploadprogresslistener_on_progress(
+    external fun uniffi_gentle_mobile_core_checksum_method_uploadprogresslistener_on_progress(
     ): Int
-    external fun ffi_gentlecompanion_core_uniffi_contract_version(
+    external fun ffi_gentle_mobile_core_uniffi_contract_version(
     ): Int
 
         
@@ -824,239 +824,239 @@ internal object UniffiLib {
     
 
     init {
-        Native.register(UniffiLib::class.java, findLibraryName(componentName = "gentlecompanion_core"))
+        Native.register(UniffiLib::class.java, findLibraryName(componentName = "gentle_mobile_core"))
         uniffiCallbackInterfaceUploadProgressListener.register(this)
         
     }
 
     internal fun ensureInitialized() = Unit
-    external fun uniffi_gentlecompanion_core_fn_clone_companionconnection(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_clone_companionconnection(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-    external fun uniffi_gentlecompanion_core_fn_free_companionconnection(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_free_companionconnection(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_close_tab(`ptr`: Long,`tabId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_close_tab(`ptr`: Long,`tabId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_create_tab(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`focus`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_create_tab(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`focus`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_create_workspace(`ptr`: Long,`cwd`: RustBuffer.ByValue,`label`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_create_workspace(`ptr`: Long,`cwd`: RustBuffer.ByValue,`label`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_disconnect(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_disconnect(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_focus_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_focus_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_focus_tab(`ptr`: Long,`tabId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_focus_tab(`ptr`: Long,`tabId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_focus_workspace(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_focus_workspace(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_is_disconnected(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_is_disconnected(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_latest_surface(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_latest_surface(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_list_disks(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_list_disks(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_list_folders(`ptr`: Long,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_list_folders(`ptr`: Long,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_list_workspaces(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_list_workspaces(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_probe_liveness(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_probe_liveness(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_prompt_agent(`ptr`: Long,`target`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_prompt_agent(`ptr`: Long,`target`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_read_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_read_pane(`ptr`: Long,`paneId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_resize_surface(`ptr`: Long,`cols`: Short,`rows`: Short,`cellWidthPx`: Int,`cellHeightPx`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_resize_surface(`ptr`: Long,`cols`: Short,`rows`: Short,`cellWidthPx`: Int,`cellHeightPx`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_send_keys(`ptr`: Long,`paneId`: RustBuffer.ByValue,`keys`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_send_keys(`ptr`: Long,`paneId`: RustBuffer.ByValue,`keys`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_set_surface_active(`ptr`: Long,`active`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_set_surface_active(`ptr`: Long,`active`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_snapshot(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_snapshot(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_companionconnection_upload_file(`ptr`: Long,`storedName`: RustBuffer.ByValue,`data`: RustBuffer.ByValue,`listener`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_companionconnection_upload_file(`ptr`: Long,`storedName`: RustBuffer.ByValue,`data`: RustBuffer.ByValue,`listener`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_clone_rpcresumedsession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_clone_rpcresumedsession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-    external fun uniffi_gentlecompanion_core_fn_free_rpcresumedsession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_free_rpcresumedsession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_answer_dialog(`ptr`: Long,`dialogId`: RustBuffer.ByValue,`cancelled`: Byte,`value`: RustBuffer.ByValue,`confirmed`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_rpcresumedsession_answer_dialog(`ptr`: Long,`dialogId`: RustBuffer.ByValue,`cancelled`: Byte,`value`: RustBuffer.ByValue,`confirmed`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_close_session(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_rpcresumedsession_close_session(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_is_closed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_rpcresumedsession_is_closed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_last_error(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_rpcresumedsession_last_error(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_message_count(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_rpcresumedsession_message_count(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_pending_dialog(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_rpcresumedsession_pending_dialog(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_reclaimed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_rpcresumedsession_reclaimed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_send_prompt(`ptr`: Long,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_rpcresumedsession_send_prompt(`ptr`: Long,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_session_id(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_rpcresumedsession_session_id(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_rpcresumedsession_transcript(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_rpcresumedsession_transcript(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_clone_terminalsession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_clone_terminalsession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-    external fun uniffi_gentlecompanion_core_fn_free_terminalsession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_free_terminalsession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_terminalsession_close_session(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_terminalsession_close_session(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_terminalsession_cols(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_terminalsession_cols(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
-    external fun uniffi_gentlecompanion_core_fn_method_terminalsession_exit_status(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_terminalsession_exit_status(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_terminalsession_is_closed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_terminalsession_is_closed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun uniffi_gentlecompanion_core_fn_method_terminalsession_last_error(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_terminalsession_last_error(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_terminalsession_read(`ptr`: Long,`maxBytes`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_terminalsession_read(`ptr`: Long,`maxBytes`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_method_terminalsession_resize(`ptr`: Long,`cols`: Int,`rows`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_terminalsession_resize(`ptr`: Long,`cols`: Int,`rows`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_method_terminalsession_rows(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_terminalsession_rows(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
-    external fun uniffi_gentlecompanion_core_fn_method_terminalsession_write(`ptr`: Long,`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_method_terminalsession_write(`ptr`: Long,`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_init_callback_vtable_uploadprogresslistener(`vtable`: UniffiVTableCallbackInterfaceUploadProgressListener,
+    external fun uniffi_gentle_mobile_core_fn_init_callback_vtable_uploadprogresslistener(`vtable`: UniffiVTableCallbackInterfaceUploadProgressListener,
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_func_accept_host_key(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_accept_host_key(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun uniffi_gentlecompanion_core_fn_func_acquire_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_acquire_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_check_device_key_registered(`profile`: RustBuffer.ByValue,`keyType`: RustBuffer.ByValue,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_check_device_key_registered(`profile`: RustBuffer.ByValue,`keyType`: RustBuffer.ByValue,`keyBlob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun uniffi_gentlecompanion_core_fn_func_check_host_dir(`profile`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_check_host_dir(`profile`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_compose_prompt(`text`: RustBuffer.ByValue,`imageSuffixes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_compose_prompt(`text`: RustBuffer.ByValue,`imageSuffixes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_connect(`profile`: RustBuffer.ByValue,`session`: RustBuffer.ByValue,`surface`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_connect(`profile`: RustBuffer.ByValue,`session`: RustBuffer.ByValue,`surface`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_default_sessions_dir(`user`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_default_sessions_dir(`user`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_forget_host(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_forget_host(`knownHostsPath`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun uniffi_gentlecompanion_core_fn_func_list_known_hosts(`knownHostsPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_list_known_hosts(`knownHostsPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_list_sessions(`profile`: RustBuffer.ByValue,`sessionsDir`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_list_sessions(`profile`: RustBuffer.ByValue,`sessionsDir`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_plan_upload(`fileName`: RustBuffer.ByValue,`sizeBytes`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_plan_upload(`fileName`: RustBuffer.ByValue,`sizeBytes`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_refresh_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_refresh_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun uniffi_gentlecompanion_core_fn_func_release_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_release_lease(`profile`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun uniffi_gentlecompanion_core_fn_func_resume_session(`profile`: RustBuffer.ByValue,`sessionPath`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_resume_session(`profile`: RustBuffer.ByValue,`sessionPath`: RustBuffer.ByValue,`sessionId`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_start_session_in_dir(`profile`: RustBuffer.ByValue,`cwd`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_start_session_in_dir(`profile`: RustBuffer.ByValue,`cwd`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_gentlecompanion_core_fn_func_start_terminal(`profile`: RustBuffer.ByValue,`cwd`: RustBuffer.ByValue,`cols`: Int,`rows`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_gentle_mobile_core_fn_func_start_terminal(`profile`: RustBuffer.ByValue,`cwd`: RustBuffer.ByValue,`cols`: Int,`rows`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-    external fun ffi_gentlecompanion_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun ffi_gentlecompanion_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun ffi_gentlecompanion_core_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    external fun ffi_gentlecompanion_core_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun ffi_gentlecompanion_core_rust_future_poll_u8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_u8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_u8(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_u8(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_u8(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_u8(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
-    external fun ffi_gentlecompanion_core_rust_future_poll_i8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_i8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_i8(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_i8(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_i8(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_i8(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun ffi_gentlecompanion_core_rust_future_poll_u16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_u16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_u16(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_u16(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_u16(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_u16(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
-    external fun ffi_gentlecompanion_core_rust_future_poll_i16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_i16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_i16(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_i16(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_i16(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_i16(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Short
-    external fun ffi_gentlecompanion_core_rust_future_poll_u32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_u32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_u32(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_u32(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_u32(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_u32(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
-    external fun ffi_gentlecompanion_core_rust_future_poll_i32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_i32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_i32(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_i32(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_i32(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_i32(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
-    external fun ffi_gentlecompanion_core_rust_future_poll_u64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_u64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_u64(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_u64(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_u64(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_u64(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-    external fun ffi_gentlecompanion_core_rust_future_poll_i64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_i64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_i64(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_i64(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_i64(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_i64(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-    external fun ffi_gentlecompanion_core_rust_future_poll_f32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_f32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_f32(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_f32(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_f32(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_f32(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Float
-    external fun ffi_gentlecompanion_core_rust_future_poll_f64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_f64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_f64(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_f64(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_f64(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_f64(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Double
-    external fun ffi_gentlecompanion_core_rust_future_poll_rust_buffer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_rust_buffer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_rust_buffer(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_rust_buffer(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_rust_buffer(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_rust_buffer(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun ffi_gentlecompanion_core_rust_future_poll_void(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_poll_void(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_cancel_void(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_cancel_void(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_free_void(`handle`: Long,
+    external fun ffi_gentle_mobile_core_rust_future_free_void(`handle`: Long,
     ): Unit
-    external fun ffi_gentlecompanion_core_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    external fun ffi_gentle_mobile_core_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
 
         
@@ -1066,179 +1066,179 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
     // Get the bindings contract version from our ComponentInterface
     val bindings_contract_version = 30
     // Get the scaffolding contract version by calling the into the dylib
-    val scaffolding_contract_version = lib.ffi_gentlecompanion_core_uniffi_contract_version()
+    val scaffolding_contract_version = lib.ffi_gentle_mobile_core_uniffi_contract_version()
     if (bindings_contract_version != scaffolding_contract_version) {
         throw RuntimeException("UniFFI contract version mismatch: try cleaning and rebuilding your project")
     }
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_accept_host_key() and 0xFFFF) != 19847) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_accept_host_key() and 0xFFFF) != 9574) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_acquire_lease() and 0xFFFF) != 59390) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_acquire_lease() and 0xFFFF) != 20601) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_check_device_key_registered() and 0xFFFF) != 41935) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_check_device_key_registered() and 0xFFFF) != 5684) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_check_host_dir() and 0xFFFF) != 18356) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_check_host_dir() and 0xFFFF) != 57402) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_compose_prompt() and 0xFFFF) != 26788) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_compose_prompt() and 0xFFFF) != 39782) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_connect() and 0xFFFF) != 49928) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_connect() and 0xFFFF) != 625) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_default_sessions_dir() and 0xFFFF) != 55063) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_default_sessions_dir() and 0xFFFF) != 45302) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_forget_host() and 0xFFFF) != 34521) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_forget_host() and 0xFFFF) != 54713) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_list_known_hosts() and 0xFFFF) != 22676) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_list_known_hosts() and 0xFFFF) != 3169) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_list_sessions() and 0xFFFF) != 35191) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_list_sessions() and 0xFFFF) != 47417) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_plan_upload() and 0xFFFF) != 37723) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_plan_upload() and 0xFFFF) != 55273) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_refresh_lease() and 0xFFFF) != 19545) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_refresh_lease() and 0xFFFF) != 61397) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_release_lease() and 0xFFFF) != 56322) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_release_lease() and 0xFFFF) != 61546) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_resume_session() and 0xFFFF) != 33995) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_resume_session() and 0xFFFF) != 4134) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_start_session_in_dir() and 0xFFFF) != 6110) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_start_session_in_dir() and 0xFFFF) != 18483) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_func_start_terminal() and 0xFFFF) != 9090) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_func_start_terminal() and 0xFFFF) != 35042) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_close_tab() and 0xFFFF) != 60183) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_close_tab() and 0xFFFF) != 1722) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_create_tab() and 0xFFFF) != 11436) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_create_tab() and 0xFFFF) != 31744) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_create_workspace() and 0xFFFF) != 39001) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_create_workspace() and 0xFFFF) != 61901) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_disconnect() and 0xFFFF) != 59131) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_disconnect() and 0xFFFF) != 44485) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_pane() and 0xFFFF) != 51085) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_focus_pane() and 0xFFFF) != 18115) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_tab() and 0xFFFF) != 25907) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_focus_tab() and 0xFFFF) != 9264) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_focus_workspace() and 0xFFFF) != 20849) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_focus_workspace() and 0xFFFF) != 38887) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_is_disconnected() and 0xFFFF) != 51113) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_is_disconnected() and 0xFFFF) != 46092) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_latest_surface() and 0xFFFF) != 1162) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_latest_surface() and 0xFFFF) != 20241) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_list_disks() and 0xFFFF) != 24168) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_list_disks() and 0xFFFF) != 32225) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_list_folders() and 0xFFFF) != 33703) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_list_folders() and 0xFFFF) != 62886) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_list_workspaces() and 0xFFFF) != 53467) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_list_workspaces() and 0xFFFF) != 14333) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_probe_liveness() and 0xFFFF) != 41447) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_probe_liveness() and 0xFFFF) != 53468) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_prompt_agent() and 0xFFFF) != 55635) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_prompt_agent() and 0xFFFF) != 41835) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_read_pane() and 0xFFFF) != 52004) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_read_pane() and 0xFFFF) != 64048) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_resize_surface() and 0xFFFF) != 15473) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_resize_surface() and 0xFFFF) != 12629) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_send_keys() and 0xFFFF) != 26307) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_send_keys() and 0xFFFF) != 13052) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_set_surface_active() and 0xFFFF) != 1535) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_set_surface_active() and 0xFFFF) != 54165) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_snapshot() and 0xFFFF) != 47863) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_snapshot() and 0xFFFF) != 43556) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_companionconnection_upload_file() and 0xFFFF) != 32479) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_companionconnection_upload_file() and 0xFFFF) != 17496) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_answer_dialog() and 0xFFFF) != 30380) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_answer_dialog() and 0xFFFF) != 60281) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_close_session() and 0xFFFF) != 40662) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_close_session() and 0xFFFF) != 13154) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_is_closed() and 0xFFFF) != 36393) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_is_closed() and 0xFFFF) != 30185) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_last_error() and 0xFFFF) != 9992) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_last_error() and 0xFFFF) != 32046) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_message_count() and 0xFFFF) != 3564) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_message_count() and 0xFFFF) != 54801) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_pending_dialog() and 0xFFFF) != 23006) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_pending_dialog() and 0xFFFF) != 35717) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_reclaimed() and 0xFFFF) != 3912) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_reclaimed() and 0xFFFF) != 11314) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_send_prompt() and 0xFFFF) != 33444) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_send_prompt() and 0xFFFF) != 50585) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_session_id() and 0xFFFF) != 45096) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_session_id() and 0xFFFF) != 1538) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_rpcresumedsession_transcript() and 0xFFFF) != 63838) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_rpcresumedsession_transcript() and 0xFFFF) != 46870) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_terminalsession_close_session() and 0xFFFF) != 48423) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_terminalsession_close_session() and 0xFFFF) != 35479) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_terminalsession_cols() and 0xFFFF) != 34218) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_terminalsession_cols() and 0xFFFF) != 11203) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_terminalsession_exit_status() and 0xFFFF) != 54698) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_terminalsession_exit_status() and 0xFFFF) != 12900) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_terminalsession_is_closed() and 0xFFFF) != 7147) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_terminalsession_is_closed() and 0xFFFF) != 16685) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_terminalsession_last_error() and 0xFFFF) != 12600) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_terminalsession_last_error() and 0xFFFF) != 31044) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_terminalsession_read() and 0xFFFF) != 26485) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_terminalsession_read() and 0xFFFF) != 18564) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_terminalsession_resize() and 0xFFFF) != 63931) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_terminalsession_resize() and 0xFFFF) != 27459) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_terminalsession_rows() and 0xFFFF) != 56061) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_terminalsession_rows() and 0xFFFF) != 16931) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_terminalsession_write() and 0xFFFF) != 2233) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_terminalsession_write() and 0xFFFF) != 4052) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_gentlecompanion_core_checksum_method_uploadprogresslistener_on_progress() and 0xFFFF) != 43093) {
+    if ((lib.uniffi_gentle_mobile_core_checksum_method_uploadprogresslistener_on_progress() and 0xFFFF) != 59693) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -1983,7 +1983,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
                 return;
             }
             uniffiRustCall { status ->
-                UniffiLib.uniffi_gentlecompanion_core_fn_free_companionconnection(handle, status)
+                UniffiLib.uniffi_gentle_mobile_core_fn_free_companionconnection(handle, status)
             }
         }
     }
@@ -1996,7 +1996,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             throw InternalException("uniffiCloneHandle() called on NoHandle object");
         }
         return uniffiRustCall() { status ->
-            UniffiLib.uniffi_gentlecompanion_core_fn_clone_companionconnection(handle, status)
+            UniffiLib.uniffi_gentle_mobile_core_fn_clone_companionconnection(handle, status)
         }
     }
 
@@ -2011,7 +2011,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_close_tab(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_close_tab(
         it,
         
         FfiConverterString.lower(`tabId`),_status)
@@ -2031,7 +2031,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_create_tab(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_create_tab(
         it,
         
         FfiConverterString.lower(`workspaceId`),
@@ -2052,7 +2052,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             return FfiConverterTypeWorkspaceCreatedDto.lift(
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_create_workspace(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_create_workspace(
         it,
         
         FfiConverterString.lower(`cwd`),
@@ -2070,7 +2070,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_disconnect(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_disconnect(
         it,
         _status)
 }
@@ -2090,7 +2090,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_focus_pane(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_focus_pane(
         it,
         
         FfiConverterString.lower(`paneId`),_status)
@@ -2111,7 +2111,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_focus_tab(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_focus_tab(
         it,
         
         FfiConverterString.lower(`tabId`),_status)
@@ -2130,7 +2130,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_focus_workspace(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_focus_workspace(
         it,
         
         FfiConverterString.lower(`workspaceId`),_status)
@@ -2146,7 +2146,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             return FfiConverterBoolean.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_is_disconnected(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_is_disconnected(
         it,
         _status)
 }
@@ -2166,7 +2166,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             return FfiConverterOptionalTypeSurfaceDto.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_latest_surface(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_latest_surface(
         it,
         _status)
 }
@@ -2186,7 +2186,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             return FfiConverterSequenceTypeDiskDto.lift(
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_list_disks(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_list_disks(
         it,
         _status)
 }
@@ -2207,7 +2207,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             return FfiConverterSequenceTypeFolderEntryDto.lift(
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_list_folders(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_list_folders(
         it,
         
         FfiConverterString.lower(`path`),_status)
@@ -2228,7 +2228,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             return FfiConverterSequenceTypeWorkspaceRowDto.lift(
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_list_workspaces(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_list_workspaces(
         it,
         _status)
 }
@@ -2246,7 +2246,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_probe_liveness(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_probe_liveness(
         it,
         _status)
 }
@@ -2264,7 +2264,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_prompt_agent(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_prompt_agent(
         it,
         
         FfiConverterString.lower(`target`),
@@ -2284,7 +2284,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             return FfiConverterTypePaneReadDto.lift(
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_read_pane(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_read_pane(
         it,
         
         FfiConverterString.lower(`paneId`),_status)
@@ -2307,7 +2307,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_resize_surface(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_resize_surface(
         it,
         
         FfiConverterUShort.lower(`cols`),
@@ -2332,7 +2332,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_send_keys(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_send_keys(
         it,
         
         FfiConverterString.lower(`paneId`),
@@ -2358,7 +2358,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_set_surface_active(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_set_surface_active(
         it,
         
         FfiConverterBoolean.lower(`active`),_status)
@@ -2376,7 +2376,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             return FfiConverterOptionalTypeSnapshotDto.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_snapshot(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_snapshot(
         it,
         _status)
 }
@@ -2398,7 +2398,7 @@ open class CompanionConnection: Disposable, AutoCloseable, CompanionConnectionIn
             return FfiConverterTypeUploadOutcomeDto.lift(
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_companionconnection_upload_file(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_companionconnection_upload_file(
         it,
         
         FfiConverterString.lower(`storedName`),
@@ -2704,7 +2704,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
                 return;
             }
             uniffiRustCall { status ->
-                UniffiLib.uniffi_gentlecompanion_core_fn_free_rpcresumedsession(handle, status)
+                UniffiLib.uniffi_gentle_mobile_core_fn_free_rpcresumedsession(handle, status)
             }
         }
     }
@@ -2717,7 +2717,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
             throw InternalException("uniffiCloneHandle() called on NoHandle object");
         }
         return uniffiRustCall() { status ->
-            UniffiLib.uniffi_gentlecompanion_core_fn_clone_rpcresumedsession(handle, status)
+            UniffiLib.uniffi_gentle_mobile_core_fn_clone_rpcresumedsession(handle, status)
         }
     }
 
@@ -2731,7 +2731,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_answer_dialog(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_rpcresumedsession_answer_dialog(
         it,
         
         FfiConverterString.lower(`dialogId`),
@@ -2754,7 +2754,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_close_session(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_rpcresumedsession_close_session(
         it,
         _status)
 }
@@ -2770,7 +2770,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
             return FfiConverterBoolean.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_is_closed(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_rpcresumedsession_is_closed(
         it,
         _status)
 }
@@ -2786,7 +2786,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
             return FfiConverterOptionalString.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_last_error(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_rpcresumedsession_last_error(
         it,
         _status)
 }
@@ -2802,7 +2802,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
             return FfiConverterULong.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_message_count(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_rpcresumedsession_message_count(
         it,
         _status)
 }
@@ -2818,7 +2818,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
             return FfiConverterOptionalTypeDialogRequestDto.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_pending_dialog(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_rpcresumedsession_pending_dialog(
         it,
         _status)
 }
@@ -2834,7 +2834,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
             return FfiConverterBoolean.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_reclaimed(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_rpcresumedsession_reclaimed(
         it,
         _status)
 }
@@ -2853,7 +2853,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
             return FfiConverterSequenceTypeTranscriptEntryDto.lift(
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_send_prompt(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_rpcresumedsession_send_prompt(
         it,
         
         FfiConverterString.lower(`text`),_status)
@@ -2871,7 +2871,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
             return FfiConverterString.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_session_id(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_rpcresumedsession_session_id(
         it,
         _status)
 }
@@ -2887,7 +2887,7 @@ open class RpcResumedSession: Disposable, AutoCloseable, RpcResumedSessionInterf
             return FfiConverterSequenceTypeTranscriptEntryDto.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_rpcresumedsession_transcript(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_rpcresumedsession_transcript(
         it,
         _status)
 }
@@ -3182,7 +3182,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
                 return;
             }
             uniffiRustCall { status ->
-                UniffiLib.uniffi_gentlecompanion_core_fn_free_terminalsession(handle, status)
+                UniffiLib.uniffi_gentle_mobile_core_fn_free_terminalsession(handle, status)
             }
         }
     }
@@ -3195,7 +3195,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
             throw InternalException("uniffiCloneHandle() called on NoHandle object");
         }
         return uniffiRustCall() { status ->
-            UniffiLib.uniffi_gentlecompanion_core_fn_clone_terminalsession(handle, status)
+            UniffiLib.uniffi_gentle_mobile_core_fn_clone_terminalsession(handle, status)
         }
     }
 
@@ -3208,7 +3208,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
         = 
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_terminalsession_close_session(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_terminalsession_close_session(
         it,
         _status)
 }
@@ -3223,7 +3223,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
             return FfiConverterUInt.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_terminalsession_cols(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_terminalsession_cols(
         it,
         _status)
 }
@@ -3239,7 +3239,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
             return FfiConverterOptionalUInt.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_terminalsession_exit_status(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_terminalsession_exit_status(
         it,
         _status)
 }
@@ -3255,7 +3255,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
             return FfiConverterBoolean.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_terminalsession_is_closed(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_terminalsession_is_closed(
         it,
         _status)
 }
@@ -3271,7 +3271,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
             return FfiConverterOptionalString.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_terminalsession_last_error(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_terminalsession_last_error(
         it,
         _status)
 }
@@ -3289,7 +3289,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
             return FfiConverterByteArray.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_terminalsession_read(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_terminalsession_read(
         it,
         
         FfiConverterUInt.lower(`maxBytes`),_status)
@@ -3307,7 +3307,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_terminalsession_resize(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_terminalsession_resize(
         it,
         
         FfiConverterUInt.lower(`cols`),
@@ -3324,7 +3324,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
             return FfiConverterUInt.lift(
     callWithHandle {
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_terminalsession_rows(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_terminalsession_rows(
         it,
         _status)
 }
@@ -3341,7 +3341,7 @@ open class TerminalSession: Disposable, AutoCloseable, TerminalSessionInterface
         = 
     callWithHandle {
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_method_terminalsession_write(
+    UniffiLib.uniffi_gentle_mobile_core_fn_method_terminalsession_write(
         it,
         
         FfiConverterByteArray.lower(`bytes`),_status)
@@ -5547,7 +5547,7 @@ internal object uniffiCallbackInterfaceUploadProgressListener {
     // Registers the foreign callback with the Rust side.
     // This method is generated for each callback interface.
     internal fun register(lib: UniffiLib) {
-        lib.uniffi_gentlecompanion_core_fn_init_callback_vtable_uploadprogresslistener(vtable)
+        lib.uniffi_gentle_mobile_core_fn_init_callback_vtable_uploadprogresslistener(vtable)
     }
 }
 
@@ -6189,7 +6189,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `acceptHostKey`(`knownHostsPath`: kotlin.String, `host`: kotlin.String, `port`: kotlin.UShort, `keyBlob`: kotlin.String)
         = 
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_accept_host_key(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_accept_host_key(
     
         
         FfiConverterString.lower(`knownHostsPath`),
@@ -6208,7 +6208,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `acquireLease`(`profile`: HostProfileDto, `sessionId`: kotlin.String, `deviceId`: kotlin.String, `token`: kotlin.String): LeaseTakeOutcomeDto {
             return FfiConverterTypeLeaseTakeOutcomeDto.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_acquire_lease(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_acquire_lease(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
@@ -6232,7 +6232,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `checkDeviceKeyRegistered`(`profile`: HostProfileDto, `keyType`: kotlin.String, `keyBlob`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_check_device_key_registered(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_check_device_key_registered(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
@@ -6251,7 +6251,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `checkHostDir`(`profile`: HostProfileDto, `path`: kotlin.String): DirCheckDto {
             return FfiConverterTypeDirCheckDto.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_check_host_dir(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_check_host_dir(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
@@ -6269,7 +6269,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
          */ fun `composePrompt`(`text`: kotlin.String, `imageSuffixes`: List<kotlin.String>): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_compose_prompt(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_compose_prompt(
     
         
         FfiConverterString.lower(`text`),
@@ -6293,7 +6293,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `connect`(`profile`: HostProfileDto, `session`: kotlin.String, `surface`: SurfaceSizeDto?): ConnectOutcome {
             return FfiConverterTypeConnectOutcome.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_connect(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_connect(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
@@ -6312,7 +6312,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
          */ fun `defaultSessionsDir`(`user`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_default_sessions_dir(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_default_sessions_dir(
     
         
         FfiConverterString.lower(`user`),_status)
@@ -6329,7 +6329,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `forgetHost`(`knownHostsPath`: kotlin.String, `host`: kotlin.String, `port`: kotlin.UShort): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_forget_host(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_forget_host(
     
         
         FfiConverterString.lower(`knownHostsPath`),
@@ -6347,7 +6347,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
          */ fun `listKnownHosts`(`knownHostsPath`: kotlin.String): List<KnownHostDto> {
             return FfiConverterSequenceTypeKnownHostDto.lift(
     uniffiRustCall() { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_list_known_hosts(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_list_known_hosts(
     
         
         FfiConverterString.lower(`knownHostsPath`),_status)
@@ -6364,7 +6364,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `listSessions`(`profile`: HostProfileDto, `sessionsDir`: kotlin.String, `deviceId`: kotlin.String): List<SessionDto> {
             return FfiConverterSequenceTypeSessionDto.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_list_sessions(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_list_sessions(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
@@ -6382,7 +6382,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `planUpload`(`fileName`: kotlin.String, `sizeBytes`: kotlin.ULong): UploadPlanDto {
             return FfiConverterTypeUploadPlanDto.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_plan_upload(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_plan_upload(
     
         
         FfiConverterString.lower(`fileName`),
@@ -6399,7 +6399,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `refreshLease`(`profile`: HostProfileDto, `sessionId`: kotlin.String, `deviceId`: kotlin.String, `token`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_refresh_lease(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_refresh_lease(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
@@ -6419,7 +6419,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `releaseLease`(`profile`: HostProfileDto, `sessionId`: kotlin.String, `deviceId`: kotlin.String, `token`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_release_lease(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_release_lease(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
@@ -6443,7 +6443,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `resumeSession`(`profile`: HostProfileDto, `sessionPath`: kotlin.String, `sessionId`: kotlin.String, `deviceId`: kotlin.String, `token`: kotlin.String): RpcResumeOutcome {
             return FfiConverterTypeRpcResumeOutcome.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_resume_session(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_resume_session(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
@@ -6470,7 +6470,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `startSessionInDir`(`profile`: HostProfileDto, `cwd`: kotlin.String, `deviceId`: kotlin.String, `token`: kotlin.String): RpcResumeOutcome {
             return FfiConverterTypeRpcResumeOutcome.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_start_session_in_dir(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_start_session_in_dir(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),
@@ -6492,7 +6492,7 @@ public object FfiConverterSequenceTypeWorkspaceRowDto: FfiConverterRustBuffer<Li
     @Throws(CompanionException::class) fun `startTerminal`(`profile`: HostProfileDto, `cwd`: kotlin.String, `cols`: kotlin.UInt, `rows`: kotlin.UInt): TerminalSession {
             return FfiConverterTypeTerminalSession.lift(
     uniffiRustCallWithError(CompanionException) { _status ->
-    UniffiLib.uniffi_gentlecompanion_core_fn_func_start_terminal(
+    UniffiLib.uniffi_gentle_mobile_core_fn_func_start_terminal(
     
         
         FfiConverterTypeHostProfileDto.lower(`profile`),

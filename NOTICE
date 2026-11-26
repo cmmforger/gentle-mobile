@@ -1,4 +1,4 @@
-NOTICE — Gentle Companion
+NOTICE — Gentle Mobile
 
 This repository vendors two crates from Bellterm (https://github.com/nimrc/bellterm,
 Apache-2.0), which in turn vendors them from the Herdr project:

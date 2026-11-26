@@ -1,7 +1,7 @@
 {
-  "title": "Gentle Companion \u2014 T2 artboards",
+  "title": "Gentle Mobile \u2014 T2 artboards",
   "brief": "Native mobile client (Android first) that attaches over SSH/Tailscale to Gentle Shell agents inside Herdr TUI (lane A) or to a direct gentle-shell RPC session (lane B-i). Dark-only, tokens captured from Gentleman-Cute (default), Gentleman-Sexy and Gentle in design/system.md; chrome tokens follow the App palette extension there (bg/surface/surfaceRaised/borderSubtle/selection per theme, --terminal only on terminal surfaces). S6: no gesture-only action, 44 pt targets; S8: audio is dictation-to-text; S9: theme swap changes tokens only, never layout.",
-  "feature": "odd/tasks/gentle-companion.md",
+  "feature": "odd/tasks/gentle-mobile.md",
   "artboards": [
     {
       "file": "01-pair.html",

@@ -1909,11 +1909,11 @@ mod tests {
             user: env::var("GENTLE_SSH_USER").unwrap_or_else(|_| "erickfm".to_owned()),
             identity_path: PathBuf::from(
                 env::var("GENTLE_SSH_KEY")
-                    .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-companion/t26-probe-key".to_owned()),
+                    .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-mobile/t26-probe-key".to_owned()),
             ),
             known_hosts_path: PathBuf::from(
                 env::var("GENTLE_KNOWN_HOSTS")
-                    .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-companion/t8-known-hosts".to_owned()),
+                    .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-mobile/t8-known-hosts".to_owned()),
             ),
         };
         let cell_w: u32 = env::var("GENTLE_CELL_W").ok().and_then(|v| v.parse().ok()).unwrap_or(0);

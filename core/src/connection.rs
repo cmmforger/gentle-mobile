@@ -326,7 +326,7 @@ impl Connection {
             let session = session.to_owned();
             let stop = stop.clone();
             thread::Builder::new()
-                .name("gentlecompanion-ssh".to_owned())
+                .name("gentle-mobile-ssh".to_owned())
                 .spawn(move || {
                     let report_end = setup_tx.clone();
                     match tokio::runtime::Builder::new_current_thread().enable_all().build() {
@@ -370,7 +370,7 @@ impl Connection {
             let setup_stop = setup_stop.clone();
             let answered = answered.clone();
             thread::Builder::new()
-                .name("gentlecompanion-setup-timer".to_owned())
+                .name("gentle-mobile-setup-timer".to_owned())
                 .spawn(move || {
                     let start = Instant::now();
                     while start.elapsed() < SETUP_TIMEOUT && !answered.load(Ordering::Acquire) {
@@ -850,7 +850,7 @@ fn spawn_forwarder(
     stop: Arc<AtomicBool>,
 ) -> Result<JoinHandle<()>> {
     thread::Builder::new()
-        .name("gentlecompanion-events".to_owned())
+        .name("gentle-mobile-events".to_owned())
         .spawn(move || {
             let mut ended = false;
             while !ended {
@@ -955,7 +955,7 @@ fn spawn_watchdog(
     stop: Arc<AtomicBool>,
 ) -> Result<JoinHandle<()>> {
     thread::Builder::new()
-        .name("gentlecompanion-watchdog".to_owned())
+        .name("gentle-mobile-watchdog".to_owned())
         .spawn(move || loop {
             if stop.load(Ordering::Acquire) {
                 return;

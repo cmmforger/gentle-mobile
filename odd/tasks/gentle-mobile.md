@@ -1,4 +1,4 @@
-# Gentle Companion — planning document
+# Gentle Mobile — planning document
 
 A native mobile client (Android first, iPhone prepared) that attaches over SSH/Tailscale to
 Gentle Shell agents running inside Herdr TUI, and to Gentle Shell sessions started directly on
@@ -63,7 +63,7 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   applicationId and namespace `com.gentlemanprogramming.gentlemobile`, label `Gentle Mobile`. "Gentle
   Companion" was a default taken from the first message and never confirmed; the repository name was always
   the decision. The icon and splash come from the human's own logo asset, never from a generated mark.
-  Also stated in this decision: the Pair screen must match `design/gentle-companion/01-pair.html`, not a
+  Also stated in this decision: the Pair screen must match `design/gentle-mobile/01-pair.html`, not a
   developer form — the design is the contract for what gets built.
 
 - **S21 — Design fidelity checklist (what "as designed" means, board by board).**
@@ -321,6 +321,16 @@ Verbatim quotes are the user's own words. Prose around them is planning, not a n
   extra rows requested, no blank padding. The whole `ComposerCrop` machinery and its tests are deleted rather than disabled, and the session
   screen renders the frame exactly as the host drew it.
 
+- **S36 — The project answers to `gentle-mobile` and to nothing else.** The human: *"limpiemos todo el nombre de
+  gentle-companion en gentle-mobile porque no puede haber nada con ese nombre, ya que el repositorio y el proyecto en si
+  se llama gentle-mobile"*, and on the two functional survivors *"porque no modificarlas para que sean pertenecientes a
+  gentle-mobile reemplazarles el nombre en vez de usar gentle-companion"*, and on the history *"Reescribirlos"*. So no
+  tracked file, path or identifier carries the old name: the boards and their asset paths, this document, the Rust
+  crate and its cdylib, the dev scratch directory the examples point at, the CLI's key marker and its environment
+  variables, and the log. Two consequences are accepted explicitly rather than discovered later: keys added under the
+  old marker can no longer be listed or revoked by the tool, and environment variables exported under the old names
+  stop being read.
+
 ## Decisions taken (evidence-backed)
 
 | # | Decision | Evidence |
@@ -340,7 +350,7 @@ Never stated by the user; listed so they can be accepted or changed. No task bel
 until confirmed.
 
 - P1 Persistence bar = host-side panes survive + fast bounded reconnect + keepalive. Mosh/ET excluded from v1.
-- P2 Pairing = one host-side helper (`gentle-companion pair`) registers the device public key and prints QR + short code.
+- P2 Pairing = one host-side helper (`gentle-mobile pair`) registers the device public key and prints QR + short code.
 - P3 Minimum versions: Android 10, iOS 17 (same floor as Bellterm and Moshi).
 - P4 Security: per-device ed25519 key in Keystore/Keychain, mandatory host-key pinning, biometric gate, no telemetry.
 - P5 Multi-host and Herdr saved machines land in v0.5, not in the MVP.
@@ -408,6 +418,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 | T34 | Approval block inside the session (board `09` P2/P4): the same question, command and held answers while looking at the agent's pane, instead of only from the board | S32b | worker | — |
 | T31 | Approval board: agents grouped by what they need, the exact command before an approval, one-tap answers with a re-read before sending, risky answers held, one needs-you count everywhere | S32b | worker | — |
 | T29 | Honest crop: detect that the granted grid crops wider pane content, say it in one line, and offer the whole pane scaled as an explicit fallback; anchor every notice so it cannot change the derived grid and re-fire the claim | S31c | worker | — |
+| T62 | The old project name is gone from the repository: board paths and copy, this document, the Rust crate and its cdylib (with the bindings regenerated), the dev scratch directory, the CLI's marker and environment variables, and the log | S36 | inline | 11973cc |
 | T19b | **Auto-update of the APK (deferred):** the app checks a URL we control, downloads the signed APK and updates itself. The cheap 80% of OTA without changing stack; requires the release certificate to stay stable, a version endpoint and an explicit user confirmation. | S10 | inline | — |
 
 ## Phases and gates
@@ -425,7 +436,7 @@ handoff). Commit column stays `—` until implementation is authorized.
 ## Design plan (`gentle-design`)
 
 Single source of truth is `design/system.md`, generated from the real token files — never invented.
-Artboards live in `design/gentle-companion/`. Required screens: Pair (QR + code + host command),
+Artboards live in `design/gentle-mobile/`. Required screens: Pair (QR + code + host command),
 Nodes (hosts, groups, state), Inbox (needs you / done / working / idle, in that order), Session
 (one-thumb header, extra-keys, tab map), Compose (text + images + dictation, a single send action),
 Theme picker (sexy / cute / gentle with a live terminal preview), Settings/security.
@@ -460,7 +471,7 @@ controlar tus agentes nativos de Gentle Shell Desktop y Gentle Shell y tambien d
 una gran oportunidad para las personas que programan desde telefono que conozco alguno poder usar Gentle
 Shell nativo desde sus dispositivos Moviles
 Queria saber cual es su opinion y si les interesaria. Quedo Atento ;)
-en base a lo enterior encuentro como buena base gentle-companion que te acabo de enviar repositorio como
+en base a lo enterior encuentro como buena base gentle-mobile que te acabo de enviar repositorio como
 para poder dar solucion. La diferencia esta en que este arranca como runtime, la intencion es llegar
 hacer el desarrollo tanto para android como para iphone, y mantener los colores de
 https://gentlemanprogramming.com/ o mejor dicho que se puedan implementar temas como mustaccin sexy y
@@ -515,9 +526,9 @@ three-theme preview). Sources read: `gentle-pi/themes/Gentleman-Cute.json`, `Gen
 captured; geometry (spacing 4/8/12/16/24/32, radius 8/12/16/pill, type scale 11/13/15/18/22/28,
 44 pt targets) is listed as a **proposal** awaiting acceptance. The brand palette of
 gentlemanprogramming.com was **not** captured (no token file inspected) and stays a pending source
-for `Gentleman-Brand` in T16. Artboards for `design/gentle-companion/` follow in T2.
+for `Gentleman-Brand` in T16. Artboards for `design/gentle-mobile/` follow in T2.
 
-**L6 (T2 — artboards, no code):** `design/gentle-companion/` created with 7 artboards at 390×844 plus
+**L6 (T2 — artboards, no code):** `design/gentle-mobile/` created with 7 artboards at 390×844 plus
 `design.json` (`feature` pointing at this document): `01-pair`, `02-nodes`, `03-inbox`, `04-session`,
 `05-compose`, `06-themes`, `07-settings`. All are self-contained HTML with no external URLs. Colour
 audit against `design/system.md` passes for every value. The canvas reported 5 quality findings, all
@@ -606,7 +617,7 @@ surfaced inline, verbatim. Recorded as S19: read and prompt live on the daemon A
 `direct-streamlocal`, not on the client-shell bridge.
 
 **L13 (name, icon and design fidelity):** The human rejected three things at once and was right on all
-three: the product was called "Gentle Companion" — a default I took from L1 and never confirmed, while the
+three: the product was called "Gentle Mobile" — a default I took from L1 and never confirmed, while the
 repository has always been `gentle-mobile`; the launcher icon was a generated placeholder instead of their
 own logo, which existed only inside the design artboard; and the first screen was a developer form
 (host/port/user/session) instead of the Pair screen the design specifies. They also clarified what the design's
@@ -623,7 +634,7 @@ exposes `sendKeys`; the row sends real events with one-shot sticky Ctrl/Alt, ver
 (`clea` + Tab completing to `clear`, Ctrl+C clearing the line). Bindings now generate directly into the app's
 package instead of being rewritten by hand, and the stale pre-rename source tree is gone. 56 core tests.
 Release APK 57,953,496 bytes signed and copied to `~/Downloads/gentle-mobile-0.1.0.apk`; the emulator's test key
-was revoked from `authorized_keys` with `gentle-companion-pair --revoke`, leaving other keys untouched.
+was revoked from `authorized_keys` with `gentle-mobile-pair --revoke`, leaving other keys untouched.
 
 **L15 (auto-update noted, stack unchanged):** A reader proposed Expo + Rust core + EAS Update with a host daemon and an on-device local mode. Checked against what exists: their security model (phone-generated ed25519, one-time token, host fingerprint against MITM) is already implemented and verified here, so it validates S22 rather than replacing it. Recorded decision: **stack unchanged** — React Native would still need the Rust module for SSH, adds a JS hop to the most latency-sensitive screen, and does not unblock iOS, which needs macOS and Xcode regardless. Two ideas taken: the single-use token (already S22) and **auto-update of the APK**, logged as T19b, the cheap part of OTA without re-platforming. The host daemon and the on-device agent are product changes, not implementation choices, and stay out of scope.
 
@@ -906,3 +917,57 @@ Still open: **T38** (the Termux engine drawing our own PTY with herdr inside) an
 in hand.
 
 **L42 (two colour fixes and fonts):** The workspaces rows drew their names with the Material ink (near white in Cute) and the settings back chevron was ink where every other screen draws it in the accent — both now take the theme (`1930b9c`, 0.9.5). The human then chose, out of three options for typefaces, the small one: **bundle two or three OFL faces and give the Typeface row a real picker** — Space Grotesk, IBM Plex Sans and Aldrich, applied app-wide through the Material `Typography` so no screen needs touching, credited in `NOTICE` like Iconoir. T40 carries it.
+
+**L43 (the old name is gone — T62/S36):** The human: *"limpiemos todo el nombre de gentle-companion en gentle-mobile
+porque no puede haber nada con ese nombre, ya que el repositorio y el proyecto en si se llama gentle-mobile"*; on the two
+survivors *"porque no modificarlas para que sean pertenecientes a gentle-mobile reemplazarles el nombre en vez de usar
+gentle-companion"*; on the history *"Reescribirlos"*. Shipped on `refactor/name-cleanup`: the board folder moved to
+`design/gentle-mobile/` (paths and asset references), the task document took its name, the board wordmarks and titles
+stopped calling the project `Gentle Companion`, the dev scratch the examples point at moved to
+`test_tmp/gentle-mobile/`, `LEGACY_MARKER` was deleted because it existed only to carry the old string, and
+`GENTLE_COMPANION_PORT`/`_USER` became `GENTLE_MOBILE_PORT`/`_USER`. The Rust crate is now `gentle-mobile-core`, its
+library `libgentle_mobile_core.so`, its threads `gentle-mobile-*`, and the committed UniFFI binding was regenerated as
+`gentle_mobile_core.kt` by `scripts/build-core-android.sh` (stale `.so` copies removed from `jniLibs/`). Accepted
+consequences, stated before doing it: keys added under the old marker can no longer be listed or revoked, and variables
+exported under the old names stop being read. Evidence: `grep` over every tracked path and file for
+`gentlecompanion|gentle[-_ ]companion` returns nothing outside the quotes below; `bash -n` clean and `--help` exit 0 on the pair script;
+**206 core tests pass (3 ignored live probes)**; **Gradle `:app:testDebugUnitTest` BUILD SUCCESSFUL** with the
+regenerated bindings. Pre-existing and NOT caused by this work: `cargo test --workspace` fails because
+`crates/herdr-client/tests/live.rs` imports `../../test-support/sandbox.rs`, a file this repository never contained.
+The native review could not evaluate this candidate: the provider stopped it at preflight with
+`lens_context_budget_exceeded` (the board-folder move counts as 15 deletions plus 15 additions, ~20k lines), and no
+review authority was created.
+
+**L44 (what the verifier caught in L43):** Three defects in the rename itself, all fixed: the pair script's header
+still claimed it cleaned the old marker (*"the marker was renamed from gentle-mobile to gentle-mobile"* — a tautology
+left by a blunt `sed`, and a false safety claim in a destructive tool's own documentation); `odd/tasks/
+gentle-companion.md` survived beside its renamed twin on the code branch because `git checkout <branch> -- .` never
+deletes; and L43's own sentence claimed the old name appeared nowhere while S36 and L43 quote the human verbatim,
+which necessarily contains it. The claim now says what is true: the only occurrences are those quotes. Generic
+`Companion` identifiers (`CompanionConnection`, `CompanionError`) stay — they are not the project's old name, and
+renaming them would rewrite the FFI surface for no naming gain. `scripts/tests/pair-script-test.sh` now pins the
+marker behaviour, including the accepted loss of pre-rename keys.
+
+**L45 (why the native review cannot see this change):** After splitting the board move into its own branch, the native
+review stopped again at preflight with the same `lens_context_budget_exceeded`, and the numbers now name the cause
+instead of guessing at it: the candidate reports **15,110 changed lines over 37 paths** while `git diff --shortstat`
+reports **496 insertions and 392 deletions** for the same range. The difference is rename detection: the provider
+projects the range as a tree comparison, so moving a file costs its full length twice. Of those 15,110, **13,014 are
+the committed UniFFI binding** — 6,507 lines deleted, 6,507 added — because regenerating under the new crate name moves
+`gentlecompanion_core.kt` to `gentle_mobile_core.kt`. The board move was never the problem (removing it entirely
+changed the figure from 20,110 to 15,110, not to something reviewable). Excluding the binding from a reviewable slice
+does not work either: the app cannot compile without it, so the slice would not be a candidate anyone could run. Two
+conclusions worth keeping: a project rename that touches a large generated artifact cannot be natively reviewed as one
+candidate, and the generated binding should not be named after the crate at all — a neutral committed file name
+(`Core.kt`) would make every future rename a small content diff instead of a 13k-line move. Recorded as a follow-up,
+not fixed here.
+
+**L46 (closed, with the disposition stated):** The human chose *"cerrar sin review nativa"* after two provider stops with
+`lens_context_budget_exceeded`, knowing the cause: 13,014 of the candidate's 15,110 projected lines are the generated
+binding counted as a delete plus an add. The rename therefore ships on the owner's explicit unreviewed disposition, not
+on a silent assumption. Verification standing behind it: 206 core tests, Gradle `:app:testDebugUnitTest` green with the
+regenerated bindings, plus two committed scripts — `scripts/tests/name-hygiene-test.sh` (no old name in any tracked path
+unless a documented exception names it) and `scripts/tests/pair-script-test.sh` (marker behaviour, including the
+pre-rename keys the tool can no longer reach). The design boards landed from their own branch; the temporary exception
+that let the hygiene test ignore `design/` while that branch was unmerged has been removed, so the test now covers the
+whole tree.

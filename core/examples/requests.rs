@@ -1,5 +1,5 @@
 //! End-to-end request-lane check against the throwaway sshd of the spike
-//! recipe: `/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/`. Start that
+//! recipe: `/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/`. Start that
 //! sshd first, then run this example. It connects, waits for the first
 //! snapshot, reads one pane over `pane.read --source visible`, and — only
 //! with `--prompt` — submits one prompt over `agent.prompt` to that pane's
@@ -7,12 +7,12 @@
 //! typed code.
 //!
 //! ```sh
-//! GENTLE_SSH_PORT=2222 cargo run -p gentlecompanion-core --example requests -- --pane w1:p1 [--prompt "echo t11-ok"]
+//! GENTLE_SSH_PORT=2222 cargo run -p gentle-mobile-core --example requests -- --pane w1:p1 [--prompt "echo t11-ok"]
 //! ```
 
 use std::{path::PathBuf, time::Duration};
 
-use gentlecompanion_core::{Connection, Error, HostProfile, accept_host_key, fingerprint_of};
+use gentle_mobile_core::{Connection, Error, HostProfile, accept_host_key, fingerprint_of};
 use herdr_client::ConnectOptions;
 
 fn main() -> anyhow::Result<()> {
@@ -49,12 +49,12 @@ fn main() -> anyhow::Result<()> {
             .unwrap_or_else(|| std::env::var("USER").unwrap_or_default()),
         identity_path: PathBuf::from(
             std::env::var("GENTLE_SSH_KEY").unwrap_or_else(|_| {
-                "/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/client_ed25519".to_owned()
+                "/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/client_ed25519".to_owned()
             }),
         ),
         known_hosts_path: PathBuf::from(
             std::env::var("GENTLE_KNOWN_HOSTS")
-                .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-companion/t8-known-hosts".to_owned()),
+                .unwrap_or_else(|_| "/mnt/WD-Black/test_tmp/gentle-mobile/t8-known-hosts".to_owned()),
         ),
     };
     let session = std::env::var("GENTLE_SESSION").unwrap_or_else(|_| "default".to_owned());
@@ -117,7 +117,7 @@ fn main() -> anyhow::Result<()> {
 
 fn accept_fingerprint(profile: &HostProfile, fingerprint: &str) -> anyhow::Result<()> {
     let host_key_blob = std::fs::read_to_string(
-        "/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/host_ed25519.pub",
+        "/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/host_ed25519.pub",
     )?;
     let blob = host_key_blob.split_whitespace().nth(1).unwrap_or_default().to_owned();
     use russh::keys::parse_public_key_base64;

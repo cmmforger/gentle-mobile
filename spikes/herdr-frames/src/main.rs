@@ -6,7 +6,7 @@
 //! - decodes the cell grid (symbol, fg, bg, modifier bits, skip, hyperlink);
 //! - prints a compact `char|fg|bg` dump of the first 8 rows;
 //! - writes one PNG of the full surface to
-//!   `/mnt/WD-Black/test_tmp/gentle-companion/frames/frame-01.png` (each cell
+//!   `/mnt/WD-Black/test_tmp/gentle-mobile/frames/frame-01.png` (each cell
 //!   is a filled background rectangle with the glyph approximated by a solid
 //!   foreground block — geometry, colour fidelity and wide characters, not
 //!   font rendering);
@@ -66,7 +66,7 @@ const XTERM_CUBE_LEVELS: [u8; 6] = [0, 95, 135, 175, 215, 255];
 
 const DUMP_ROWS: usize = 8;
 const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
-const PNG_PATH: &str = "/mnt/WD-Black/test_tmp/gentle-companion/frames/frame-01.png";
+const PNG_PATH: &str = "/mnt/WD-Black/test_tmp/gentle-mobile/frames/frame-01.png";
 
 fn measure_window() -> Duration {
     Duration::from_secs(

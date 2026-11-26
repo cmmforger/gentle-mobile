@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Composer send action, per design/gentle-companion/04-session.html
+<!-- Composer send action, per design/gentle-mobile/04-session.html
      ("Send"): the Iconoir solid send paper-plane, MIT. Icon tint supplies
      the colour; the 44 dp accent target and the Send label live on the
      composable that draws this (L31). -->

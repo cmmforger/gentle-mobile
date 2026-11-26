@@ -193,7 +193,7 @@ data class ApprovalHold(val paneId: String, val optionNumber: Int)
 /**
  * The board's grouping (S32b-1): agents grouped by what they need, in the
  * order needs you, done, working, idle — the order the design plan fixed
- * (`odd/tasks/gentle-companion.md`, Inbox), with the honest `unknown` group
+ * (`odd/tasks/gentle-mobile.md`, Inbox), with the honest `unknown` group
  * keeping its own place last, never lying as idle. Only non-empty groups
  * render.
  */

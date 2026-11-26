@@ -1,11 +1,11 @@
 [package]
 edition.workspace      = true
 license.workspace      = true
-name                   = "gentlecompanion-core"
+name                   = "gentle-mobile-core"
 publish.workspace      = true
 rust-version.workspace = true
 version.workspace      = true
-description            = "Gentle Companion transport core: SSH transport, host-key pinning, liveness, reconnect."
+description            = "Gentle Mobile transport core: SSH transport, host-key pinning, liveness, reconnect."
 
 [lints]
 workspace = true

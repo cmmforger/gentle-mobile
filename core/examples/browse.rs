@@ -11,7 +11,7 @@
 //! GENTLE_SSH_KEY=… \
 //! GENTLE_KNOWN_HOSTS=… \
 //! GENTLE_BROWSE_DIR=/mnt \
-//! cargo run -p gentlecompanion-core --example browse
+//! cargo run -p gentle-mobile-core --example browse
 //! ```
 //!
 //! Without `GENTLE_BROWSE_DIR` only the disk list is printed. The SSH
@@ -20,7 +20,7 @@
 
 use std::{env, path::PathBuf};
 
-use gentlecompanion_core::{HostProfile, paths};
+use gentle_mobile_core::{HostProfile, paths};
 
 fn profile() -> HostProfile {
     HostProfile {
@@ -34,12 +34,12 @@ fn profile() -> HostProfile {
             .unwrap_or_else(|| env::var("USER").unwrap_or_default()),
         identity_path: PathBuf::from(
             env::var("GENTLE_SSH_KEY").unwrap_or_else(|_| {
-                "/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/client_ed25519".to_owned()
+                "/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/client_ed25519".to_owned()
             }),
         ),
         known_hosts_path: PathBuf::from(
             env::var("GENTLE_KNOWN_HOSTS").unwrap_or_else(|_| {
-                "/mnt/WD-Black/test_tmp/gentle-companion/ssh-spike/known_hosts".to_owned()
+                "/mnt/WD-Black/test_tmp/gentle-mobile/ssh-spike/known_hosts".to_owned()
             }),
         ),
     }

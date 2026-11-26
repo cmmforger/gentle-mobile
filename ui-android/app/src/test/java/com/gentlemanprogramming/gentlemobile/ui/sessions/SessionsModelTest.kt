@@ -251,12 +251,12 @@ class SessionsModelTest {
     @Test
     fun the_override_wins_over_the_default() {
         val store = object : KeyValueStore {
-            private val map = mutableMapOf(OVERRIDE_KEY_STORE_KEY to "  /mnt/WD-Black/test_tmp/gentle-companion/t27-sessions  ")
+            private val map = mutableMapOf(OVERRIDE_KEY_STORE_KEY to "  /mnt/WD-Black/test_tmp/gentle-mobile/t27-sessions  ")
             override fun getString(key: String): String? = map[key]
             override fun putString(key: String, value: String) { map[key] = value }
         }
         assertEquals(
-            "/mnt/WD-Black/test_tmp/gentle-companion/t27-sessions",
+            "/mnt/WD-Black/test_tmp/gentle-mobile/t27-sessions",
             SessionsConfig.sessionsDir(store, "/home/u/.gentle-shell/agent/sessions"),
         )
     }

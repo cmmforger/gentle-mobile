@@ -866,17 +866,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gentle-rpc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "russh",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "gentlecompanion-core"
+name = "gentle-mobile-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -892,6 +882,16 @@ dependencies = [
  "tokio",
  "unicode-width",
  "uniffi",
+]
+
+[[package]]
+name = "gentle-rpc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "russh",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

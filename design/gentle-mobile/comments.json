@@ -225,7 +225,7 @@
       "id": "qjf4br1e",
       "file": "01-pair.html",
       "selector": "body > div:nth-of-type(2) > section:nth-of-type(2) > main",
-      "excerpt": "Code rejected. 7QF2–3K9M expired or was already used. Run gentle-companion pair on the host to get a new code, then try again. SHORT CODE 7QF2–3K9M ❯ gentle-companion pair previous code revoked · new code printed code: 8HD4–NW2T New QR appears here once the host prints a fresh code. Retry pairing Sc",
+      "excerpt": "Code rejected. 7QF2–3K9M expired or was already used. Run gentle-mobile pair on the host to get a new code, then try again. SHORT CODE 7QF2–3K9M ❯ gentle-mobile pair previous code revoked · new code printed code: 8HD4–NW2T New QR appears here once the host prints a fresh code. Retry pairing Sc",
       "comment": "Por lo que veo falta una vista de inicio, donde cuando se inicia el sistema lo primero que se visualiza es la imagen de la app, el cual sera esta que proporciono. luego de eso inicia el sistema sin ningun problema, tal como lo hace moshi que muestra la imagen de la cara un gato antes de visualizarse la app",
       "createdAt": "2026-11-17T16:41:18.767Z",
       "status": "resolved",
@@ -256,7 +256,7 @@
       "status": "resolved",
       "sentAt": "2026-11-17T16:46:22.178Z",
       "resolvedAt": "2026-11-17T16:49:12.958Z",
-      "resolution": "El splash usa el logo real: copié ConnectionMonitorPhone.png a design/gentle-companion/assets/, le quité el fondo blanco, lo reduje a 420 px y lo embebí como data URI para que el board siga siendo autocontenido."
+      "resolution": "El splash usa el logo real: copié ConnectionMonitorPhone.png a design/gentle-mobile/assets/, le quité el fondo blanco, lo reduje a 420 px y lo embebí como data URI para que el board siga siendo autocontenido."
     },
     {
       "id": "d3vqi99m",
@@ -274,13 +274,13 @@
       "id": "b69mpb7j",
       "file": "01-pair.html",
       "selector": "body > div:nth-of-type(2) > section:nth-of-type(1) > div > img",
-      "excerpt": "Gentle Companion",
+      "excerpt": "Gentle Mobile",
       "comment": "/home/erickfm/Downloads/ConnectionMonitorPhone.png tengo esta nueva imagen, reemplazala",
       "createdAt": "2026-11-17T17:14:37.908Z",
       "status": "resolved",
       "sentAt": "2026-11-17T17:14:37.967Z",
       "resolvedAt": "2026-11-17T17:16:13.709Z",
-      "resolution": "Reemplazado por la versión nueva del logo: reprocesé ConnectionMonitorPhone.png (transparente, recortado, 420 px) sobre design/gentle-companion/assets/ y volví a embeberlo como data URI en el splash."
+      "resolution": "Reemplazado por la versión nueva del logo: reprocesé ConnectionMonitorPhone.png (transparente, recortado, 420 px) sobre design/gentle-mobile/assets/ y volví a embeberlo como data URI en el splash."
     },
     {
       "id": "ksahuw57",

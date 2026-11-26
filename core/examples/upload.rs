@@ -1,6 +1,6 @@
 //! Live check for the SFTP upload lane.
 //!
-//!     cargo run -p gentlecompanion-core --example upload -- <file> [host:port] [user]
+//!     cargo run -p gentle-mobile-core --example upload -- <file> [host:port] [user]
 //!
 //! Reads the identity and known_hosts from the environment so nothing secret is
 //! baked in:
@@ -11,8 +11,8 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use gentlecompanion_core::uploads::{stored_name, upload_over_sftp};
-use gentlecompanion_core::HostProfile;
+use gentle_mobile_core::uploads::{stored_name, upload_over_sftp};
+use gentle_mobile_core::HostProfile;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
