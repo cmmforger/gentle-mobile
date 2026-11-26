@@ -947,3 +947,17 @@ which necessarily contains it. The claim now says what is true: the only occurre
 `Companion` identifiers (`CompanionConnection`, `CompanionError`) stay — they are not the project's old name, and
 renaming them would rewrite the FFI surface for no naming gain. `scripts/tests/pair-script-test.sh` now pins the
 marker behaviour, including the accepted loss of pre-rename keys.
+
+**L45 (why the native review cannot see this change):** After splitting the board move into its own branch, the native
+review stopped again at preflight with the same `lens_context_budget_exceeded`, and the numbers now name the cause
+instead of guessing at it: the candidate reports **15,110 changed lines over 37 paths** while `git diff --shortstat`
+reports **496 insertions and 392 deletions** for the same range. The difference is rename detection: the provider
+projects the range as a tree comparison, so moving a file costs its full length twice. Of those 15,110, **13,014 are
+the committed UniFFI binding** — 6,507 lines deleted, 6,507 added — because regenerating under the new crate name moves
+`gentlecompanion_core.kt` to `gentle_mobile_core.kt`. The board move was never the problem (removing it entirely
+changed the figure from 20,110 to 15,110, not to something reviewable). Excluding the binding from a reviewable slice
+does not work either: the app cannot compile without it, so the slice would not be a candidate anyone could run. Two
+conclusions worth keeping: a project rename that touches a large generated artifact cannot be natively reviewed as one
+candidate, and the generated binding should not be named after the crate at all — a neutral committed file name
+(`Core.kt`) would make every future rename a small content diff instead of a 13k-line move. Recorded as a follow-up,
+not fixed here.
