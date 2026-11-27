@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- T13: camera photos land in cacheDir/attachments/ before the upload
-     reads them; the camera app only needs temporary write access. -->
-<paths>
-    <cache-path name="attachments" path="attachments/" />
-</paths>

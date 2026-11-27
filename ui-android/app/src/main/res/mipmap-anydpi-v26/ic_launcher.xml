@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Background: the brand base #1A1218 (design/system.md). -->
-    <background android:drawable="@color/gm_window_background" />
-    <!-- Foreground: the human's own logo, never a generated mark. -->
-    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
-</adaptive-icon>

@@ -1,7 +1,0 @@
-# UniFFI binding configuration for gentle-mobile-core.
-#
-# The generated Kotlin lands in the app's source set and is committed; the
-# .so build output and its jniLibs copies are not (see .gitignore).
-[bindings.kotlin]
-package_name = "com.gentlemanprogramming.gentlemobile.core"
-generate_immutable_records = true

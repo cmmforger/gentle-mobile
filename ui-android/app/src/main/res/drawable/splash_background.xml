@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Splash consistent with design/gentle-mobile/01-pair.html: the app's
-     own mark (design/gentle-mobile/assets/connection-monitor-phone.png)
-     centered on the brand background. -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@color/gm_window_background" />
-    <item android:gravity="center" android:drawable="@drawable/splash_logo" />
-</layer-list>
